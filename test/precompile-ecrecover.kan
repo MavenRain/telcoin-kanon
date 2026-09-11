@@ -1,0 +1,2 @@
+def precompileTestEcrecover : Bytes -> Bytes -> PrecompileOutcome := fun (bytes : Bytes) (gas : Bytes) =>
+  case (hostIntParse gas) with | 0 (unit : prod ()) => precompileRejected | 1 (limit : HostInt) => precompileEcrecover bytes limit

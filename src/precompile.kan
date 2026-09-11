@@ -1,0 +1,13 @@
+-- Ethereum precompiles 0x01 through 0x09 at the pinned OCaml revision.
+def precompileInvoke : PrecompileInvoke := fun (address : Address) (input : Bytes) (limit : HostInt) =>
+  let number : Nat := u256ReadBe (addressBytes address) 0 in
+  case (natEq number 1) with | 1 (unit : prod ()) => precompileEcrecover input limit | 0 (unit : prod ()) =>
+  case (natEq number 2) with | 1 (unit : prod ()) => precompileSha256 input limit | 0 (unit : prod ()) =>
+  case (natEq number 3) with | 1 (unit : prod ()) => precompileRipemd160 input limit | 0 (unit : prod ()) =>
+  case (natEq number 4) with | 1 (unit : prod ()) => precompileIdentity input limit | 0 (unit : prod ()) =>
+  case (natEq number 5) with | 1 (unit : prod ()) => precompileModexp input limit | 0 (unit : prod ()) =>
+  case (natEq number 6) with | 1 (unit : prod ()) => precompileBnAdd input limit | 0 (unit : prod ()) =>
+  case (natEq number 7) with | 1 (unit : prod ()) => precompileBnMul input limit | 0 (unit : prod ()) =>
+  case (natEq number 8) with | 1 (unit : prod ()) => precompileBnPair input limit | 0 (unit : prod ()) =>
+  case (natEq number 9) with | 1 (unit : prod ()) => precompileBlake2f input limit | 0 (unit : prod ()) =>
+  notAPrecompile

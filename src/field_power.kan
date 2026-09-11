@@ -1,0 +1,34 @@
+-- Exponentiation with a separate squaring operation for extension fields.
+def powerWithSquareByte : (0 A : Type 0) -> (A -> A) -> (A -> A -> A) -> A -> A -> Nat -> A :=
+  fun (0 A : Type 0) (square : A -> A) (multiply : A -> A -> A) (base : A) (acc : A) (byte : Nat) =>
+    let result : prod (Nat, Nat, A) := stepsFold (prod (Nat, Nat, A)) steps32
+      (fun (state : prod (Nat, Nat, A)) => boolNat (natEq state.0 8))
+      (fun (state : prod (Nat, Nat, A)) => let squared : A := square state.2 in
+        case (natLt state.1 128) with
+        | 1 (unit : prod ()) => tuple (natAdd state.0 1, natMul state.1 2, squared)
+        | 0 (unit : prod ()) => tuple (natAdd state.0 1, natMul (natSub state.1 128) 2, multiply squared base))
+      (tuple (0, byte, acc)) in result.2
+def rec powerWithSquareBytes : (0 A : Type 0) -> (A -> A) -> (A -> A -> A) -> A -> A -> Bytes -> A :=
+  fun (0 A : Type 0) (square : A -> A) (multiply : A -> A -> A) (base : A) (acc : A) (exponent : Bytes) =>
+    match exponent as self in Bytes return A with
+    | bytesNil => acc
+    | bytesCons byte tail => powerWithSquareBytes A square multiply base (powerWithSquareByte A square multiply base acc byte) tail
+
+-- For multiplication with an absorbing zero, an accumulator at zero cannot
+-- change again. The runtime check also keeps fixed cryptographic exponents
+-- from expanding the remaining field operations during compiler erasure.
+def powerAbsorbingByte : (0 A : Type 0) -> (A -> A) -> (A -> A -> A) -> (A -> Bool) -> A -> A -> Nat -> A :=
+  fun (0 A : Type 0) (square : A -> A) (multiply : A -> A -> A) (isZero : A -> Bool) (base : A) (acc : A) (byte : Nat) =>
+    let result : prod (Nat, Nat, A) := stepsFold (prod (Nat, Nat, A)) steps32
+      (fun (state : prod (Nat, Nat, A)) => boolNat (boolOr (natEq state.0 8) (isZero state.2)))
+      (fun (state : prod (Nat, Nat, A)) => let squared : A := square state.2 in
+        case (natLt state.1 128) with
+        | 1 (unit : prod ()) => tuple (natAdd state.0 1, natMul state.1 2, squared)
+        | 0 (unit : prod ()) => tuple (natAdd state.0 1, natMul (natSub state.1 128) 2, multiply squared base))
+      (tuple (0, byte, acc)) in result.2
+def rec powerAbsorbingBytes : (0 A : Type 0) -> (A -> A) -> (A -> A -> A) -> (A -> Bool) -> A -> A -> Bytes -> A :=
+  fun (0 A : Type 0) (square : A -> A) (multiply : A -> A -> A) (isZero : A -> Bool) (base : A) (acc : A) (exponent : Bytes) =>
+    match exponent as self in Bytes return A with
+    | bytesNil => acc
+    | bytesCons byte tail => case (isZero acc) with | 1 (unit : prod ()) => acc
+      | 0 (unit : prod ()) => powerAbsorbingBytes A square multiply isZero base (powerAbsorbingByte A square multiply isZero base acc byte) tail

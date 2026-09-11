@@ -1,0 +1,31 @@
+-- Internal division for positive divisors. The bound covers bit lengths of
+-- byte strings representable by the host, including MODEXP operands above U256.
+def bigNaturalDividePositive : Nat -> Nat -> DivResult := fun (numerator : Nat) (divisor : Nat) =>
+  let powers : prod (Nat, Nat, Powers) := stepsFold (prod (Nat, Nat, Powers)) steps64
+    (fun (state : prod (Nat, Nat, Powers)) => boolNat (boolOr (natEq state.0 0) (natLt numerator state.0)))
+    (fun (state : prod (Nat, Nat, Powers)) => tuple (natMul state.0 2, natMul state.1 2, powersCons state.0 state.1 state.2))
+    (tuple (divisor, 1, powersNil)) in divideScan powers.2 numerator 0
+def bigNaturalReducePositive : Nat -> Nat -> Nat := fun (modulus : Nat) (value : Nat) => divRemainder (bigNaturalDividePositive value modulus)
+def bigNaturalMulModPositive : Nat -> Nat -> Nat -> Nat := fun (modulus : Nat) (a : Nat) (b : Nat) => bigNaturalReducePositive modulus (natMul a b)
+def bigNaturalPowerModPositive : Nat -> Nat -> Bytes -> Nat := fun (modulus : Nat) (base : Nat) (exponent : Bytes) =>
+  powerWithSquareBytes Nat (fun (a : Nat) => bigNaturalMulModPositive modulus a a)
+    (fun (a : Nat) (b : Nat) => bigNaturalMulModPositive modulus a b)
+    (bigNaturalReducePositive modulus base) (bigNaturalReducePositive modulus 1) exponent
+def bigNaturalWriteBe : Nat -> Nat -> Bytes := fun (value : Nat) (length : Nat) =>
+  let result : prod (Nat, Nat, Bytes) := stepsFold (prod (Nat, Nat, Bytes)) steps64
+    (fun (state : prod (Nat, Nat, Bytes)) => boolNat (natEq state.1 0))
+    (fun (state : prod (Nat, Nat, Bytes)) => let division : DivResult := bigNaturalDividePositive state.0 256 in
+      tuple (divQuotient division, natSub state.1 1, bytesCons (divRemainder division) state.2)) (tuple (value, length, bytesNil)) in result.2
+def bigNaturalMinimalBe : Nat -> Bytes := fun (value : Nat) =>
+  let result : prod (Nat, Bytes) := stepsFold (prod (Nat, Bytes)) steps64
+    (fun (state : prod (Nat, Bytes)) => boolNat (natEq state.0 0))
+    (fun (state : prod (Nat, Bytes)) => let division : DivResult := bigNaturalDividePositive state.0 256 in
+      tuple (divQuotient division, bytesCons (divRemainder division) state.1)) (tuple (value, bytesNil)) in result.1
+-- Emit minimal digits before padding to the requested minimum width. This
+-- keeps downstream consumers streaming over a runtime byte sequence.
+def bigNaturalLeftPadBe : Nat -> Nat -> Bytes := fun (value : Nat) (width : Nat) =>
+  let minimal : Bytes := bigNaturalMinimalBe value in
+  let result : prod (Nat, Bytes) := stepsFold (prod (Nat, Bytes)) steps64
+    (fun (state : prod (Nat, Bytes)) => boolNat (natEq state.0 0))
+    (fun (state : prod (Nat, Bytes)) => tuple (natSub state.0 1, bytesCons 0 state.1))
+    (tuple (natSub width (bytesLength minimal), minimal)) in result.1

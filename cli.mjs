@@ -2,7 +2,7 @@
 import { loadFoundation } from './runtime.mjs';
 import { runSimulatorCli } from './sim-cli.mjs';
 
-const usage = `telcoin-kanon (partial simulation port)
+const usage = `telcoin-kanon (partial port)
 Usage:
   telcoin-kanon simulate [--validators N] [--seed S] [--until-s T]
   telcoin-kanon bcs encode <u8|u16|u32|u64|uleb> <decimal>
@@ -11,6 +11,7 @@ Usage:
   telcoin-kanon bcs normalize <list-u8|list-u64|set-u8|map-u8-u16> <hex>
   telcoin-kanon prng <next|split> <u64-seed>
   telcoin-kanon wire <batch|sealed-batch|header> <hex>
+  telcoin-kanon evm precompile <20-byte-address-hex> <gas-decimal> <input-hex>
   telcoin-kanon simulation hash <hex>
   telcoin-kanon simulation key <u64-seed>
   telcoin-kanon simulation <sign|vote> <u64-seed> <message-or-header-hex>
@@ -35,16 +36,20 @@ if (args.length === 1 && args[0] === '--help') {
   const normalize = command === 'bcs' && operation === 'normalize' && args.length === 4 && Object.hasOwn(normalizers, kind);
   const prng = command === 'prng' && ['next', 'split'].includes(operation) && args.length === 3;
   const wire = command === 'wire' && Object.hasOwn(inspectors, operation) && args.length === 3;
+  const precompile = command === 'evm' && operation === 'precompile' && args.length === 5;
   const simulation = command === 'simulation' && (
     (['hash', 'key', 'committee'].includes(operation) && args.length === 3) ||
     (['sign', 'vote'].includes(operation) && args.length === 4));
-  const hexInput = (decode || normalize || (simulation && ['sign', 'vote'].includes(operation))) ? input :
+  const hexInput = precompile ? args[4] : (decode || normalize || (simulation && ['sign', 'vote'].includes(operation))) ? input :
     (wire || (simulation && operation === 'hash')) ? kind : undefined;
-  if (!scalar && !encode && !decode && !normalize && !prng && !wire && !simulation) {
+  if (!scalar && !encode && !decode && !normalize && !prng && !wire && !simulation && !precompile) {
     process.stderr.write(usage);
     process.exitCode = 64;
   } else if (hexInput !== undefined && !/^(?:[0-9a-fA-F]{2})*$/.test(hexInput)) {
     process.stderr.write('Hex input must contain complete byte pairs.\n');
+    process.exitCode = 1;
+  } else if (precompile && !/^[0-9a-fA-F]{40}$/.test(kind)) {
+    process.stderr.write('Address must contain exactly 20 hex bytes.\n');
     process.exitCode = 1;
   } else {
     try {
@@ -52,7 +57,14 @@ if (args.length === 1 && args[0] === '--help') {
       const text = bytes => fromBytes(bytes).toString('utf8');
       let output;
       let failed = false;
-      if (normalize) {
+      if (precompile) {
+        output = text(e.apiPrecompile(toBytes(Buffer.from(kind, 'hex')), toBytes(input), toBytes(Buffer.from(args[4], 'hex'))));
+        failed = output.startsWith('error: ');
+        if (!failed) {
+          const [status, gasUsed, bytes] = output.split(':');
+          output = JSON.stringify(status === 's' ? { status: 'succeeded', gasUsed, output: bytes } : { status });
+        }
+      } else if (normalize) {
         output = text(e[normalizers[kind]](toBytes(Buffer.from(input, 'hex'))));
         failed = output.startsWith('error: ');
       } else if (prng) {

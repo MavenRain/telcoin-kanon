@@ -8,6 +8,8 @@ import test from 'node:test';
 import { build, project } from '../scripts/build.mjs';
 import { compileOracle, protocolSources, protocolModules } from './harness.mjs';
 import { parseOcamlInteger } from '../sim-cli.mjs';
+import { precompileVectors } from './precompile-vectors.mjs';
+import { loadTelcoin } from '../runtime.mjs';
 
 mkdirSync(resolve(project, 'build'), { recursive: true });
 build(resolve(project, 'build/telcoin-foundation.wasm'), JSON.parse(readFileSync(resolve(project, 'exports.json'), 'utf8')));
@@ -54,6 +56,34 @@ test('CLI encodes and decodes full-width protocol data', () => {
     assert.equal(result.stderr, '');
   }
 });
+test('The public Wasm module and CLI execute every EVM precompile', async () => {
+  const { exports: e, toBytes, fromBytes } = await loadTelcoin();
+  for (const size of [0, 19, 21, 32]) {
+    const output = fromBytes(e.apiPrecompile(toBytes(Buffer.alloc(size)), toBytes('1000'), toBytes(Buffer.alloc(0)))).toString('utf8');
+    assert.equal(output, 'error: Address must contain exactly 20 bytes.');
+  }
+  for (const gas of ['bad', '4611686018427387904', '-4611686018427387905']) {
+    const output = fromBytes(e.apiPrecompile(toBytes(Buffer.alloc(20)), toBytes(gas), toBytes(Buffer.alloc(0)))).toString('utf8');
+    assert.match(output, /^error: Expected a signed decimal gas limit/);
+  }
+  for (const vector of precompileVectors) {
+    const address = vector.address.toString(16).padStart(40, '0');
+    const result = run(['evm', 'precompile', address, String(vector.gas), vector.input]);
+    assert.equal(result.status, 0, result.error?.message ?? result.stderr);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.status, 'succeeded');
+    assert.equal(output.gasUsed, String(vector.gas));
+    assert.match(output.output, /^(?:[0-9a-f]{2})*$/);
+    if (vector.address === 2) assert.equal(output.output, createHash('sha256').update('abc').digest('hex'));
+    if (vector.address === 1) assert.equal(output.output, '00'.repeat(12) + '7e5f4552091a69125d5dfcb7b8c2659029395bdf');
+  }
+  const rejected = run(['evm', 'precompile', '00'.repeat(19) + '02', '71', '616263']);
+  assert.equal(rejected.status, 0, rejected.stderr);
+  assert.deepEqual(JSON.parse(rejected.stdout), { status: 'rejected' });
+  const ordinary = run(['evm', 'precompile', '00'.repeat(19) + '0a', '-1', '']);
+  assert.equal(ordinary.status, 0, ordinary.stderr);
+  assert.deepEqual(JSON.parse(ordinary.stdout), { status: 'not-precompile' });
+});
 test('CLI reports domain failures distinctly from usage errors', () => {
   for (const [args, status, message] of [
     [[], 64, 'Usage:'],
@@ -69,6 +99,10 @@ test('CLI reports domain failures distinctly from usage errors', () => {
     [['simulation', 'committee', '1,no'], 1, 'unsigned decimal'],
     [['prng', 'next', '-1'], 1, 'unsigned decimal'],
     [['wire', 'header', '00'], 1, 'unexpected end'],
+    [['evm', 'precompile', '00', '1000', ''], 1, '20 hex bytes'],
+    [['evm', 'precompile', '00'.repeat(20) + 'gg', '1000', ''], 1, '20 hex bytes'],
+    [['evm', 'precompile', '00'.repeat(19) + '02', 'bad', ''], 1, 'signed decimal gas'],
+    [['evm', 'precompile', '00'.repeat(19) + '02', '72', 'abc'], 1, 'complete byte pairs'],
     [['bcs', 'normalize', 'map-u8-u16', '02020000010000'], 1, 'out of range'],
   ]) {
     const result = run(args);

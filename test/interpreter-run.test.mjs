@@ -1,6 +1,7 @@
 import test from 'node:test';
 import { harness } from './harness.mjs';
 import { evmOracleSources } from './evm-oracle-sources.mjs';
+import { precompileVectors } from './precompile-vectors.mjs';
 const h = await harness({ name: 'interpreter-run', ...evmOracleSources, oracle: 'test/interpreter-run-oracle.ml',
   fixtures: ['test/crypto.kan', 'test/protocol.kan', 'test/consensus.kan', 'test/execution.kan', 'test/evm-core.kan', 'test/evm-env.kan', 'test/evm-effects.kan',
     'test/interpreter-machine.kan', 'test/interpreter-state.kan', 'test/interpreter-run.kan'], exports: ['evm_test_interpreter_run', 'runTestResultText'] });
@@ -50,4 +51,24 @@ test('CREATE and CREATE2 preserve creator nonce, value transfer, code deposit an
 test('The full 1024 nested-call limit uses heap frames without exhausting the host stack', () => {
   const recursive = '5f5f5f5f5f60107f' + 'ff'.repeat(32) + 'f100';
   compare([row(recursive, { gas: '1000000000000000000', child: recursive })]);
+});
+const precompileCall = (opcode, vector, requested, value = 0) => {
+  const bytes = Buffer.from(vector.input, 'hex');
+  const setup = Array.from(bytes, (byte, i) => push(byte) + push(i) + '53').join('');
+  return setup + push(128) + push(64) + push(bytes.length) + push(0) +
+    (['f1', 'f2'].includes(opcode) ? push(value) : '') + push(vector.address) + push(requested) + opcode +
+    '5f523d60205260c05ff3';
+};
+test('All four call instructions execute every real precompile and merge output and gas', () => {
+  compare(['f1', 'f2', 'f4', 'fa'].flatMap(opcode => precompileVectors
+    .map(vector => row(precompileCall(opcode, vector, vector.gas), { gas: 2000000 }))));
+});
+test('Precompile rejection, value stipends and static restrictions preserve frame rollback', () => {
+  compare(precompileVectors.filter(vector => vector.gas > 0)
+    .map(vector => row(precompileCall('fa', vector, vector.gas - 1), { gas: 2000000 })));
+  const hash = precompileVectors.find(vector => vector.address === 2);
+  compare(['f1', 'f2'].flatMap(opcode => [0, 1, 9].flatMap(value => [0, 1].map(mode =>
+    row(precompileCall(opcode, hash, 0, value), { gas: 2000000, mode })))));
+  compare([row(precompileCall('f1', { address: 8, input: 'ff' }, 1000000), { gas: 2000000 }),
+    row(precompileCall('fa', { address: 9, input: '00' }, 1000), { gas: 2000000 })]);
 });

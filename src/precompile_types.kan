@@ -1,0 +1,5 @@
+mu PrecompileOutcome : Type 0 :=
+| precompileSucceeded (gasUsed : HostInt) (output : Bytes) : PrecompileOutcome
+| precompileRejected : PrecompileOutcome
+| notAPrecompile : PrecompileOutcome
+def PrecompileInvoke : Type 0 := Address -> Bytes -> HostInt -> PrecompileOutcome

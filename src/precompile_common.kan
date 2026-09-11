@@ -1,0 +1,14 @@
+def precompileZeros : Nat -> Bytes := fun (length : Nat) =>
+  let result : prod (Nat, Bytes) := stepsFold (prod (Nat, Bytes)) steps64
+    (fun (state : prod (Nat, Bytes)) => boolNat (natEq state.0 0))
+    (fun (state : prod (Nat, Bytes)) => tuple (natSub state.0 1, bytesCons 0 state.1)) (tuple (length, bytesNil)) in result.1
+def precompileWindow : Bytes -> Nat -> Nat -> Bytes := fun (bytes : Bytes) (offset : Nat) (length : Nat) =>
+  let found : Bytes := take length (drop bytes offset) in append found (precompileZeros (natSub length (bytesLength found)))
+def precompileHasGas : HostInt -> Nat -> Bool := fun (limit : HostInt) (cost : Nat) =>
+  match limit as self in HostInt return Bool with
+  | hostIntNegative magnitude => inj 0 of 2 (tuple ())
+  | hostIntPositive value => boolNot (natLt value cost)
+def precompileIdentity : Bytes -> HostInt -> PrecompileOutcome := fun (bytes : Bytes) (limit : HostInt) =>
+  let cost : Nat := natAdd 15 (natMul 3 (divQuotient (divide64 (natAdd (bytesLength bytes) 31) 32))) in
+  case (precompileHasGas limit cost) with | 0 (unit : prod ()) => precompileRejected
+  | 1 (unit : prod ()) => precompileSucceeded (hostIntPositive cost) bytes

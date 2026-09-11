@@ -152,8 +152,77 @@ This preserves full-width reduction and makes the Euclidean inverse practical
 without changing signature semantics. Source inventory and generated-source
 checks passed (`.kanon-exec/run-W4Eh7K` and `.kanon-exec/run-3pW7qG`).
 
-The 146-group combined run above remains the evidence for the published parent;
-the expanded 163-group combined invocation has not yet run.
+The 146-group combined run above remains the evidence for the published parent.
+The expanded run at `973a190` failed after 8,054.4 seconds with 69 passing groups
+and 17 failed test files. The capture records compiler and OCaml build timeouts,
+then reports that the shared `tn-ocaml` switch was no longer installed. This run
+does not establish a passing full regression for that revision:
+`/private/tmp/telcoin-kanon-validation-973a190/.kanon-exec/run-Y3ygVp`.
+
+## EVM precompiles and default interpreter binding
+
+All nine precompile implementations run in ordinary Kanon. The compiler pin and
+the upstream source checkout are unchanged. Scoped evidence includes:
+
+| Scope | Groups | OCaml comparisons | Capture |
+| --- | ---: | ---: | --- |
+| BN254 extension fields | 5 | 162 | `.kanon-exec/run-pA1VBs` |
+| BN254 curves and exact pairing values | 4 | 72 | `.kanon-exec/run-pA1VBs` |
+| BN254 precompiles and identity | 31 | 178 | `.kanon-exec/run-eENjcM` |
+| BLAKE2F | 3 | 97 | `.kanon-exec/run-Vdt2n5` |
+| MODEXP | 3 | 121 | `.kanon-exec/run-l4RRK6` |
+| SHA-256 and RIPEMD-160 | 4 | 128 | `.kanon-exec/run-3tFLSN` |
+| ECRECOVER | 2 | 46 | `.kanon-exec/run-eENjcM` |
+| Complete address dispatch | 2 | 63 | `.kanon-exec/run-eENjcM` |
+| Default interpreter frames and real precompile calls | 7 | 332 | `.kanon-exec/run-eENjcM` |
+
+BN254 comparisons include all 28 upstream precompile goldens, wrong-subgroup G2
+points, infinity partners, canonical coordinates, scalar boundaries and pairing
+cancellation. MODEXP covers operands through 129 bytes, empty and zero modulus,
+truncated payloads, gas boundaries and astronomical length headers without payload
+allocation. Node BigInt independently checks modular exponentiation. Node/OpenSSL
+also checks the SHA-256, RIPEMD-160 and BLAKE2b digests. ECRECOVER includes actual
+OCaml-generated signatures and the independently known private-key-1 address.
+
+The 47-group scoped run in `run-eENjcM` passed in 312.1 seconds. It includes
+Keccak's 32 existing comparisons and the three source-closure groups. Interpreter
+coverage now executes every precompile through CALL, CALLCODE, DELEGATECALL and
+STATICCALL, including exact gas, insufficient gas, value stipends, static guards,
+return data and rollback. The 1,024 nested-call test remains enabled.
+
+Zero-value paths in extension-field multiplication and Keccak rounds prevent
+large symbolic expansion during compilation. Keccak's existing zero-filled
+full-block vectors exercise its zero-state shortcut. The generator reproduces
+the updated code exactly (`.kanon-exec/run-0bvXY7`). BN254 Frobenius constants are
+derived from the pinned OCaml implementation and pass regeneration checks
+(`.kanon-exec/run-MRVbqY`). No timeout or assertion was relaxed.
+
+Every oracle harness build now selects its export dependency closure and writes
+a source manifest, including tests with no extra fixture file. The production
+build still checks every registered source file. A full build with the default
+precompile binding passed in `.kanon-exec/run-WYiQyl` before adding the public
+precompile API export.
+
+After the shared oracle switch disappeared, OCaml 5.3.0 and the oracle dependencies
+were installed in `/Users/oobi/Documents/gpt13/telcoin-kanon-ocaml`. Validation uses
+that dedicated switch through `OCAML_SWITCH`; the normal default switch selection
+was not changed. Setup captures are `.kanon-exec/run-WyneHI` and
+`.kanon-exec/run-WTfjpJ`.
+
+The public CLI suite passed all nine groups in 457.2 seconds, including a complete
+production build and all nine precompiles through `apiPrecompile`. It also checks
+address widths, gas admission, malformed CLI hex, rejection status and the existing
+simulator reports (`.kanon-exec/run-nUBQWC`). The 130 production files contain
+11,353 nonempty lines. The resulting Wasm is 470,737 bytes with 66 exports and zero
+imports, SHA-256
+`7b93e6e034bcd8b6681e5cc48eb4d769d5e1f5c9b217dc169ec65df1e3d17791`
+(`.kanon-exec/run-5Du4y3`). Source inventory and every generator check passed in
+`.kanon-exec/run-SXZ5Ps`; source/test registration and text hygiene passed in
+`.kanon-exec/run-U4KxMa`. The dedicated oracle switch uses Digestif 1.3.1, Zarith
+1.14 and ocamlfind 1.9.8 (`.kanon-exec/run-pP58L8`).
+
+The expanded combined suite is the next validation step. The scoped results above
+are not a claim that the full suite has passed at this checkpoint.
 
 ## Initial foundation audit
 

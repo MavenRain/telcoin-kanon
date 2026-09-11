@@ -17,8 +17,9 @@ are also implemented. Protocol behavior runs in Kanon compiled to WasmGC.
 JavaScript transports bytes and supplies the CLI and test harness.
 
 The interpreter includes instruction dispatch, calls, creation and rollback, with
-an explicit precompile interface. Secp256k1 recovery is also implemented.
-Precompiles, transaction execution and encoding, the execution driver,
+all nine source-supported precompiles: ECRECOVER, SHA-256, RIPEMD-160, identity,
+MODEXP, BN254 addition, multiplication and pairing, and BLAKE2F.
+Transaction execution and encoding, the execution driver,
 production consensus crypto, durability and networking remain. The source has 178 implementation modules
 across 25 libraries. [PORTING.md](PORTING.md) records module coverage and the
 next acceptance target. [VALIDATION.md](VALIDATION.md) records tested behavior.
@@ -43,6 +44,7 @@ sh bin/telcoin-kanon prng next 0
 sh bin/telcoin-kanon simulation hash 616263
 sh bin/telcoin-kanon simulation committee 1,2,3,4
 sh bin/telcoin-kanon wire batch 000000000014000000000000000000000000000000000000000007000000000000000000
+sh bin/telcoin-kanon evm precompile 0000000000000000000000000000000000000002 72 616263
 ```
 
 `--help` lists all commands. The CLI exits 0 on success, 1 for invalid data or
@@ -51,6 +53,11 @@ source's text and offsets. Binary data uses hex; full-width words use decimal
 strings. `runtime.mjs` exports `loadTelcoin` (also named `loadFoundation` for
 compatibility) and byte adapters. The build artifact retains the filename
 `build/telcoin-foundation.wasm`.
+
+The precompile command reports `succeeded` with decimal `gasUsed` and hex `output`,
+`rejected`, or `not-precompile`. The public `apiPrecompile` Wasm export takes
+address bytes, decimal gas bytes and input bytes. Address and gas admission,
+cryptography, gas charging and dispatch run in Kanon.
 
 ## Simulation crypto
 
@@ -64,6 +71,11 @@ BLAKE2s-256 is implemented in ordinary Kanon using the algorithm in
 [RFC 7693](https://www.rfc-editor.org/rfc/rfc7693.html), with published vectors,
 block-boundary cases and comparisons against Node/OpenSSL. No crypto host
 imports or compiler primitives were introduced.
+
+SHA-256 follows [RFC 6234](https://datatracker.ietf.org/doc/html/rfc6234).
+RIPEMD-160 follows [the original algorithm specification, Appendix A](https://ftp.esat.kuleuven.be/pub/COSIC/bosselae/ripemd/ripemd160.pdf).
+MODEXP supports operands wider than 256 bits. BN254 decoding enforces canonical
+coordinates and the G2 subgroup check before pairing, including infinity pairs.
 
 ## Validate
 

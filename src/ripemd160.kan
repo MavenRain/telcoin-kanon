@@ -1,0 +1,47 @@
+-- RIPEMD-160, Dobbertin, Bosselaers and Preneel, Appendix A.
+def Ripemd5 : Type 0 := prod (Nat, Nat, Nat, Nat, Nat)
+def ripemdInitial : Ripemd5 := tuple (1732584193, 4023233417, 2562383102, 271733878, 3285377520)
+def ripemdLeftIndex : Nats := natsCons 0 (natsCons 1 (natsCons 2 (natsCons 3 (natsCons 4 (natsCons 5 (natsCons 6 (natsCons 7 (natsCons 8 (natsCons 9 (natsCons 10 (natsCons 11 (natsCons 12 (natsCons 13 (natsCons 14 (natsCons 15 (natsCons 7 (natsCons 4 (natsCons 13 (natsCons 1 (natsCons 10 (natsCons 6 (natsCons 15 (natsCons 3 (natsCons 12 (natsCons 0 (natsCons 9 (natsCons 5 (natsCons 2 (natsCons 14 (natsCons 11 (natsCons 8 (natsCons 3 (natsCons 10 (natsCons 14 (natsCons 4 (natsCons 9 (natsCons 15 (natsCons 8 (natsCons 1 (natsCons 2 (natsCons 7 (natsCons 0 (natsCons 6 (natsCons 13 (natsCons 11 (natsCons 5 (natsCons 12 (natsCons 1 (natsCons 9 (natsCons 11 (natsCons 10 (natsCons 0 (natsCons 8 (natsCons 12 (natsCons 4 (natsCons 13 (natsCons 3 (natsCons 7 (natsCons 15 (natsCons 14 (natsCons 5 (natsCons 6 (natsCons 2 (natsCons 4 (natsCons 0 (natsCons 5 (natsCons 9 (natsCons 7 (natsCons 12 (natsCons 2 (natsCons 10 (natsCons 14 (natsCons 1 (natsCons 3 (natsCons 8 (natsCons 11 (natsCons 6 (natsCons 15 (natsCons 13 (natsNil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+def ripemdRightIndex : Nats := natsCons 5 (natsCons 14 (natsCons 7 (natsCons 0 (natsCons 9 (natsCons 2 (natsCons 11 (natsCons 4 (natsCons 13 (natsCons 6 (natsCons 15 (natsCons 8 (natsCons 1 (natsCons 10 (natsCons 3 (natsCons 12 (natsCons 6 (natsCons 11 (natsCons 3 (natsCons 7 (natsCons 0 (natsCons 13 (natsCons 5 (natsCons 10 (natsCons 14 (natsCons 15 (natsCons 8 (natsCons 12 (natsCons 4 (natsCons 9 (natsCons 1 (natsCons 2 (natsCons 15 (natsCons 5 (natsCons 1 (natsCons 3 (natsCons 7 (natsCons 14 (natsCons 6 (natsCons 9 (natsCons 11 (natsCons 8 (natsCons 12 (natsCons 2 (natsCons 10 (natsCons 0 (natsCons 4 (natsCons 13 (natsCons 8 (natsCons 6 (natsCons 4 (natsCons 1 (natsCons 3 (natsCons 11 (natsCons 15 (natsCons 0 (natsCons 5 (natsCons 12 (natsCons 2 (natsCons 13 (natsCons 9 (natsCons 7 (natsCons 10 (natsCons 14 (natsCons 12 (natsCons 15 (natsCons 10 (natsCons 4 (natsCons 1 (natsCons 5 (natsCons 8 (natsCons 7 (natsCons 6 (natsCons 2 (natsCons 13 (natsCons 14 (natsCons 0 (natsCons 3 (natsCons 9 (natsCons 11 (natsNil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+def ripemdLeftRotate : Nats := natsCons 11 (natsCons 14 (natsCons 15 (natsCons 12 (natsCons 5 (natsCons 8 (natsCons 7 (natsCons 9 (natsCons 11 (natsCons 13 (natsCons 14 (natsCons 15 (natsCons 6 (natsCons 7 (natsCons 9 (natsCons 8 (natsCons 7 (natsCons 6 (natsCons 8 (natsCons 13 (natsCons 11 (natsCons 9 (natsCons 7 (natsCons 15 (natsCons 7 (natsCons 12 (natsCons 15 (natsCons 9 (natsCons 11 (natsCons 7 (natsCons 13 (natsCons 12 (natsCons 11 (natsCons 13 (natsCons 6 (natsCons 7 (natsCons 14 (natsCons 9 (natsCons 13 (natsCons 15 (natsCons 14 (natsCons 8 (natsCons 13 (natsCons 6 (natsCons 5 (natsCons 12 (natsCons 7 (natsCons 5 (natsCons 11 (natsCons 12 (natsCons 14 (natsCons 15 (natsCons 14 (natsCons 15 (natsCons 9 (natsCons 8 (natsCons 9 (natsCons 14 (natsCons 5 (natsCons 6 (natsCons 8 (natsCons 6 (natsCons 5 (natsCons 12 (natsCons 9 (natsCons 15 (natsCons 5 (natsCons 11 (natsCons 6 (natsCons 8 (natsCons 13 (natsCons 12 (natsCons 5 (natsCons 12 (natsCons 13 (natsCons 14 (natsCons 11 (natsCons 8 (natsCons 5 (natsCons 6 (natsNil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+def ripemdRightRotate : Nats := natsCons 8 (natsCons 9 (natsCons 9 (natsCons 11 (natsCons 13 (natsCons 15 (natsCons 15 (natsCons 5 (natsCons 7 (natsCons 7 (natsCons 8 (natsCons 11 (natsCons 14 (natsCons 14 (natsCons 12 (natsCons 6 (natsCons 9 (natsCons 13 (natsCons 15 (natsCons 7 (natsCons 12 (natsCons 8 (natsCons 9 (natsCons 11 (natsCons 7 (natsCons 7 (natsCons 12 (natsCons 7 (natsCons 6 (natsCons 15 (natsCons 13 (natsCons 11 (natsCons 9 (natsCons 7 (natsCons 15 (natsCons 11 (natsCons 8 (natsCons 6 (natsCons 6 (natsCons 14 (natsCons 12 (natsCons 13 (natsCons 5 (natsCons 14 (natsCons 13 (natsCons 13 (natsCons 7 (natsCons 5 (natsCons 15 (natsCons 5 (natsCons 8 (natsCons 11 (natsCons 14 (natsCons 14 (natsCons 6 (natsCons 14 (natsCons 6 (natsCons 9 (natsCons 12 (natsCons 9 (natsCons 12 (natsCons 5 (natsCons 15 (natsCons 8 (natsCons 8 (natsCons 5 (natsCons 12 (natsCons 9 (natsCons 12 (natsCons 5 (natsCons 14 (natsCons 6 (natsCons 8 (natsCons 13 (natsCons 6 (natsCons 5 (natsCons 15 (natsCons 13 (natsCons 11 (natsCons 11 (natsNil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+def ripemdLeftK : Nats := natsCons 0 (natsCons 1518500249 (natsCons 1859775393 (natsCons 2400959708 (natsCons 2840853838 (natsNil)))))
+def ripemdRightK : Nats := natsCons 1352829926 (natsCons 1548603684 (natsCons 1836072691 (natsCons 2053994217 (natsCons 0 (natsNil)))))
+def ripemdPowers : Nats := natsCons 1 (natsCons 2 (natsCons 4 (natsCons 8 (natsCons 16 (natsCons 32 (natsCons 64 (natsCons 128 (natsCons 256 (natsCons 512 (natsCons 1024 (natsCons 2048 (natsCons 4096 (natsCons 8192 (natsCons 16384 (natsCons 32768 (natsCons 65536 (natsCons 131072 (natsCons 262144 (natsCons 524288 (natsCons 1048576 (natsCons 2097152 (natsCons 4194304 (natsCons 8388608 (natsCons 16777216 (natsCons 33554432 (natsCons 67108864 (natsCons 134217728 (natsCons 268435456 (natsCons 536870912 (natsCons 1073741824 (natsCons 2147483648 (natsCons 4294967296 (natsNil)))))))))))))))))))))))))))))))))
+def ripemdRotateLeft : Nat -> Nat -> Nat := fun (word : Nat) (shift : Nat) =>
+  wordRotate32 word (hashWordAt ripemdPowers (natSub 32 shift)) (hashWordAt ripemdPowers shift)
+def ripemdFunction : Nat -> Nat -> Nat -> Nat -> Nat := fun (phase : Nat) (x : Nat) (y : Nat) (z : Nat) =>
+  case (natEq phase 0) with | 1 (unit : prod ()) => wordXor32 x (wordXor32 y z) | 0 (unit : prod ()) =>
+  case (natEq phase 1) with | 1 (unit : prod ()) => wordXor32 z (hashAnd32 x (wordXor32 y z)) | 0 (unit : prod ()) =>
+  case (natEq phase 2) with | 1 (unit : prod ()) => wordXor32 (hashOr32 x (hashNot32 y)) z | 0 (unit : prod ()) =>
+  case (natEq phase 3) with | 1 (unit : prod ()) => wordXor32 y (hashAnd32 z (wordXor32 x y)) | 0 (unit : prod ()) =>
+  wordXor32 x (hashOr32 y (hashNot32 z))
+def ripemdRound : Ripemd5 -> Nat -> Nat -> Nat -> Nat -> Ripemd5 :=
+  fun (state : Ripemd5) (phase : Nat) (word : Nat) (k : Nat) (shift : Nat) =>
+  let added : Nat := wordAdd32 (wordAdd32 state.0 (ripemdFunction phase state.1 state.2 state.3)) (wordAdd32 word k) in
+  let next : Nat := wordAdd32 (ripemdRotateLeft added shift) state.4 in
+  tuple (state.4, next, state.1, ripemdRotateLeft state.2 10, state.3)
+def ripemdCompress : Ripemd5 -> Bytes -> Ripemd5 := fun (hash : Ripemd5) (block : Bytes) =>
+  let words : Nats := hashWordReverseInto (hashReadWordsReversed (natEq 0 0) block) natsNil in
+  let count : Nat := natMul 5 (hashWordCount words) in
+  let final : prod (Nat, Ripemd5, Ripemd5) := stepsFold (prod (Nat, Ripemd5, Ripemd5)) steps64
+    (fun (state : prod (Nat, Ripemd5, Ripemd5)) => boolNat (natEq state.0 count))
+    (fun (state : prod (Nat, Ripemd5, Ripemd5)) =>
+      let phase : Nat := divQuotient (divide64 state.0 16) in
+      tuple (natAdd state.0 1,
+        ripemdRound state.1 phase (hashWordAt words (hashWordAt ripemdLeftIndex state.0))
+          (hashWordAt ripemdLeftK phase) (hashWordAt ripemdLeftRotate state.0),
+        ripemdRound state.2 (natSub 4 phase) (hashWordAt words (hashWordAt ripemdRightIndex state.0))
+          (hashWordAt ripemdRightK phase) (hashWordAt ripemdRightRotate state.0)))
+    (tuple (0, hash, hash)) in
+  tuple (wordAdd32 hash.1 (wordAdd32 final.1.2 final.2.3),
+    wordAdd32 hash.2 (wordAdd32 final.1.3 final.2.4),
+    wordAdd32 hash.3 (wordAdd32 final.1.4 final.2.0),
+    wordAdd32 hash.4 (wordAdd32 final.1.0 final.2.1),
+    wordAdd32 hash.0 (wordAdd32 final.1.1 final.2.2))
+def ripemd160 : Bytes -> Bytes := fun (bytes : Bytes) =>
+  let final : prod (Bytes, Ripemd5) := stepsFold (prod (Bytes, Ripemd5)) steps64
+    (fun (state : prod (Bytes, Ripemd5)) => bytesEmpty state.0)
+    (fun (state : prod (Bytes, Ripemd5)) => tuple (drop state.0 64, ripemdCompress state.1 (take 64 state.0)))
+    (tuple (hashPad64 (natEq 0 0) bytes, ripemdInitial)) in
+  hashWriteWords (natEq 0 0) (natsCons final.1.0 (natsCons final.1.1 (natsCons final.1.2 (natsCons final.1.3 (natsCons final.1.4 (natsNil))))))

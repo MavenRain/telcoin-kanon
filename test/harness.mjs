@@ -54,7 +54,7 @@ export function compileOracle({ name, sources, modules, oracle, extraAliases = {
 export async function harness({ name, sources, modules, oracle, fixtures, exports, extraAliases = {}, packages = 'digestif.c', sortModules = false }) {
   const { directory, runOracle } = compileOracle({ name, sources, modules, oracle, extraAliases, packages, sortModules });
   const wasm = join(directory, `${name}.wasm`);
-  build(wasm, ['emptyBytes', 'consBytes', 'bytesEmpty', 'bytesHead', 'bytesTail', 'seqBytesEmpty', 'seqBytesCons', ...exports], fixtures.map(path => resolve(project, path)));
+  build(wasm, ['emptyBytes', 'consBytes', 'bytesEmpty', 'bytesHead', 'bytesTail', 'seqBytesEmpty', 'seqBytesCons', ...exports], fixtures.map(path => resolve(project, path)), { scope: true });
   const bytes = readFileSync(wasm);
   const artifactDirectory = resolve(project, 'build/test-artifacts');
   mkdirSync(artifactDirectory, { recursive: true });

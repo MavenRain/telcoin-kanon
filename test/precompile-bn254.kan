@@ -1,0 +1,12 @@
+def precompileTestBn : Nat -> Bytes -> Bytes -> PrecompileOutcome := fun (address : Nat) (bytes : Bytes) (gas : Bytes) =>
+  case (hostIntParse gas) with | 0 (unit : prod ()) => precompileRejected | 1 (limit : HostInt) =>
+  case (natEq address 4) with | 1 (unit : prod ()) => precompileIdentity bytes limit | 0 (unit : prod ()) =>
+  case (natEq address 6) with | 1 (unit : prod ()) => precompileBnAdd bytes limit | 0 (unit : prod ()) =>
+  case (natEq address 7) with | 1 (unit : prod ()) => precompileBnMul bytes limit | 0 (unit : prod ()) =>
+  case (natEq address 8) with | 1 (unit : prod ()) => precompileBnPair bytes limit | 0 (unit : prod ()) => notAPrecompile
+def precompileTestKind : PrecompileOutcome -> Nat := fun (result : PrecompileOutcome) => match result as self in PrecompileOutcome return Nat with
+  | precompileSucceeded gas bytes => 1 | precompileRejected => 2 | notAPrecompile => 0
+def precompileTestGas : PrecompileOutcome -> Nat := fun (result : PrecompileOutcome) => match result as self in PrecompileOutcome return Nat with
+  | precompileSucceeded gas bytes => hostIntClampZero gas | precompileRejected => 0 | notAPrecompile => 0
+def precompileTestOutput : PrecompileOutcome -> Bytes := fun (result : PrecompileOutcome) => match result as self in PrecompileOutcome return Bytes with
+  | precompileSucceeded gas bytes => bytes | precompileRejected => bytesNil | notAPrecompile => bytesNil

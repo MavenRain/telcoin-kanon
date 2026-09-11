@@ -1,0 +1,39 @@
+-- SHA-256 as specified in RFC 6234, sections 4 through 6.
+def sha256Constants : Nats := natsCons 1116352408 (natsCons 1899447441 (natsCons 3049323471 (natsCons 3921009573 (natsCons 961987163 (natsCons 1508970993 (natsCons 2453635748 (natsCons 2870763221 (natsCons 3624381080 (natsCons 310598401 (natsCons 607225278 (natsCons 1426881987 (natsCons 1925078388 (natsCons 2162078206 (natsCons 2614888103 (natsCons 3248222580 (natsCons 3835390401 (natsCons 4022224774 (natsCons 264347078 (natsCons 604807628 (natsCons 770255983 (natsCons 1249150122 (natsCons 1555081692 (natsCons 1996064986 (natsCons 2554220882 (natsCons 2821834349 (natsCons 2952996808 (natsCons 3210313671 (natsCons 3336571891 (natsCons 3584528711 (natsCons 113926993 (natsCons 338241895 (natsCons 666307205 (natsCons 773529912 (natsCons 1294757372 (natsCons 1396182291 (natsCons 1695183700 (natsCons 1986661051 (natsCons 2177026350 (natsCons 2456956037 (natsCons 2730485921 (natsCons 2820302411 (natsCons 3259730800 (natsCons 3345764771 (natsCons 3516065817 (natsCons 3600352804 (natsCons 4094571909 (natsCons 275423344 (natsCons 430227734 (natsCons 506948616 (natsCons 659060556 (natsCons 883997877 (natsCons 958139571 (natsCons 1322822218 (natsCons 1537002063 (natsCons 1747873779 (natsCons 1955562222 (natsCons 2024104815 (natsCons 2227730452 (natsCons 2361852424 (natsCons 2428436474 (natsCons 2756734187 (natsCons 3204031479 (natsCons 3329325298 (natsNil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+def sha256Initial : Blake8 := tuple (1779033703, 3144134277, 1013904242, 2773480762, 1359893119, 2600822924, 528734635, 1541459225)
+def sha256Big0 : Nat -> Nat := fun (x : Nat) =>
+  wordXor32 (wordRotate32 x 4 1073741824) (wordXor32 (wordRotate32 x 8192 524288) (wordRotate32 x 4194304 1024))
+def sha256Big1 : Nat -> Nat := fun (x : Nat) =>
+  wordXor32 (wordRotate32 x 64 67108864) (wordXor32 (wordRotate32 x 2048 2097152) (wordRotate32 x 33554432 128))
+def sha256Small0 : Nat -> Nat := fun (x : Nat) =>
+  wordXor32 (wordRotate32 x 128 33554432) (wordXor32 (wordRotate32 x 262144 16384) (divQuotient (divide64 x 8)))
+def sha256Small1 : Nat -> Nat := fun (x : Nat) =>
+  wordXor32 (wordRotate32 x 131072 32768) (wordXor32 (wordRotate32 x 524288 8192) (divQuotient (divide64 x 1024)))
+def sha256Schedule : Bytes -> Nats := fun (block : Bytes) =>
+  let words : Nats := hashReadWordsReversed (natEq 0 1) block in
+  let expanded : prod (Nat, Nats) := stepsFold (prod (Nat, Nats)) steps64
+    (fun (state : prod (Nat, Nats)) => boolNat (natEq 64 state.0))
+    (fun (state : prod (Nat, Nats)) =>
+      let next : Nat := wordAdd32 (wordAdd32 (sha256Small1 (hashWordAt state.1 1)) (hashWordAt state.1 6))
+        (wordAdd32 (sha256Small0 (hashWordAt state.1 14)) (hashWordAt state.1 15)) in
+      tuple (natAdd state.0 1, natsCons next state.1))
+    (tuple (hashWordCount words, words)) in hashWordReverseInto expanded.1 natsNil
+def sha256Round : Blake8 -> Nat -> Nat -> Blake8 := fun (s : Blake8) (k : Nat) (word : Nat) =>
+  let ch : Nat := wordXor32 s.6 (hashAnd32 s.4 (wordXor32 s.5 s.6)) in
+  let maj : Nat := wordXor32 (hashAnd32 s.0 s.1) (hashAnd32 (wordXor32 s.0 s.1) s.2) in
+  let t1 : Nat := wordAdd32 (wordAdd32 s.7 (sha256Big1 s.4)) (wordAdd32 ch (wordAdd32 k word)) in
+  let t2 : Nat := wordAdd32 (sha256Big0 s.0) maj in
+  tuple (wordAdd32 t1 t2, s.0, s.1, s.2, wordAdd32 s.3 t1, s.4, s.5, s.6)
+def rec sha256Rounds : Nats -> Nats -> Blake8 -> Blake8 := fun (words : Nats) (constants : Nats) (state : Blake8) =>
+  match words as self in Nats return Blake8 with | natsNil => state
+  | natsCons word rest => match constants as remaining in Nats return Blake8 with | natsNil => state
+    | natsCons k ks => sha256Rounds rest ks (sha256Round state k word)
+def sha256Compress : Blake8 -> Bytes -> Blake8 := fun (hash : Blake8) (block : Bytes) =>
+  let result : Blake8 := sha256Rounds (sha256Schedule block) sha256Constants hash in
+  tuple (wordAdd32 hash.0 result.0, wordAdd32 hash.1 result.1, wordAdd32 hash.2 result.2, wordAdd32 hash.3 result.3, wordAdd32 hash.4 result.4, wordAdd32 hash.5 result.5, wordAdd32 hash.6 result.6, wordAdd32 hash.7 result.7)
+def sha256 : Bytes -> Bytes := fun (bytes : Bytes) =>
+  let final : prod (Bytes, Blake8) := stepsFold (prod (Bytes, Blake8)) steps64
+    (fun (state : prod (Bytes, Blake8)) => bytesEmpty state.0)
+    (fun (state : prod (Bytes, Blake8)) => tuple (drop state.0 64, sha256Compress state.1 (take 64 state.0)))
+    (tuple (hashPad64 (natEq 0 1) bytes, sha256Initial)) in
+  hashWriteWords (natEq 0 1) (natsCons final.1.0 (natsCons final.1.1 (natsCons final.1.2 (natsCons final.1.3 (natsCons final.1.4 (natsCons final.1.5 (natsCons final.1.6 (natsCons final.1.7 (natsNil)))))))))

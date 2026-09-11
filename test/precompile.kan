@@ -1,0 +1,5 @@
+def precompileTestInvoke : Bytes -> Bytes -> Bytes -> PrecompileOutcome :=
+  fun (rawAddress : Bytes) (input : Bytes) (gas : Bytes) =>
+  case (addressOfBytes rawAddress) with | 0 (unit : prod ()) => precompileRejected | 1 (address : Address) =>
+  case (hostIntParse gas) with | 0 (unit : prod ()) => precompileRejected | 1 (limit : HostInt) =>
+    precompileInvoke address input limit

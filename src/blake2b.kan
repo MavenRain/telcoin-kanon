@@ -1,0 +1,22 @@
+def blake2bCompress : Nat -> Blake8 -> Blake16 -> Nat -> Nat -> Bool -> Blake8 :=
+  fun (rounds : Nat) (h : Blake8) (message : Blake16) (t0 : Nat) (t1 : Nat) (final : Bool) =>
+    let initial : Blake16 := tuple (h.0, h.1, h.2, h.3, h.4, h.5, h.6, h.7, 7640891576956012808, 13503953896175478587, 4354685564936845355, 11912009170470909681, wordXor64 5840696475078001361 t0, wordXor64 11170449401992604703 t1,
+      choose final 16175846103906665108 2270897969802886507, 6620516959819538809) in
+    let result : prod (Nat, Blake16) := stepsFold (prod (Nat, Blake16)) steps64
+      (fun (state : prod (Nat, Blake16)) => boolNat (natEq state.0 rounds))
+      (fun (state : prod (Nat, Blake16)) => tuple (natAdd state.0 1, blake2bRound (remainder64 state.0 10) message state.1)) (tuple (0, initial)) in
+    let v : Blake16 := result.1 in tuple (wordXor64 h.0 (wordXor64 v.0 v.8), wordXor64 h.1 (wordXor64 v.1 v.9), wordXor64 h.2 (wordXor64 v.2 v.10), wordXor64 h.3 (wordXor64 v.3 v.11), wordXor64 h.4 (wordXor64 v.4 v.12), wordXor64 h.5 (wordXor64 v.5 v.13), wordXor64 h.6 (wordXor64 v.6 v.14), wordXor64 h.7 (wordXor64 v.7 v.15))
+def blake2bReadWord : Bytes -> Nat -> Nat := fun (bytes : Bytes) (offset : Nat) => (keccakReadWord (drop bytes offset)).0
+def blake2bRead8 : Bytes -> Nat -> Blake8 := fun (bytes : Bytes) (offset : Nat) => tuple (blake2bReadWord bytes (natAdd offset 0), blake2bReadWord bytes (natAdd offset 8), blake2bReadWord bytes (natAdd offset 16), blake2bReadWord bytes (natAdd offset 24), blake2bReadWord bytes (natAdd offset 32), blake2bReadWord bytes (natAdd offset 40), blake2bReadWord bytes (natAdd offset 48), blake2bReadWord bytes (natAdd offset 56))
+def blake2bRead16 : Bytes -> Nat -> Blake16 := fun (bytes : Bytes) (offset : Nat) => tuple (blake2bReadWord bytes (natAdd offset 0), blake2bReadWord bytes (natAdd offset 8), blake2bReadWord bytes (natAdd offset 16), blake2bReadWord bytes (natAdd offset 24), blake2bReadWord bytes (natAdd offset 32), blake2bReadWord bytes (natAdd offset 40), blake2bReadWord bytes (natAdd offset 48), blake2bReadWord bytes (natAdd offset 56), blake2bReadWord bytes (natAdd offset 64), blake2bReadWord bytes (natAdd offset 72), blake2bReadWord bytes (natAdd offset 80), blake2bReadWord bytes (natAdd offset 88), blake2bReadWord bytes (natAdd offset 96), blake2bReadWord bytes (natAdd offset 104), blake2bReadWord bytes (natAdd offset 112), blake2bReadWord bytes (natAdd offset 120))
+def blake2bWriteWord : Nat -> Bytes := fun (value : Nat) => reverse (drop (u256ToBeBytes (u256Value value)) 24)
+def blake2bEncode : Blake8 -> Bytes := fun (state : Blake8) => append (blake2bWriteWord state.0) (append (blake2bWriteWord state.1) (append (blake2bWriteWord state.2) (append (blake2bWriteWord state.3) (append (blake2bWriteWord state.4) (append (blake2bWriteWord state.5) (append (blake2bWriteWord state.6) (append (blake2bWriteWord state.7) (bytesNil))))))))
+def precompileBlake2f : Bytes -> HostInt -> PrecompileOutcome := fun (bytes : Bytes) (limit : HostInt) =>
+  case (natEq (bytesLength bytes) 213) with | 0 (unit : prod ()) => precompileRejected | 1 (unit : prod ()) =>
+  let rounds : Nat := u256ReadBe (take 4 bytes) 0 in
+  case (precompileHasGas limit rounds) with | 0 (unit : prod ()) => precompileRejected | 1 (unit : prod ()) =>
+  let flag : Nat := bytesHead (drop bytes 212) in
+  case (natLt flag 2) with | 0 (unit : prod ()) => precompileRejected | 1 (unit : prod ()) =>
+  let output : Blake8 := blake2bCompress rounds (blake2bRead8 bytes 4) (blake2bRead16 bytes 68)
+    (blake2bReadWord bytes 196) (blake2bReadWord bytes 204) (natEq flag 1) in
+  precompileSucceeded (hostIntPositive rounds) (blake2bEncode output)

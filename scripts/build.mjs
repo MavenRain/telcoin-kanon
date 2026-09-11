@@ -16,16 +16,18 @@ export const sources = ['core', 'nat64', 'scalars', 'bcs', 'codec', 'fixed', 'sc
   'bullshark', 'proposer_types', 'machine_collections', 'proposer', 'node_types', 'node_collections', 'node',
   'consensus_block', 'consensus_chain', 'consensus_record', 'execution_collections', 'engine', 'replay', 'consensus_store',
   'sim_collections', 'sim_types', 'sim', 'sim_service', 'u256', 'storage_collections', 'state_types', 'state_collections', 'state',
-  'alu', 'evm_types', 'opcode', 'host_int_ops', 'modular256', 'secp256k1', 'evm_collections', 'evm_enums', 'evm_stack', 'access', 'evm_memory', 'gas', 'evm_data', 'transient',
+  'alu', 'evm_types', 'opcode', 'host_int_ops', 'modular256', 'field_power', 'big_natural', 'secp256k1', 'bn254_field', 'bn254_constants', 'bn254_frobenius', 'bn254_curve', 'bn254_pairing', 'precompile_types', 'precompile_common', 'precompile_bn254', 'precompile_modexp', 'precompile_ecrecover', 'evm_collections', 'evm_enums', 'evm_stack', 'access', 'evm_memory', 'gas', 'evm_data', 'transient',
+  'hash32_words', 'sha256', 'ripemd160', 'precompile_hashes',
   'rlp_types', 'rlp_collections', 'rlp', 'nibbles', 'trie_collections', 'trie_node', 'trie', 'evm_log', 'log_collections', 'log_journal',
   'evm_spec', 'env_collections', 'block_hashes', 'lifecycle', 'env', 'effects', 'execution_primitives', 'fork_schedule',
-  'withdrawal', 'block_collections', 'state_roots', 'bloom', 'block_context', 'interpreter_types', 'interpreter_machine', 'interpreter_state', 'interpreter_frames', 'interpreter_calls', 'interpreter', 'receipt', 'receipt_collections', 'receipt_roots', 'api', 'service'].map(name => resolve(project, `src/${name}.kan`));
-export function build(output, exports, extraSources = []) {
+  'withdrawal', 'block_collections', 'state_roots', 'bloom', 'block_context', 'blake2b_rounds', 'blake2b', 'precompile', 'precompile_service', 'interpreter_types', 'interpreter_machine', 'interpreter_state', 'interpreter_frames', 'interpreter_calls', 'interpreter', 'interpreter_default', 'receipt', 'receipt_collections', 'receipt_roots', 'api', 'service'].map(name => resolve(project, `src/${name}.kan`));
+export function build(output, exports, extraSources = [], { scope = false } = {}) {
   const hash = createHash('sha256').update(readFileSync(compiler)).digest('hex');
   if (hash !== lock.toolchain.compilerSha256) throw new Error('Compiler differs from source-lock.json. Review and repin before building.');
   let inputs = [...sources, ...extraSources];
   const projection = `${output}.kan`;
-  if (extraSources.length) {
+  const projected = scope || extraSources.length > 0;
+  if (projected) {
     const closure = sourceClosure(inputs.map(path => ({ path, text: readFileSync(path, 'utf8') })), exports);
     writeFileSync(projection, closure.text);
     inputs = [projection];
@@ -37,7 +39,7 @@ export function build(output, exports, extraSources = []) {
       ...exports.flatMap(name => ['--export', name])], { encoding: 'utf8', timeout: 600000, maxBuffer: 4 * 1024 * 1024 });
     if (built.error || built.status !== 0) throw new Error(built.error?.message ?? built.stderr ?? `Compiler exited ${built.status}`);
   } finally {
-    if (extraSources.length) rmSync(projection, { force: true });
+    if (projected) rmSync(projection, { force: true });
   }
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -1,0 +1,2 @@
+def interpreterRun : EvmEnv -> EvmCode -> Gas -> EvmEffects -> EvmOutcome :=
+  interpreterRunWithPrecompiles precompileInvoke

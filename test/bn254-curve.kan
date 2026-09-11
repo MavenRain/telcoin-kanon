@@ -1,0 +1,35 @@
+def bnTestG1 : Nat -> BnG1 -> Bytes -> ValueOption BnG1 := fun (op : Nat) (a : BnG1) (right : Bytes) =>
+  case (natEq op 0) with | 1 (unit : prod ()) => valueSome BnG1 a | 0 (unit : prod ()) =>
+  case (natEq op 1) with | 1 (unit : prod ()) => valueSome BnG1 (bnG1Neg a) | 0 (unit : prod ()) =>
+  case (natEq op 2) with | 1 (unit : prod ()) => valueSome BnG1 (bnG1Double a) | 0 (unit : prod ()) =>
+  case (natEq op 3) with | 1 (unit : prod ()) => (case (bnG1Decode right) with
+    | 0 (unit : prod ()) => valueNone BnG1 | 1 (b : BnG1) => valueSome BnG1 (bnG1Add a b))
+  | 0 (unit : prod ()) => valueSome BnG1 (bnG1Multiply right a)
+def bnTestG2 : Nat -> BnG2 -> Bytes -> ValueOption BnG2 := fun (op : Nat) (a : BnG2) (right : Bytes) =>
+  case (natEq op 0) with | 1 (unit : prod ()) => valueSome BnG2 a | 0 (unit : prod ()) =>
+  case (natEq op 1) with | 1 (unit : prod ()) => valueSome BnG2 (bnG2Neg a) | 0 (unit : prod ()) =>
+  case (natEq op 2) with | 1 (unit : prod ()) => valueSome BnG2 (bnG2Double a) | 0 (unit : prod ()) =>
+  case (natEq op 3) with | 1 (unit : prod ()) => (case (bnG2Decode right) with
+    | 0 (unit : prod ()) => valueNone BnG2 | 1 (b : BnG2) => valueSome BnG2 (bnG2Add a b))
+  | 0 (unit : prod ()) => valueSome BnG2 (bnG2Multiply right a)
+def evm_test_bn_curve : Nat -> Nat -> Bytes -> Bytes -> Bytes := fun (group : Nat) (op : Nat) (left : Bytes) (right : Bytes) =>
+  case (natEq group 1) with
+  | 1 (unit : prod ()) => bnTestOptional BnG1 bnG1Encode (case (bnG1Decode left) with
+    | 0 (unit : prod ()) => valueNone BnG1 | 1 (point : BnG1) => bnTestG1 op point right)
+  | 0 (unit : prod ()) => bnTestOptional BnG2 bnG2Encode (case (bnG2Decode left) with
+    | 0 (unit : prod ()) => valueNone BnG2 | 1 (point : BnG2) => bnTestG2 op point right)
+def evm_test_bn_pair : Nat -> Bytes -> Bytes -> ValueOption BnFq12 := fun (op : Nat) (left : Bytes) (right : Bytes) =>
+  case (bnG1Decode left) with | 0 (unit : prod ()) => valueNone BnFq12 | 1 (p : BnG1) =>
+  case (bnG2Decode right) with | 0 (unit : prod ()) => valueNone BnFq12 | 1 (q : BnG2) =>
+  case (natEq op 0) with | 1 (unit : prod ()) => valueSome BnFq12 (bnMillerLoop p q) | 0 (unit : prod ()) => bnPair p q
+def bnTestPairText : ValueOption BnFq12 -> Bytes := fun (value : ValueOption BnFq12) => bnTestOptional BnFq12 bn12Encode value
+def bnTestPairs : Bytes -> ValueOption BnPairs := fun (bytes : Bytes) =>
+  let result : prod (Bytes, ValueOption BnPairs) := stepsFold (prod (Bytes, ValueOption BnPairs)) steps64
+    (fun (state : prod (Bytes, ValueOption BnPairs)) => case state.1 with | 0 (unit : prod ()) => 1 | 1 (pairs : BnPairs) => boolNat (natEq (bytesLength state.0) 0))
+    (fun (state : prod (Bytes, ValueOption BnPairs)) => tuple (drop state.0 192,
+      case state.1 with | 0 (unit : prod ()) => valueNone BnPairs | 1 (pairs : BnPairs) =>
+      case (bnG1Decode (take 64 state.0)) with | 0 (unit : prod ()) => valueNone BnPairs | 1 (p : BnG1) =>
+      case (bnG2Decode (take 128 (drop state.0 64))) with | 0 (unit : prod ()) => valueNone BnPairs | 1 (q : BnG2) => valueSome BnPairs (bnPairsCons p q pairs)))
+    (tuple (bytes, valueSome BnPairs bnPairsNil)) in result.1
+def evm_test_bn_check : Bytes -> Bytes := fun (bytes : Bytes) => case (bnTestPairs bytes) with
+  | 0 (unit : prod ()) => b"none" | 1 (pairs : BnPairs) => case (bnPairingCheck pairs) with | 0 (unit : prod ()) => b"0" | 1 (unit : prod ()) => b"1"

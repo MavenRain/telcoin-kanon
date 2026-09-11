@@ -1,0 +1,100 @@
+-- Internal field values are canonical residues. Wire decoders reject values at p.
+def bnPrime : Nat := 21888242871839275222246405745257275088696311157297823662689037894645226208583
+def bnOrder : Nat := 21888242871839275222246405745257275088548364400416034343698204186575808495617
+def bnFq : Nat -> Nat := fun (value : Nat) => modular256Reduce bnPrime value
+def bnAdd : Nat -> Nat -> Nat := fun (a : Nat) (b : Nat) =>
+  let total : Nat := natAdd a b in choose (natLt total bnPrime) total (natSub total bnPrime)
+def bnSub : Nat -> Nat -> Nat := fun (a : Nat) (b : Nat) => modular256Sub bnPrime a b
+def bnReductionPowers : Powers := powersBuild fuel256 bnPrime 1 powersNil
+def bnSmallReductionPowers : Powers := powersCons (natMul bnPrime 8) 8 (powersCons (natMul bnPrime 4) 4 (powersCons (natMul bnPrime 2) 2 (powersCons bnPrime 1 powersNil)))
+def bnMul : Nat -> Nat -> Nat := fun (a : Nat) (b : Nat) =>
+  let value : Nat := natMul a b in case (natLt value bnPrime) with
+  | 1 (unit : prod ()) => value
+  | 0 (unit : prod ()) => divRemainder (divideScan
+    (case (natLt value (natMul bnPrime 16)) with | 1 (unit : prod ()) => bnSmallReductionPowers | 0 (unit : prod ()) => bnReductionPowers) value 0)
+def bnNeg : Nat -> Nat := fun (a : Nat) => bnSub 0 a
+def bnSquare : Nat -> Nat := fun (a : Nat) => bnMul a a
+def bnInverse : Nat -> ValueOption Nat := fun (a : Nat) => modular256Inverse bnPrime a
+def bnPower : Nat -> Bytes -> Nat := fun (a : Nat) (exponent : Bytes) => modular256Power bnPrime a exponent
+def bnDecode : Bytes -> ValueOption Nat := fun (bytes : Bytes) =>
+  case (natEq (bytesLength bytes) 32) with | 0 (unit : prod ()) => valueNone Nat | 1 (unit : prod ()) =>
+    let value : Nat := u256ReadBe bytes 0 in
+    case (natLt value bnPrime) with | 0 (unit : prod ()) => valueNone Nat | 1 (unit : prod ()) => valueSome Nat value
+def bnEncode : Nat -> Bytes := fun (value : Nat) => u256ToBeBytes (u256Value value)
+def BnFq2 : Type 0 := prod (Nat, Nat)
+def bn2Zero : BnFq2 := tuple (0, 0)
+def bn2One : BnFq2 := tuple (1, 0)
+def bn2Xi : BnFq2 := tuple (9, 1)
+def bn2Equal : BnFq2 -> BnFq2 -> Bool := fun (a : BnFq2) (b : BnFq2) => boolAnd (natEq a.0 b.0) (natEq a.1 b.1)
+def bn2Add : BnFq2 -> BnFq2 -> BnFq2 := fun (a : BnFq2) (b : BnFq2) => tuple (bnAdd a.0 b.0, bnAdd a.1 b.1)
+def bn2Sub : BnFq2 -> BnFq2 -> BnFq2 := fun (a : BnFq2) (b : BnFq2) => tuple (bnSub a.0 b.0, bnSub a.1 b.1)
+def bn2Neg : BnFq2 -> BnFq2 := fun (a : BnFq2) => tuple (bnNeg a.0, bnNeg a.1)
+def bn2Conjugate : BnFq2 -> BnFq2 := fun (a : BnFq2) => tuple (a.0, bnNeg a.1)
+def bn2Scale : Nat -> BnFq2 -> BnFq2 := fun (scalar : Nat) (a : BnFq2) => tuple (bnMul scalar a.0, bnMul scalar a.1)
+def bn2Mul : BnFq2 -> BnFq2 -> BnFq2 := fun (a : BnFq2) (b : BnFq2) =>
+  case (boolOr (bn2Equal a bn2Zero) (bn2Equal b bn2Zero)) with
+  | 1 (unit : prod ()) => bn2Zero | 0 (unit : prod ()) =>
+  let v0 : Nat := bnMul a.0 b.0 in let v1 : Nat := bnMul a.1 b.1 in
+  tuple (bnSub v0 v1, bnSub (bnSub (bnMul (bnAdd a.0 a.1) (bnAdd b.0 b.1)) v0) v1)
+def bn2Square : BnFq2 -> BnFq2 := fun (a : BnFq2) =>
+  case (bn2Equal a bn2Zero) with | 1 (unit : prod ()) => bn2Zero | 0 (unit : prod ()) =>
+  let cross : Nat := bnMul a.0 a.1 in tuple (bnMul (bnAdd a.0 a.1) (bnSub a.0 a.1), bnAdd cross cross)
+def bn2Inverse : BnFq2 -> ValueOption BnFq2 := fun (a : BnFq2) =>
+  case (bnInverse (bnAdd (bnSquare a.0) (bnSquare a.1))) with
+  | 0 (unit : prod ()) => valueNone BnFq2 | 1 (inverse : Nat) => valueSome BnFq2 (bn2Scale inverse (bn2Conjugate a))
+def bn2Power : BnFq2 -> Bytes -> BnFq2 := fun (a : BnFq2) (exponent : Bytes) => powerWithSquareBytes BnFq2 bn2Square bn2Mul a bn2One exponent
+def bn2Frobenius : HostInt -> BnFq2 -> BnFq2 := fun (k : HostInt) (a : BnFq2) =>
+  case (natEq (remainder64 (hostIntBits k) 2) 0) with | 1 (unit : prod ()) => a | 0 (unit : prod ()) => bn2Conjugate a
+def bn2Encode : BnFq2 -> Bytes := fun (a : BnFq2) => append (bnEncode a.0) (bnEncode a.1)
+def BnFq6 : Type 0 := prod (BnFq2, BnFq2, BnFq2)
+def bn6Zero : BnFq6 := tuple (bn2Zero, bn2Zero, bn2Zero)
+def bn6One : BnFq6 := tuple (bn2One, bn2Zero, bn2Zero)
+def bn6Equal : BnFq6 -> BnFq6 -> Bool := fun (a : BnFq6) (b : BnFq6) => boolAnd (bn2Equal a.0 b.0) (boolAnd (bn2Equal a.1 b.1) (bn2Equal a.2 b.2))
+def bn6Add : BnFq6 -> BnFq6 -> BnFq6 := fun (a : BnFq6) (b : BnFq6) => tuple (bn2Add a.0 b.0, bn2Add a.1 b.1, bn2Add a.2 b.2)
+def bn6Sub : BnFq6 -> BnFq6 -> BnFq6 := fun (a : BnFq6) (b : BnFq6) => tuple (bn2Sub a.0 b.0, bn2Sub a.1 b.1, bn2Sub a.2 b.2)
+def bn6Neg : BnFq6 -> BnFq6 := fun (a : BnFq6) => tuple (bn2Neg a.0, bn2Neg a.1, bn2Neg a.2)
+def bn6Scale : BnFq2 -> BnFq6 -> BnFq6 := fun (scalar : BnFq2) (a : BnFq6) => tuple (bn2Mul scalar a.0, bn2Mul scalar a.1, bn2Mul scalar a.2)
+def bn6MulByV : BnFq6 -> BnFq6 := fun (a : BnFq6) => tuple (bn2Mul bn2Xi a.2, a.0, a.1)
+def bn6Mul : BnFq6 -> BnFq6 -> BnFq6 := fun (a : BnFq6) (b : BnFq6) =>
+  case (boolOr (bn6Equal a bn6Zero) (bn6Equal b bn6Zero)) with
+  | 1 (unit : prod ()) => bn6Zero | 0 (unit : prod ()) =>
+  let v0 : BnFq2 := bn2Mul a.0 b.0 in let v1 : BnFq2 := bn2Mul a.1 b.1 in let v2 : BnFq2 := bn2Mul a.2 b.2 in tuple (
+    bn2Add v0 (bn2Mul bn2Xi (bn2Sub (bn2Sub (bn2Mul (bn2Add a.1 a.2) (bn2Add b.1 b.2)) v1) v2)),
+    bn2Add (bn2Sub (bn2Sub (bn2Mul (bn2Add a.0 a.1) (bn2Add b.0 b.1)) v0) v1) (bn2Mul bn2Xi v2),
+    bn2Add (bn2Sub (bn2Sub (bn2Mul (bn2Add a.0 a.2) (bn2Add b.0 b.2)) v0) v2) v1)
+def bn6Square : BnFq6 -> BnFq6 := fun (a : BnFq6) => bn6Mul a a
+def bn6Inverse : BnFq6 -> ValueOption BnFq6 := fun (a : BnFq6) =>
+  let s0 : BnFq2 := bn2Sub (bn2Square a.0) (bn2Mul bn2Xi (bn2Mul a.1 a.2)) in
+  let s1 : BnFq2 := bn2Sub (bn2Mul bn2Xi (bn2Square a.2)) (bn2Mul a.0 a.1) in
+  let s2 : BnFq2 := bn2Sub (bn2Square a.1) (bn2Mul a.0 a.2) in
+  let norm : BnFq2 := bn2Add (bn2Mul a.0 s0) (bn2Mul bn2Xi (bn2Add (bn2Mul a.2 s1) (bn2Mul a.1 s2))) in
+  case (bn2Inverse norm) with | 0 (unit : prod ()) => valueNone BnFq6
+  | 1 (inverse : BnFq2) => valueSome BnFq6 (bn6Scale inverse (tuple (s0, s1, s2)))
+def bn6Power : BnFq6 -> Bytes -> BnFq6 := fun (a : BnFq6) (exponent : Bytes) => powerWithSquareBytes BnFq6 bn6Square bn6Mul a bn6One exponent
+def bn6Encode : BnFq6 -> Bytes := fun (a : BnFq6) => append (bn2Encode a.0) (append (bn2Encode a.1) (bn2Encode a.2))
+def BnFq12 : Type 0 := prod (BnFq6, BnFq6)
+def bn12Zero : BnFq12 := tuple (bn6Zero, bn6Zero)
+def bn12One : BnFq12 := tuple (bn6One, bn6Zero)
+def bn12Equal : BnFq12 -> BnFq12 -> Bool := fun (a : BnFq12) (b : BnFq12) => boolAnd (bn6Equal a.0 b.0) (bn6Equal a.1 b.1)
+def bn12Add : BnFq12 -> BnFq12 -> BnFq12 := fun (a : BnFq12) (b : BnFq12) => tuple (bn6Add a.0 b.0, bn6Add a.1 b.1)
+def bn12Sub : BnFq12 -> BnFq12 -> BnFq12 := fun (a : BnFq12) (b : BnFq12) => tuple (bn6Sub a.0 b.0, bn6Sub a.1 b.1)
+def bn12Neg : BnFq12 -> BnFq12 := fun (a : BnFq12) => tuple (bn6Neg a.0, bn6Neg a.1)
+def bn12Conjugate : BnFq12 -> BnFq12 := fun (a : BnFq12) => tuple (a.0, bn6Neg a.1)
+def bn12Mul : BnFq12 -> BnFq12 -> BnFq12 := fun (a : BnFq12) (b : BnFq12) =>
+  case (boolOr (bn12Equal a bn12Zero) (bn12Equal b bn12Zero)) with
+  | 1 (unit : prod ()) => bn12Zero | 0 (unit : prod ()) =>
+  let v0 : BnFq6 := bn6Mul a.0 b.0 in let v1 : BnFq6 := bn6Mul a.1 b.1 in
+  tuple (bn6Add v0 (bn6MulByV v1), bn6Sub (bn6Sub (bn6Mul (bn6Add a.0 a.1) (bn6Add b.0 b.1)) v0) v1)
+def bn12Square : BnFq12 -> BnFq12 := fun (a : BnFq12) =>
+  case (bn12Equal a bn12Zero) with | 1 (unit : prod ()) => bn12Zero | 0 (unit : prod ()) =>
+  let cross : BnFq6 := bn6Mul a.0 a.1 in
+  tuple (bn6Sub (bn6Sub (bn6Mul (bn6Add a.0 a.1) (bn6Add a.0 (bn6MulByV a.1))) cross) (bn6MulByV cross), bn6Add cross cross)
+def bn12Inverse : BnFq12 -> ValueOption BnFq12 := fun (a : BnFq12) =>
+  case (bn6Inverse (bn6Sub (bn6Square a.0) (bn6MulByV (bn6Square a.1)))) with
+  | 0 (unit : prod ()) => valueNone BnFq12
+  | 1 (inverse : BnFq6) => valueSome BnFq12 (tuple (bn6Mul a.0 inverse, bn6Neg (bn6Mul a.1 inverse)))
+def bn12Power : BnFq12 -> Bytes -> BnFq12 := fun (a : BnFq12) (exponent : Bytes) =>
+  powerAbsorbingBytes BnFq12 bn12Square bn12Mul (fun (value : BnFq12) => bn12Equal value bn12Zero) a bn12One exponent
+def bn12Sparse : BnFq2 -> BnFq2 -> BnFq2 -> BnFq12 -> BnFq12 := fun (c0 : BnFq2) (c3 : BnFq2) (c4 : BnFq2) (a : BnFq12) =>
+  bn12Mul a (tuple (tuple (c0, bn2Zero, bn2Zero), tuple (c3, c4, bn2Zero)))
+def bn12Encode : BnFq12 -> Bytes := fun (a : BnFq12) => append (bn6Encode a.0) (bn6Encode a.1)

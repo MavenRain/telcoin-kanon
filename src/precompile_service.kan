@@ -1,0 +1,11 @@
+def apiPrecompileResult : PrecompileOutcome -> Bytes := fun (outcome : PrecompileOutcome) =>
+  match outcome as self in PrecompileOutcome return Bytes with
+  | notAPrecompile => b"not-precompile"
+  | precompileRejected => b"rejected"
+  | precompileSucceeded used output => append b"s:" (append (decimal64 (hostIntClampZero used)) (append b":" (bytesHex output)))
+def apiPrecompile : Bytes -> Bytes -> Bytes -> Bytes := fun (rawAddress : Bytes) (rawGas : Bytes) (input : Bytes) =>
+  case (addressOfBytes rawAddress) with
+  | 0 (unit : prod ()) => b"error: Address must contain exactly 20 bytes."
+  | 1 (address : Address) => case (hostIntParse rawGas) with
+    | 0 (unit : prod ()) => b"error: Expected a signed decimal gas limit in the OCaml host-int range."
+    | 1 (limit : HostInt) => apiPrecompileResult (precompileInvoke address input limit)

@@ -1,0 +1,29 @@
+def precompileBitLength256 : Nat -> Nat := fun (value : Nat) =>
+  let result : prod (Nat, Nat) := stepsFold (prod (Nat, Nat)) steps32
+    (fun (state : prod (Nat, Nat)) => boolNat (natLt value state.0))
+    (fun (state : prod (Nat, Nat)) => tuple (natMul state.0 2, natAdd state.1 1)) (tuple (1, 0)) in result.1
+def precompileModexpIterations : Nat -> Nat -> Nat := fun (length : Nat) (high : Nat) =>
+  let bits : Nat := precompileBitLength256 high in
+  maxNat 1 (case (natLt 32 length) with
+    | 0 (unit : prod ()) => natSub bits 1
+    | 1 (unit : prod ()) => natAdd (natMul 8 (natSub length 32)) (natSub (maxNat 1 bits) 1))
+def precompileModexpCost : Nat -> Nat -> Nat -> Nat -> Nat := fun (baseLength : Nat) (exponentLength : Nat) (modulusLength : Nat) (high : Nat) =>
+  let words : Nat := divQuotient (bigNaturalDividePositive (natAdd (maxNat baseLength modulusLength) 7) 8) in
+  maxNat 200 (divQuotient (bigNaturalDividePositive (natMul (natMul words words) (precompileModexpIterations exponentLength high)) 3))
+def precompileModexp : Bytes -> HostInt -> PrecompileOutcome := fun (bytes : Bytes) (limit : HostInt) =>
+  case (precompileHasGas limit 200) with | 0 (unit : prod ()) => precompileRejected | 1 (unit : prod ()) =>
+  let baseLength : Nat := u256ReadBe (precompileWindow bytes 0 32) 0 in
+  let exponentLength : Nat := u256ReadBe (precompileWindow bytes 32 32) 0 in
+  let modulusLength : Nat := u256ReadBe (precompileWindow bytes 64 32) 0 in
+  let exponentOffset : Nat := natAdd 96 baseLength in
+  let high : Nat := u256ReadBe (precompileWindow bytes exponentOffset (minNat exponentLength 32)) 0 in
+  let cost : Nat := precompileModexpCost baseLength exponentLength modulusLength high in
+  case (precompileHasGas limit cost) with | 0 (unit : prod ()) => precompileRejected | 1 (unit : prod ()) =>
+  case (boolAnd (natEq baseLength 0) (natEq modulusLength 0)) with
+  | 1 (unit : prod ()) => precompileSucceeded (hostIntPositive cost) bytesNil
+  | 0 (unit : prod ()) =>
+    let base : Nat := u256ReadBe (precompileWindow bytes 96 baseLength) 0 in
+    let exponent : Bytes := precompileWindow bytes exponentOffset exponentLength in
+    let modulus : Nat := u256ReadBe (precompileWindow bytes (natAdd exponentOffset exponentLength) modulusLength) 0 in
+    let value : Nat := case (natEq modulus 0) with | 1 (unit : prod ()) => 0 | 0 (unit : prod ()) => bigNaturalPowerModPositive modulus base exponent in
+    precompileSucceeded (hostIntPositive cost) (bigNaturalWriteBe value modulusLength)

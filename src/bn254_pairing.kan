@@ -1,0 +1,83 @@
+-- The signed ate digits use byte 255 for -1, in most significant first order.
+def bnAteDigits : Bytes := bytesCons 1 (bytesCons 0 (bytesCons 1 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 255 (bytesCons 0 (bytesCons 255 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 255 (bytesCons 0 (bytesCons 1 (bytesCons 0 (bytesCons 255 (bytesCons 0 (bytesCons 0 (bytesCons 255 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 1 (bytesCons 0 (bytesCons 0 (bytesCons 255 (bytesCons 0 (bytesCons 1 (bytesCons 0 (bytesCons 0 (bytesCons 255 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 255 (bytesCons 0 (bytesCons 1 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 255 (bytesCons 0 (bytesCons 255 (bytesCons 0 (bytesCons 0 (bytesCons 1 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 255 (bytesCons 0 (bytesCons 0 (bytesCons 255 (bytesCons 0 (bytesCons 1 (bytesCons 0 (bytesCons 1 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesNil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+def BnProjective : Type 0 := prod (BnFq2, BnFq2, BnFq2)
+def BnLine : Type 0 := prod (BnFq2, BnFq2, BnFq2)
+def bnHalf : Nat := 10944121435919637611123202872628637544348155578648911831344518947322613104292
+def bnTwistQX : BnFq2 := tuple (21575463638280843010398324269430826099269044274347216827212613867836435027261, 10307601595873709700152284273816112264069230130616436755625194854815875713954)
+def bnTwistQY : BnFq2 := tuple (2821565182194536844548159561693502659359617185244120367078079554186484126554, 3505843767911556378687030309984248845540243509899259641013678093033130930403)
+def bnPairDouble : BnProjective -> prod (BnProjective, BnLine) := fun (r : BnProjective) =>
+  let a : BnFq2 := bn2Scale bnHalf (bn2Mul r.0 r.1) in
+  let b : BnFq2 := bn2Square r.1 in let c : BnFq2 := bn2Square r.2 in
+  let e : BnFq2 := bn2Mul bnTwist (bn2Scale 3 c) in let e3 : BnFq2 := bn2Scale 3 e in
+  let g : BnFq2 := bn2Scale bnHalf (bn2Add b e3) in
+  let h : BnFq2 := bn2Sub (bn2Square (bn2Add r.1 r.2)) (bn2Add b c) in
+  let i : BnFq2 := bn2Sub e b in let j : BnFq2 := bn2Square r.0 in
+  tuple (tuple (bn2Mul a (bn2Sub b e3), bn2Sub (bn2Square g) (bn2Scale 3 (bn2Square e)), bn2Mul b h),
+    tuple (bn2Neg h, bn2Scale 3 j, i))
+def bnPairAdd : BnProjective -> BnFq2 -> BnFq2 -> prod (BnProjective, BnLine) := fun (r : BnProjective) (qx : BnFq2) (qy : BnFq2) =>
+  let theta : BnFq2 := bn2Sub r.1 (bn2Mul qy r.2) in let lambda : BnFq2 := bn2Sub r.0 (bn2Mul qx r.2) in
+  let c : BnFq2 := bn2Square theta in let d : BnFq2 := bn2Square lambda in
+  let e : BnFq2 := bn2Mul lambda d in let f : BnFq2 := bn2Mul r.2 c in let g : BnFq2 := bn2Mul r.0 d in
+  let h : BnFq2 := bn2Sub (bn2Add e f) (bn2Add g g) in
+  tuple (tuple (bn2Mul lambda h, bn2Sub (bn2Mul theta (bn2Sub g h)) (bn2Mul e r.1), bn2Mul r.2 e),
+    tuple (lambda, bn2Neg theta, bn2Sub (bn2Mul theta qx) (bn2Mul lambda qy)))
+def bnPairEll : BnFq12 -> BnLine -> Nat -> Nat -> BnFq12 := fun (f : BnFq12) (line : BnLine) (px : Nat) (py : Nat) =>
+  bn12Sparse (bn2Scale py line.0) (bn2Scale px line.1) line.2 f
+def bnPairChar : BnFq2 -> BnFq2 -> prod (BnFq2, BnFq2) := fun (x : BnFq2) (y : BnFq2) =>
+  tuple (bn2Mul (bn2Frobenius (hostIntPositive 1) x) bnTwistQX, bn2Mul (bn2Frobenius (hostIntPositive 1) y) bnTwistQY)
+def bnPairAddLine : BnProjective -> BnFq2 -> BnFq2 -> BnFq12 -> Nat -> Nat -> prod (BnProjective, BnFq12) :=
+  fun (r : BnProjective) (qx : BnFq2) (qy : BnFq2) (f : BnFq12) (px : Nat) (py : Nat) =>
+    let added : prod (BnProjective, BnLine) := bnPairAdd r qx qy in tuple (added.0, bnPairEll f added.1 px py)
+def rec bnMillerWalk : Bytes -> BnProjective -> BnFq12 -> Bool -> Nat -> Nat -> BnFq2 -> BnFq2 -> prod (BnProjective, BnFq12) :=
+  fun (digits : Bytes) (r : BnProjective) (f : BnFq12) (first : Bool) (px : Nat) (py : Nat) (qx : BnFq2) (qy : BnFq2) =>
+    match digits as self in Bytes return prod (BnProjective, BnFq12) with
+    | bytesNil => tuple (r, f)
+    | bytesCons digit rest => case (bn12Equal f bn12Zero) with
+      | 1 (unit : prod ()) => tuple (r, f)
+      | 0 (unit : prod ()) =>
+      let squared : BnFq12 := case first with | 1 (unit : prod ()) => f | 0 (unit : prod ()) => bn12Square f in
+      let doubled : prod (BnProjective, BnLine) := bnPairDouble r in let lined : BnFq12 := bnPairEll squared doubled.1 px py in
+      let next : prod (BnProjective, BnFq12) := case (natEq digit 0) with
+        | 1 (unit : prod ()) => tuple (doubled.0, lined)
+        | 0 (unit : prod ()) => bnPairAddLine doubled.0 qx
+          (case (natEq digit 1) with | 1 (unit : prod ()) => qy | 0 (unit : prod ()) => bn2Neg qy) lined px py in
+      bnMillerWalk rest next.0 next.1 (inj 0 of 2 (tuple ())) px py qx qy
+def bnMillerAffine : Nat -> Nat -> BnFq2 -> BnFq2 -> BnFq12 := fun (px : Nat) (py : Nat) (qx : BnFq2) (qy : BnFq2) =>
+  let walked : prod (BnProjective, BnFq12) := bnMillerWalk bnAteDigits (tuple (qx, qy, bn2One)) bn12One (inj 1 of 2 (tuple ())) px py qx qy in
+  let q1 : prod (BnFq2, BnFq2) := bnPairChar qx qy in let q2 : prod (BnFq2, BnFq2) := bnPairChar q1.0 q1.1 in
+  let first : prod (BnProjective, BnFq12) := bnPairAddLine walked.0 q1.0 q1.1 walked.1 px py in
+  (bnPairAddLine first.0 q2.0 (bn2Neg q2.1) first.1 px py).1
+def bnMillerLoop : BnG1 -> BnG2 -> BnFq12 := fun (p : BnG1) (q : BnG2) => match p as self in BnG1 return BnFq12 with
+  | bnG1Infinity => bn12One | bnG1Affine px py => match q as self in BnG2 return BnFq12 with
+    | bnG2Infinity => bn12One | bnG2Affine qx qy => bnMillerAffine px py qx qy
+def bnExponentX : Bytes := drop (bnEncode 4965661367192848881) 24
+def bnExpNegativeX : BnFq12 -> BnFq12 := fun (a : BnFq12) => bn12Conjugate (bn12Power a bnExponentX)
+def bnFinalExponentiation : BnFq12 -> ValueOption BnFq12 := fun (f : BnFq12) => case (bn12Inverse f) with
+  | 0 (unit : prod ()) => valueNone BnFq12 | 1 (inverse : BnFq12) =>
+    let easy : BnFq12 := bn12Mul (bn12Conjugate f) inverse in
+    let r : BnFq12 := bn12Mul (bn12Frobenius (hostIntPositive 2) easy) easy in
+    let y0 : BnFq12 := bnExpNegativeX r in let y1 : BnFq12 := bn12Square y0 in let y2 : BnFq12 := bn12Square y1 in
+    let y3base : BnFq12 := bn12Mul y2 y1 in let y4 : BnFq12 := bnExpNegativeX y3base in let y5 : BnFq12 := bn12Square y4 in
+    let y6 : BnFq12 := bn12Conjugate (bnExpNegativeX y5) in let y3 : BnFq12 := bn12Conjugate y3base in
+    let y7 : BnFq12 := bn12Mul y6 y4 in let y8 : BnFq12 := bn12Mul y7 y3 in let y9 : BnFq12 := bn12Mul y8 y1 in
+    let y10 : BnFq12 := bn12Mul y8 y4 in let y11 : BnFq12 := bn12Mul y10 r in
+    let y12 : BnFq12 := bn12Frobenius (hostIntPositive 1) y9 in let y13 : BnFq12 := bn12Mul y12 y11 in
+    let y14 : BnFq12 := bn12Mul (bn12Frobenius (hostIntPositive 2) y8) y13 in
+    let y15 : BnFq12 := bn12Frobenius (hostIntPositive 3) (bn12Mul (bn12Conjugate r) y9) in
+    valueSome BnFq12 (bn12Mul y15 y14)
+def bnPair : BnG1 -> BnG2 -> ValueOption BnFq12 := fun (p : BnG1) (q : BnG2) => bnFinalExponentiation (bnMillerLoop p q)
+mu BnPairs : Type 0 :=
+| bnPairsNil : BnPairs
+| bnPairsCons (p : BnG1) (q : BnG2) (tail : BnPairs) : BnPairs
+def rec bnPairsProduct : BnPairs -> BnFq12 -> Bool -> prod (BnFq12, Bool) := fun (pairs : BnPairs) (acc : BnFq12) (present : Bool) =>
+  match pairs as self in BnPairs return prod (BnFq12, Bool) with
+  | bnPairsNil => tuple (acc, present)
+  | bnPairsCons p q tail => match p as self in BnG1 return prod (BnFq12, Bool) with
+    | bnG1Infinity => bnPairsProduct tail acc present
+    | bnG1Affine px py => match q as self in BnG2 return prod (BnFq12, Bool) with
+      | bnG2Infinity => bnPairsProduct tail acc present
+      | bnG2Affine qx qy => bnPairsProduct tail (bn12Mul acc (bnMillerAffine px py qx qy)) (inj 1 of 2 (tuple ()))
+def bnPairingCheck : BnPairs -> Bool := fun (pairs : BnPairs) =>
+  let product : prod (BnFq12, Bool) := bnPairsProduct pairs bn12One (inj 0 of 2 (tuple ())) in
+  case product.1 with | 0 (unit : prod ()) => inj 1 of 2 (tuple ()) | 1 (unit : prod ()) =>
+    case (bnFinalExponentiation product.0) with | 0 (unit : prod ()) => inj 0 of 2 (tuple ()) | 1 (result : BnFq12) => bn12Equal result bn12One

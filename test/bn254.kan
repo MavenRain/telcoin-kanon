@@ -1,0 +1,39 @@
+def bnTestRead : Bytes -> Nat -> Nat := fun (bytes : Bytes) (offset : Nat) => bnFq (u256ReadBe (take 32 (drop bytes offset)) 0)
+def bnTestRead2 : Bytes -> Nat -> BnFq2 := fun (bytes : Bytes) (offset : Nat) => tuple (bnTestRead bytes offset, bnTestRead bytes (natAdd offset 32))
+def bnTestRead6 : Bytes -> Nat -> BnFq6 := fun (bytes : Bytes) (offset : Nat) => tuple (bnTestRead2 bytes offset, bnTestRead2 bytes (natAdd offset 64), bnTestRead2 bytes (natAdd offset 128))
+def bnTestRead12 : Bytes -> BnFq12 := fun (bytes : Bytes) => tuple (bnTestRead6 bytes 0, bnTestRead6 bytes 192)
+def bnTestOptional : (0 A : Type 0) -> (A -> Bytes) -> ValueOption A -> Bytes := fun (0 A : Type 0) (encode : A -> Bytes) (value : ValueOption A) =>
+  case value with | 0 (unit : prod ()) => b"none" | 1 (a : A) => append b"some:" (bytesHex (encode a))
+def bnTestPower : (0 A : Type 0) -> (A -> Bytes -> A) -> A -> HostInt -> ValueOption A := fun (0 A : Type 0) (power : A -> Bytes -> A) (a : A) (exponent : HostInt) =>
+  match exponent as self in HostInt return ValueOption A with
+  | hostIntPositive value => valueSome A (power a (u256ToBeBytes (u256Value value)))
+  | hostIntNegative magnitude => valueNone A
+def bnTestField2 : Nat -> BnFq2 -> BnFq2 -> HostInt -> ValueOption BnFq2 := fun (op : Nat) (a : BnFq2) (b : BnFq2) (exponent : HostInt) =>
+  case (natEq op 0) with | 1 (unit : prod ()) => valueSome BnFq2 (bn2Add a b) | 0 (unit : prod ()) =>
+  case (natEq op 1) with | 1 (unit : prod ()) => valueSome BnFq2 (bn2Sub a b) | 0 (unit : prod ()) =>
+  case (natEq op 2) with | 1 (unit : prod ()) => valueSome BnFq2 (bn2Mul a b) | 0 (unit : prod ()) =>
+  case (natEq op 3) with | 1 (unit : prod ()) => bn2Inverse a | 0 (unit : prod ()) =>
+  case (natEq op 4) with | 1 (unit : prod ()) => bnTestPower BnFq2 bn2Power a exponent | 0 (unit : prod ()) =>
+  case (natEq op 5) with | 1 (unit : prod ()) => valueSome BnFq2 (bn2Frobenius exponent a) | 0 (unit : prod ()) =>
+  case (natEq op 6) with | 1 (unit : prod ()) => valueSome BnFq2 (bn2Conjugate a) | 0 (unit : prod ()) => valueSome BnFq2 (bn2Neg a)
+def bnTestField6 : Nat -> BnFq6 -> BnFq6 -> HostInt -> ValueOption BnFq6 := fun (op : Nat) (a : BnFq6) (b : BnFq6) (exponent : HostInt) =>
+  case (natEq op 0) with | 1 (unit : prod ()) => valueSome BnFq6 (bn6Add a b) | 0 (unit : prod ()) =>
+  case (natEq op 1) with | 1 (unit : prod ()) => valueSome BnFq6 (bn6Sub a b) | 0 (unit : prod ()) =>
+  case (natEq op 2) with | 1 (unit : prod ()) => valueSome BnFq6 (bn6Mul a b) | 0 (unit : prod ()) =>
+  case (natEq op 3) with | 1 (unit : prod ()) => bn6Inverse a | 0 (unit : prod ()) =>
+  case (natEq op 5) with | 1 (unit : prod ()) => valueSome BnFq6 (bn6Frobenius exponent a) | 0 (unit : prod ()) =>
+  case (natEq op 6) with | 1 (unit : prod ()) => valueSome BnFq6 (bn6MulByV a) | 0 (unit : prod ()) => valueSome BnFq6 (bn6Neg a)
+def bnTestField12 : Nat -> BnFq12 -> BnFq12 -> HostInt -> ValueOption BnFq12 := fun (op : Nat) (a : BnFq12) (b : BnFq12) (exponent : HostInt) =>
+  case (natEq op 0) with | 1 (unit : prod ()) => valueSome BnFq12 (bn12Add a b) | 0 (unit : prod ()) =>
+  case (natEq op 1) with | 1 (unit : prod ()) => valueSome BnFq12 (bn12Sub a b) | 0 (unit : prod ()) =>
+  case (natEq op 2) with | 1 (unit : prod ()) => valueSome BnFq12 (bn12Mul a b) | 0 (unit : prod ()) =>
+  case (natEq op 3) with | 1 (unit : prod ()) => bn12Inverse a | 0 (unit : prod ()) =>
+  case (natEq op 4) with | 1 (unit : prod ()) => bnTestPower BnFq12 bn12Power a exponent | 0 (unit : prod ()) =>
+  case (natEq op 5) with | 1 (unit : prod ()) => valueSome BnFq12 (bn12Frobenius exponent a) | 0 (unit : prod ()) =>
+  case (natEq op 6) with | 1 (unit : prod ()) => valueSome BnFq12 (bn12Conjugate a) | 0 (unit : prod ()) => valueSome BnFq12 (bn12Neg a)
+def evm_test_bn_field : Nat -> Nat -> Bytes -> Bytes -> Bytes -> Bytes := fun (degree : Nat) (op : Nat) (left : Bytes) (right : Bytes) (exponent : Bytes) =>
+  case (hostIntParse exponent) with | 0 (unit : prod ()) => b"bad exponent" | 1 (k : HostInt) =>
+  case (natEq degree 2) with | 1 (unit : prod ()) => bnTestOptional BnFq2 bn2Encode (bnTestField2 op (bnTestRead2 left 0) (bnTestRead2 right 0) k) | 0 (unit : prod ()) =>
+  case (natEq degree 6) with | 1 (unit : prod ()) => bnTestOptional BnFq6 bn6Encode (bnTestField6 op (bnTestRead6 left 0) (bnTestRead6 right 0) k) | 0 (unit : prod ()) =>
+  bnTestOptional BnFq12 bn12Encode (bnTestField12 op (bnTestRead12 left) (bnTestRead12 right) k)
+def evm_test_bn_decode : Bytes -> Bytes := fun (bytes : Bytes) => bnTestOptional Nat bnEncode (bnDecode bytes)

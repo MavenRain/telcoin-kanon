@@ -1,0 +1,11 @@
+def precompileEcrecover : Bytes -> HostInt -> PrecompileOutcome := fun (bytes : Bytes) (limit : HostInt) =>
+  case (precompileHasGas limit 3000) with | 0 (unit : prod ()) => precompileRejected | 1 (unit : prod ()) =>
+  let v : Nat := u256ReadBe (precompileWindow bytes 32 32) 0 in
+  case (boolOr (natEq v 27) (natEq v 28)) with
+  | 0 (unit : prod ()) => precompileSucceeded (hostIntPositive 3000) bytesNil
+  | 1 (unit : prod ()) =>
+    let recovered : ValueOption Bytes := secpRecover (precompileWindow bytes 0 32) (hostIntPositive (natSub v 27))
+      (precompileWindow bytes 64 32) (precompileWindow bytes 96 32) in
+    precompileSucceeded (hostIntPositive 3000) (case recovered with
+      | 0 (unit : prod ()) => bytesNil
+      | 1 (publicKey : Bytes) => append (precompileZeros 12) (drop (keccak256 publicKey) 12))

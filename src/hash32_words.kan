@@ -1,0 +1,37 @@
+-- Shared 32-bit word and block operations for SHA-256 and RIPEMD-160.
+def hashAnd32 : Nat -> Nat -> Nat := fun (a : Nat) (b : Nat) =>
+  divQuotient (divide64 (natSub (natAdd a b) (wordXor32 a b)) 2)
+def hashOr32 : Nat -> Nat -> Nat := fun (a : Nat) (b : Nat) =>
+  natSub (natAdd a b) (hashAnd32 a b)
+def hashNot32 : Nat -> Nat := fun (a : Nat) => natSub 4294967295 a
+def rec hashWordAt : Nats -> Nat -> Nat := fun (words : Nats) (index : Nat) =>
+  match words as self in Nats return Nat with
+  | natsNil => 0
+  | natsCons word rest => case (natEq index 0) with
+    | 1 (unit : prod ()) => word
+    | 0 (unit : prod ()) => hashWordAt rest (natSub index 1)
+def rec hashWordReverseInto : Nats -> Nats -> Nats := fun (words : Nats) (result : Nats) =>
+  match words as self in Nats return Nats with
+  | natsNil => result
+  | natsCons word rest => hashWordReverseInto rest (natsCons word result)
+def rec hashWordCount : Nats -> Nat := fun (words : Nats) =>
+  match words as self in Nats return Nat with | natsNil => 0 | natsCons word rest => natAdd 1 (hashWordCount rest)
+def hashEndian : Bool -> Bytes -> Bytes := fun (little : Bool) (bytes : Bytes) =>
+  case little with | 0 (unit : prod ()) => bytes | 1 (unit : prod ()) => reverse bytes
+def hashReadWordsReversed : Bool -> Bytes -> Nats := fun (little : Bool) (bytes : Bytes) =>
+  let result : prod (Bytes, Nats) := stepsFold (prod (Bytes, Nats)) steps64
+    (fun (state : prod (Bytes, Nats)) => bytesEmpty state.0)
+    (fun (state : prod (Bytes, Nats)) => tuple (drop state.0 4,
+      natsCons (u256ReadBe (hashEndian little (take 4 state.0)) 0) state.1))
+    (tuple (bytes, natsNil)) in result.1
+def hashWriteWord : Bool -> Nat -> Bytes := fun (little : Bool) (word : Nat) =>
+  hashEndian little (drop (u256ToBeBytes (u256Value word)) 28)
+def rec hashWriteWords : Bool -> Nats -> Bytes := fun (little : Bool) (words : Nats) =>
+  match words as self in Nats return Bytes with | natsNil => bytesNil
+  | natsCons word rest => append (hashWriteWord little word) (hashWriteWords little rest)
+def hashPad64 : Bool -> Bytes -> Bytes := fun (little : Bool) (bytes : Bytes) =>
+  let size : Nat := bytesLength bytes in
+  let remainder : Nat := divRemainder (divide64 (natAdd size 1) 64) in
+  let zeros : Nat := natSub (choose (natLt remainder 57) 56 120) remainder in
+  let counter : Bytes := hashEndian little (drop (u256ToBeBytes (u256Value (natMul size 8))) 24) in
+  append bytes (bytesCons 128 (append (precompileZeros zeros) counter))

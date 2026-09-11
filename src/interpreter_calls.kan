@@ -1,8 +1,3 @@
-mu PrecompileOutcome : Type 0 :=
-| precompileSucceeded (gasUsed : HostInt) (output : Bytes) : PrecompileOutcome
-| precompileRejected : PrecompileOutcome
-| notAPrecompile : PrecompileOutcome
-def PrecompileInvoke : Type 0 := Address -> Bytes -> HostInt -> PrecompileOutcome
 def EvmSubframe : Type 0 := EvmEnv -> EvmCode -> Gas -> EvmEffects -> EvmCallDepth -> EvmResume -> EvmTransition
 def interpreterChargeMachine : Nat -> EvmMachine -> InterpreterResult EvmMachine := fun (cost : Nat) (machine : EvmMachine) =>
   interpreterBind Gas EvmMachine (interpreterCharged (hostIntPositive cost) machine.3) (fun (gas : Gas) => inj 1 of 2 (machineWithGas machine gas))

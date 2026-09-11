@@ -1,0 +1,10 @@
+def precompileHashCost : Nat -> Nat -> Bytes -> Nat := fun (base : Nat) (perWord : Nat) (bytes : Bytes) =>
+  natAdd base (natMul perWord (divQuotient (divide64 (natAdd (bytesLength bytes) 31) 32)))
+def precompileSha256 : Bytes -> HostInt -> PrecompileOutcome := fun (bytes : Bytes) (limit : HostInt) =>
+  let cost : Nat := precompileHashCost 60 12 bytes in
+  case (precompileHasGas limit cost) with | 0 (unit : prod ()) => precompileRejected
+  | 1 (unit : prod ()) => precompileSucceeded (hostIntPositive cost) (sha256 bytes)
+def precompileRipemd160 : Bytes -> HostInt -> PrecompileOutcome := fun (bytes : Bytes) (limit : HostInt) =>
+  let cost : Nat := precompileHashCost 600 120 bytes in
+  case (precompileHasGas limit cost) with | 0 (unit : prod ()) => precompileRejected
+  | 1 (unit : prod ()) => precompileSucceeded (hostIntPositive cost) (append (precompileZeros 12) (ripemd160 bytes))

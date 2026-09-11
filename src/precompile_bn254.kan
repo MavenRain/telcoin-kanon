@@ -1,0 +1,25 @@
+def precompileBnAdd : Bytes -> HostInt -> PrecompileOutcome := fun (bytes : Bytes) (limit : HostInt) =>
+  case (precompileHasGas limit 150) with | 0 (unit : prod ()) => precompileRejected | 1 (unit : prod ()) =>
+  case (bnG1Decode (precompileWindow bytes 0 64)) with | 0 (unit : prod ()) => precompileRejected | 1 (a : BnG1) =>
+  case (bnG1Decode (precompileWindow bytes 64 64)) with | 0 (unit : prod ()) => precompileRejected | 1 (b : BnG1) =>
+  precompileSucceeded (hostIntPositive 150) (bnG1Encode (bnG1Add a b))
+def precompileBnMul : Bytes -> HostInt -> PrecompileOutcome := fun (bytes : Bytes) (limit : HostInt) =>
+  case (precompileHasGas limit 6000) with | 0 (unit : prod ()) => precompileRejected | 1 (unit : prod ()) =>
+  case (bnG1Decode (precompileWindow bytes 0 64)) with | 0 (unit : prod ()) => precompileRejected | 1 (point : BnG1) =>
+  let scalar : Nat := modular256Read bnOrder (precompileWindow bytes 64 32) 0 in
+  precompileSucceeded (hostIntPositive 6000) (bnG1Encode (bnG1Multiply (bnEncode scalar) point))
+def bnPairsDecode : Bytes -> ValueOption BnPairs := fun (bytes : Bytes) =>
+  let result : prod (Bytes, ValueOption BnPairs) := stepsFold (prod (Bytes, ValueOption BnPairs)) steps64
+    (fun (state : prod (Bytes, ValueOption BnPairs)) => case state.1 with | 0 (unit : prod ()) => 1 | 1 (pairs : BnPairs) => bytesEmpty state.0)
+    (fun (state : prod (Bytes, ValueOption BnPairs)) => tuple (drop state.0 192,
+      case state.1 with | 0 (unit : prod ()) => valueNone BnPairs | 1 (pairs : BnPairs) =>
+      case (bnG1Decode (take 64 state.0)) with | 0 (unit : prod ()) => valueNone BnPairs | 1 (p : BnG1) =>
+      case (bnG2Decode (take 128 (drop state.0 64))) with | 0 (unit : prod ()) => valueNone BnPairs | 1 (q : BnG2) => valueSome BnPairs (bnPairsCons p q pairs)))
+    (tuple (bytes, valueSome BnPairs bnPairsNil)) in result.1
+def precompileBnPair : Bytes -> HostInt -> PrecompileOutcome := fun (bytes : Bytes) (limit : HostInt) =>
+  let division : DivResult := divide64 (bytesLength bytes) 192 in
+  let cost : Nat := natAdd 45000 (natMul 34000 (divQuotient division)) in
+  case (precompileHasGas limit cost) with | 0 (unit : prod ()) => precompileRejected | 1 (unit : prod ()) =>
+  case (natEq (divRemainder division) 0) with | 0 (unit : prod ()) => precompileRejected | 1 (unit : prod ()) =>
+  case (bnPairsDecode bytes) with | 0 (unit : prod ()) => precompileRejected | 1 (pairs : BnPairs) =>
+  precompileSucceeded (hostIntPositive cost) (bnEncode (boolNat (bnPairingCheck pairs)))

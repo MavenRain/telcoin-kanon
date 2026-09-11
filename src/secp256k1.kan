@@ -50,4 +50,4 @@ def secpRecover : Bytes -> HostInt -> Bytes -> Bytes -> ValueOption Bytes :=
             let u2 : Nat := modular256Mul secpOrder s inverse in
             match (secpPointAdd (secpPointMultiply u1 secpGenerator) (secpPointMultiply u2 (secpAffine r y))) as point in SecpPoint return ValueOption Bytes with
             | secpInfinity => valueNone Bytes
-            | secpAffine x y => valueSome Bytes (append (u256ToBeBytes (u256Value x)) (u256ToBeBytes (u256Value y)))
+            | secpAffine x y => valueSome Bytes (append (bigNaturalLeftPadBe x 32) (bigNaturalLeftPadBe y 32))

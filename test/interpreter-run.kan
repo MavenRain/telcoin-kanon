@@ -1,8 +1,3 @@
--- These frame tests call ordinary account 16. Reserved addresses are refused
--- by this fixture until their real precompile implementations are connected.
-def runTestPrecompile : PrecompileInvoke := fun (address : Address) (input : Bytes) (gas : HostInt) =>
-  let number : Nat := u256Nat (addressToWord address) in case (boolAnd (natLt 0 number) (natLt number 10)) with
-    | 1 (unit : prod ()) => precompileRejected | 0 (unit : prod ()) => notAPrecompile
 def rec runTestStorage : StorageSlots -> Bytes := fun (slots : StorageSlots) => match slots as self in StorageSlots return Bytes with
   | storageSlotsNil => bytesNil | storageSlotsCons head tail => append (u256Hex head.0) (append b"=" (append (u256Hex head.1) (append b"," (runTestStorage tail))))
 def rec runTestWorld : WorldAccounts -> Bytes := fun (accounts : WorldAccounts) => match accounts as self in WorldAccounts return Bytes with
@@ -22,7 +17,7 @@ def runTestEffects : Bytes -> Nat -> EvmEffects := fun (childCode : Bytes) (dele
     | 0 (unit : prod ()) => append b"\xef\x01\x00" (addressBytes delegate) in
   effectsDeployCode installed mutabilityPermitValue callee code
 def runTestExecute : EvmEnv -> Bytes -> Gas -> EvmEffects -> EvmOutcome := fun (env : EvmEnv) (code : Bytes) (gas : Gas) (effects : EvmEffects) =>
-  interpreterRunWithPrecompiles runTestPrecompile env (evmCodeOfBytes code) gas effects
+  interpreterRun env (evmCodeOfBytes code) gas effects
 def RunTestResult : Type 0 := sum (Bytes, EvmOutcome)
 def runTestResultText : Nat -> RunTestResult -> Bytes := fun (memoryLength : Nat) (result : RunTestResult) => case result with
   | 0 (error : Bytes) => error | 1 (outcome : EvmOutcome) => runTestOutcome memoryLength outcome

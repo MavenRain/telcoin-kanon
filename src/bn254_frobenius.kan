@@ -1,0 +1,10 @@
+def bnFrobIndex : HostInt -> Nat -> Nat := fun (k : HostInt) (length : Nat) =>
+  match k as self in HostInt return Nat with
+  | hostIntPositive value => remainder64 value length
+  | hostIntNegative magnitude => let remainder : Nat := remainder64 magnitude length in
+    case (natEq remainder 0) with | 1 (unit : prod ()) => 0 | 0 (unit : prod ()) => natSub length remainder
+def bn6Frobenius : HostInt -> BnFq6 -> BnFq6 := fun (k : HostInt) (a : BnFq6) =>
+  let index : Nat := bnFrobIndex k 6 in
+  tuple (bn2Frobenius k a.0, bn2Mul (bnFrob6C1 index) (bn2Frobenius k a.1), bn2Mul (bnFrob6C2 index) (bn2Frobenius k a.2))
+def bn12Frobenius : HostInt -> BnFq12 -> BnFq12 := fun (k : HostInt) (a : BnFq12) =>
+  tuple (bn6Frobenius k a.0, bn6Scale (bnFrob12C1 (bnFrobIndex k 12)) (bn6Frobenius k a.1))

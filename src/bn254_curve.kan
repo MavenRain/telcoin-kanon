@@ -1,0 +1,79 @@
+mu BnG1 : Type 0 :=
+| bnG1Infinity : BnG1
+| bnG1Affine (x : Nat) (y : Nat) : BnG1
+def bnG1Generator : BnG1 := bnG1Affine 1 2
+def bnG1Make : Nat -> Nat -> ValueOption BnG1 := fun (x : Nat) (y : Nat) =>
+  case (natEq (bnSquare y) (bnAdd (bnMul x (bnSquare x)) 3)) with
+  | 0 (unit : prod ()) => valueNone BnG1 | 1 (unit : prod ()) => valueSome BnG1 (bnG1Affine x y)
+def bnG1Neg : BnG1 -> BnG1 := fun (point : BnG1) => match point as self in BnG1 return BnG1 with
+  | bnG1Infinity => bnG1Infinity | bnG1Affine x y => bnG1Affine x (bnNeg y)
+def bnG1Double : BnG1 -> BnG1 := fun (point : BnG1) => match point as self in BnG1 return BnG1 with
+  | bnG1Infinity => bnG1Infinity
+  | bnG1Affine x y => case (bnInverse (bnAdd y y)) with
+    | 0 (unit : prod ()) => bnG1Infinity | 1 (inverse : Nat) =>
+      let slope : Nat := bnMul (bnMul 3 (bnSquare x)) inverse in let x3 : Nat := bnSub (bnSquare slope) (bnAdd x x) in
+      bnG1Affine x3 (bnSub (bnMul slope (bnSub x x3)) y)
+def bnG1Add : BnG1 -> BnG1 -> BnG1 := fun (a : BnG1) (b : BnG1) => match a as self in BnG1 return BnG1 with
+  | bnG1Infinity => b
+  | bnG1Affine x1 y1 => match b as self in BnG1 return BnG1 with
+    | bnG1Infinity => a
+    | bnG1Affine x2 y2 => case (natEq x1 x2) with
+      | 1 (unit : prod ()) => (case (natEq y1 y2) with | 1 (unit : prod ()) => bnG1Double a | 0 (unit : prod ()) => bnG1Infinity)
+      | 0 (unit : prod ()) => case (bnInverse (bnSub x2 x1)) with
+        | 0 (unit : prod ()) => bnG1Infinity | 1 (inverse : Nat) =>
+          let slope : Nat := bnMul (bnSub y2 y1) inverse in let x3 : Nat := bnSub (bnSub (bnSquare slope) x1) x2 in
+          bnG1Affine x3 (bnSub (bnMul slope (bnSub x1 x3)) y1)
+def bnG1Multiply : Bytes -> BnG1 -> BnG1 := fun (scalar : Bytes) (point : BnG1) => powerBytes BnG1 bnG1Add point bnG1Infinity scalar
+def bnG1Decode : Bytes -> ValueOption BnG1 := fun (bytes : Bytes) =>
+  case (natEq (bytesLength bytes) 64) with | 0 (unit : prod ()) => valueNone BnG1 | 1 (unit : prod ()) =>
+  case (bnDecode (take 32 bytes)) with | 0 (unit : prod ()) => valueNone BnG1 | 1 (x : Nat) =>
+  case (bnDecode (drop bytes 32)) with | 0 (unit : prod ()) => valueNone BnG1 | 1 (y : Nat) =>
+  case (boolAnd (natEq x 0) (natEq y 0)) with | 1 (unit : prod ()) => valueSome BnG1 bnG1Infinity | 0 (unit : prod ()) => bnG1Make x y
+def bnG1Encode : BnG1 -> Bytes := fun (point : BnG1) => match point as self in BnG1 return Bytes with
+  | bnG1Infinity => append (bnEncode 0) (bnEncode 0) | bnG1Affine x y => append (bnEncode x) (bnEncode y)
+mu BnG2 : Type 0 :=
+| bnG2Infinity : BnG2
+| bnG2Affine (x : BnFq2) (y : BnFq2) : BnG2
+def bnTwist : BnFq2 := tuple (19485874751759354771024239261021720505790618469301721065564631296452457478373, 266929791119991161246907387137283842545076965332900288569378510910307636690)
+def bnG2Generator : BnG2 := bnG2Affine
+  (tuple (10857046999023057135944570762232829481370756359578518086990519993285655852781, 11559732032986387107991004021392285783925812861821192530917403151452391805634))
+  (tuple (8495653923123431417604973247489272438418190587263600148770280649306958101930, 4082367875863433681332203403145435568316851327593401208105741076214120093531))
+def bnG2Make : BnFq2 -> BnFq2 -> ValueOption BnG2 := fun (x : BnFq2) (y : BnFq2) =>
+  case (bn2Equal (bn2Square y) (bn2Add (bn2Mul x (bn2Square x)) bnTwist)) with
+  | 0 (unit : prod ()) => valueNone BnG2 | 1 (unit : prod ()) => valueSome BnG2 (bnG2Affine x y)
+def bnG2Neg : BnG2 -> BnG2 := fun (point : BnG2) => match point as self in BnG2 return BnG2 with
+  | bnG2Infinity => bnG2Infinity | bnG2Affine x y => bnG2Affine x (bn2Neg y)
+def bnG2Double : BnG2 -> BnG2 := fun (point : BnG2) => match point as self in BnG2 return BnG2 with
+  | bnG2Infinity => bnG2Infinity
+  | bnG2Affine x y => case (bn2Inverse (bn2Add y y)) with
+    | 0 (unit : prod ()) => bnG2Infinity | 1 (inverse : BnFq2) =>
+      let slope : BnFq2 := bn2Mul (bn2Scale 3 (bn2Square x)) inverse in let x3 : BnFq2 := bn2Sub (bn2Square slope) (bn2Add x x) in
+      bnG2Affine x3 (bn2Sub (bn2Mul slope (bn2Sub x x3)) y)
+def bnG2Add : BnG2 -> BnG2 -> BnG2 := fun (a : BnG2) (b : BnG2) => match a as self in BnG2 return BnG2 with
+  | bnG2Infinity => b
+  | bnG2Affine x1 y1 => match b as self in BnG2 return BnG2 with
+    | bnG2Infinity => a
+    | bnG2Affine x2 y2 => case (bn2Equal x1 x2) with
+      | 1 (unit : prod ()) => (case (bn2Equal y1 y2) with | 1 (unit : prod ()) => bnG2Double a | 0 (unit : prod ()) => bnG2Infinity)
+      | 0 (unit : prod ()) => case (bn2Inverse (bn2Sub x2 x1)) with
+        | 0 (unit : prod ()) => bnG2Infinity | 1 (inverse : BnFq2) =>
+          let slope : BnFq2 := bn2Mul (bn2Sub y2 y1) inverse in let x3 : BnFq2 := bn2Sub (bn2Sub (bn2Square slope) x1) x2 in
+          bnG2Affine x3 (bn2Sub (bn2Mul slope (bn2Sub x1 x3)) y1)
+def bnG2Multiply : Bytes -> BnG2 -> BnG2 := fun (scalar : Bytes) (point : BnG2) => powerBytes BnG2 bnG2Add point bnG2Infinity scalar
+def bnG2InSubgroup : BnG2 -> Bool := fun (point : BnG2) =>
+  match (bnG2Multiply (bnEncode bnOrder) point) as self in BnG2 return Bool with
+  | bnG2Infinity => inj 1 of 2 (tuple ()) | bnG2Affine x y => inj 0 of 2 (tuple ())
+def bnG2Decode : Bytes -> ValueOption BnG2 := fun (bytes : Bytes) =>
+  case (natEq (bytesLength bytes) 128) with | 0 (unit : prod ()) => valueNone BnG2 | 1 (unit : prod ()) =>
+  case (bnDecode (take 32 bytes)) with | 0 (unit : prod ()) => valueNone BnG2 | 1 (x1 : Nat) =>
+  case (bnDecode (take 32 (drop bytes 32))) with | 0 (unit : prod ()) => valueNone BnG2 | 1 (x0 : Nat) =>
+  case (bnDecode (take 32 (drop bytes 64))) with | 0 (unit : prod ()) => valueNone BnG2 | 1 (y1 : Nat) =>
+  case (bnDecode (drop bytes 96)) with | 0 (unit : prod ()) => valueNone BnG2 | 1 (y0 : Nat) =>
+  let x : BnFq2 := tuple (x0, x1) in let y : BnFq2 := tuple (y0, y1) in
+  case (boolAnd (bn2Equal x bn2Zero) (bn2Equal y bn2Zero)) with
+  | 1 (unit : prod ()) => valueSome BnG2 bnG2Infinity | 0 (unit : prod ()) =>
+  case (bnG2Make x y) with | 0 (unit : prod ()) => valueNone BnG2 | 1 (point : BnG2) =>
+  case (bnG2InSubgroup point) with | 0 (unit : prod ()) => valueNone BnG2 | 1 (unit : prod ()) => valueSome BnG2 point
+def bnG2Encode : BnG2 -> Bytes := fun (point : BnG2) => match point as self in BnG2 return Bytes with
+  | bnG2Infinity => append (bn2Encode bn2Zero) (bn2Encode bn2Zero)
+  | bnG2Affine x y => append (bnEncode x.1) (append (bnEncode x.0) (append (bnEncode y.1) (bnEncode y.0)))

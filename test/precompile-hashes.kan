@@ -1,0 +1,4 @@
+def precompileTestHash : Nat -> Bytes -> Bytes -> PrecompileOutcome := fun (which : Nat) (bytes : Bytes) (gas : Bytes) =>
+  case (hostIntParse gas) with | 0 (unit : prod ()) => precompileRejected | 1 (limit : HostInt) =>
+  case (natEq which 2) with | 1 (unit : prod ()) => precompileSha256 bytes limit
+  | 0 (unit : prod ()) => precompileRipemd160 bytes limit
