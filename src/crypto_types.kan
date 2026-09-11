@@ -1,0 +1,9 @@
+-- Concrete representations for the simulation profile.
+mu PublicKey : Type 0 :=
+| publicKeyValue (bytes : Bytes) : PublicKey
+mu SecretKey : Type 0 :=
+| secretKeyValue (seed : Nat) (public : PublicKey) : SecretKey
+mu Signature : Type 0 :=
+| signatureValue (signer : PublicKey) (message : Digest) : Signature
+mu Authority : Type 0 :=
+| authorityValue (id : AuthorityId) (key : PublicKey) (address : Address) : Authority

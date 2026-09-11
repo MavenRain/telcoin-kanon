@@ -1,0 +1,76 @@
+def std_prngNext : Bytes -> Bytes := fun (seed : Bytes) =>
+  match (parseU64 seed) as self in NatOption return Bytes with
+  | natNone => b"none"
+  | natSome value =>
+    let draw : PrngDraw := prngNext (prngState value) in
+    append (decimal64 (prngDrawValue draw)) (append b":" (decimal64 (prngBits (prngDrawState draw))))
+def std_prngSplit : Bytes -> Bytes := fun (seed : Bytes) =>
+  match (parseU64 seed) as self in NatOption return Bytes with
+  | natNone => b"none"
+  | natSome value =>
+    let pair : prod (Prng, Prng) := prngSplit (prngState value) in
+    append (decimal64 (prngBits pair.0)) (append b":" (decimal64 (prngBits pair.1)))
+def std_prngRange : Bytes -> Bytes -> Bytes -> Bytes := fun (seed : Bytes) (low : Bytes) (high : Bytes) =>
+  match (parseU64 seed) as self in NatOption return Bytes with
+  | natNone => b"none"
+  | natSome bits =>
+    case (hostIntParse low) with
+    | 0 (unit : prod ()) => b"none"
+    | 1 (lo : HostInt) =>
+      case (hostIntParse high) with
+      | 0 (unit : prod ()) => b"none"
+      | 1 (hi : HostInt) =>
+        match (prngIntIn (prngState bits) lo hi) as draw in PrngIntDraw return Bytes with
+        | prngIntDraw value state => append (hostIntText value) (append b":" (decimal64 (prngBits state)))
+def std_wordXor : Bytes -> Bytes -> Bytes := fun (left : Bytes) (right : Bytes) =>
+  match (parseU64 left) as self in NatOption return Bytes with
+  | natNone => b"none"
+  | natSome a =>
+    match (parseU64 right) as other in NatOption return Bytes with
+    | natNone => b"none"
+    | natSome b => decimal64 (wordXor64 a b)
+def std_wordMul : Bytes -> Bytes -> Bytes := fun (left : Bytes) (right : Bytes) =>
+  match (parseU64 left) as self in NatOption return Bytes with
+  | natNone => b"none"
+  | natSome a =>
+    match (parseU64 right) as other in NatOption return Bytes with
+    | natNone => b"none"
+    | natSome b => decimal64 (wordMul64 a b)
+def std_wordAdd : Bytes -> Bytes -> Bytes := fun (left : Bytes) (right : Bytes) =>
+  match (parseU64 left) as self in NatOption return Bytes with
+  | natNone => b"none"
+  | natSome a =>
+    match (parseU64 right) as other in NatOption return Bytes with
+    | natNone => b"none"
+    | natSome b => decimal64 (wordAdd64 a b)
+def std_listCodec : Codec Nats := codecList Nat Nats seqNatOps codecU8
+def std_withNonempty : (Nonempty Nat Nats -> Bytes) -> Bytes -> Bytes := fun (run : Nonempty Nat Nats -> Bytes) (input : Bytes) =>
+  case (codecDecode Nats std_listCodec input) with
+  | 0 (error : BcsError) => append b"error: " (bcsErrorText error)
+  | 1 (pair : prod (Nats, BcsReader)) =>
+    case (nonemptyOfList Nat Nats seqNatOps pair.0) with
+    | 0 (unit : prod ()) => b"none"
+    | 1 (values : Nonempty Nat Nats) => run values
+def std_head : Bytes -> Bytes := fun (input : Bytes) => std_withNonempty (fun (values : Nonempty Nat Nats) => decimal64 (nonemptyFirst Nat Nats values)) input
+def std_last : Bytes -> Bytes := fun (input : Bytes) => std_withNonempty (fun (values : Nonempty Nat Nats) => decimal64 (nonemptyFinal Nat Nats seqNatOps values)) input
+def std_length : Bytes -> Bytes := fun (input : Bytes) => std_withNonempty (fun (values : Nonempty Nat Nats) => decimal64 (nonemptyLength Nat Nats seqNatOps values)) input
+def std_fold : Bytes -> Bytes := fun (input : Bytes) => std_withNonempty
+  (fun (values : Nonempty Nat Nats) => nonemptyFoldLeft Nat Nats Bytes seqNatOps (fun (acc : Bytes) (value : Nat) => append acc (bytesCons 59 (decimal64 value))) bytesNil values) input
+def std_map : Bytes -> Bytes := fun (input : Bytes) => std_withNonempty
+  (fun (values : Nonempty Nat Nats) => codecWrite ByteStrings (codecList Bytes ByteStrings seqBytesOps codecBytes)
+    (nonemptyToList Bytes ByteStrings seqBytesOps (nonemptyMap Nat Nats Bytes ByteStrings seqNatOps seqBytesOps decimal64 values))) input
+def std_append : Bytes -> Bytes := fun (input : Bytes) => std_withNonempty
+  (fun (values : Nonempty Nat Nats) => codecWrite Nats std_listCodec
+    (nonemptyToList Nat Nats seqNatOps (nonemptyAppend Nat Nats seqNatOps values (natsCons 8 (natsCons 9 natsNil))))) input
+def std_orderText : Ordering -> Bytes := fun (order : Ordering) =>
+  match order as self in Ordering return Bytes with
+  | orderLess => b"-1"
+  | orderEqual => b"0"
+  | orderGreater => b"1"
+def std_compare : Bytes -> Bytes := fun (input : Bytes) => std_withNonempty
+  (fun (values : Nonempty Nat Nats) => std_orderText (nonemptyCompare Nat Nats seqNatOps natOrdering values
+    (nonemptyCons Nat Nats 2 (natsCons 3 natsNil)))) input
+def std_equal : Bytes -> Bytes := fun (input : Bytes) => std_withNonempty
+  (fun (values : Nonempty Nat Nats) => decimal64 (boolNat (nonemptyEqual Nat Nats seqNatOps
+    (fun (a : Nat) (b : Nat) => natEq (remainder64 a 2) (remainder64 b 2)) values (nonemptyCons Nat Nats 2 (natsCons 3 natsNil))))) input
+def std_singleton : Bytes := decimal64 (nonemptyFinal Nat Nats seqNatOps (nonemptySingleton Nat Nats seqNatOps 42))

@@ -1,0 +1,75 @@
+
+def fxroundNext : Bytes -> Bytes := fun (text : Bytes) =>
+  let result : RoundResult :=
+    match (roundParse text) as self in RoundResult return RoundResult with
+    | roundInvalid => roundInvalid
+    | roundValid value => roundValid (roundSucc value)
+  in roundText result
+
+def fxroundPrev : Bytes -> Bytes := fun (text : Bytes) =>
+  let result : RoundResult :=
+    match (roundParse text) as self in RoundResult return RoundResult with
+    | roundInvalid => roundInvalid
+    | roundValid value => roundPred value
+  in roundText result
+
+def fxepochNext : Bytes -> Bytes := fun (text : Bytes) =>
+  let result : EpochResult :=
+    match (epochParse text) as self in EpochResult return EpochResult with
+    | epochInvalid => epochInvalid
+    | epochValid value => epochValid (epochSucc value)
+  in epochText result
+
+def fxleaderNext : Bytes -> Bytes := fun (text : Bytes) =>
+  let result : LeaderRoundResult :=
+    match (leaderRoundParse text) as self in LeaderRoundResult return LeaderRoundResult with
+    | leaderRoundInvalid => leaderRoundInvalid
+    | leaderRoundValid value => leaderRoundNext value
+  in leaderRoundText result
+
+def fxleaderPrev : Bytes -> Bytes := fun (text : Bytes) =>
+  let result : LeaderRoundResult :=
+    match (leaderRoundParse text) as self in LeaderRoundResult return LeaderRoundResult with
+    | leaderRoundInvalid => leaderRoundInvalid
+    | leaderRoundValid value => leaderRoundPrev value
+  in leaderRoundText result
+
+def fxdurationHalf : Bytes -> Bytes := fun (text : Bytes) =>
+  let result : DurationResult :=
+    match (durationParse text) as self in DurationResult return DurationResult with
+    | durationInvalid => durationInvalid
+    | durationValid value => durationValid (durationHalf value)
+  in durationText result
+
+def fxPrefixText : BcsNatResult -> Bytes := fun (result : BcsNatResult) =>
+  match result as self in BcsNatResult return Bytes with
+  | bcsNatError error => append b"error: " (bcsErrorText error)
+  | bcsNatOk value reader => append (decimal64 value) (append b":" (decimal64 (bcsOffset reader)))
+def fxprefix32 : Bytes -> Bytes := fun (input : Bytes) => fxPrefixText (bcsReadU32 (bcsStart input))
+def fxprefixuleb : Bytes -> Bytes := fun (input : Bytes) => fxPrefixText (bcsReadUleb (bcsStart input))
+def fxoffsetuleb : Bytes -> Bytes := fun (input : Bytes) =>
+  let result : BcsNatResult :=
+    match (bcsReadU8 (bcsStart input)) as self in BcsNatResult return BcsNatResult with
+    | bcsNatError error => bcsNatError error
+    | bcsNatOk first reader => bcsFinishNat (bcsReadUleb reader)
+  in bcsNatText result
+def fxTimestampSaturate : Bytes := decimal64 (timestampNat (timestampAdd (timestampValue 9223372036854775800) 8))
+def fxStakeOverflow : Bytes := stakeText (stakeAdd (stakeValue 4611686018427387903) (stakeValue 1))
+def fxDurationOverflow : Bytes := durationText (durationAdd (durationValue 4611686018427387903) (durationValue 1))
+def fxSequenceMax : Bytes := decimal64 (sequenceBits (sequenceNumber (epochValue 4294967295) (roundValue 4294967295)))
+def fxSequenceSigned : Nat := sequenceLess (sequenceNumber (epochValue 2147483648) roundGenesis) (sequenceNumber (epochValue 0) roundGenesis)
+def fxSequenceEpoch : Bytes := decimal64 (epochNat (sequenceEpoch (sequenceNumber (epochValue 4294967295) (roundValue 123))))
+def fxSequenceRound : Bytes := decimal64 (roundNat (sequenceRound (sequenceNumber (epochValue 4294967295) (roundValue 123))))
+def fxLeaderIndex : Bytes := decimal64 (leaderRoundIndex (leaderRoundValue (roundValue 4294967294)))
+def fxDivision : Bytes -> Bytes -> Bytes := fun (numerator : Bytes) (denominator : Bytes) =>
+  match (parseU64 numerator) as self in NatOption return Bytes with
+  | natNone => b"none"
+  | natSome n =>
+    match (parseU64 denominator) as other in NatOption return Bytes with
+    | natNone => b"none"
+    | natSome d =>
+      let result : DivResult := divide64 n d in
+      append (decimal64 (divQuotient result)) (append b":" (decimal64 (divRemainder result)))
+def fxNonemptyHead : Nat := nonemptyHead (nonemptyNats 7 (natsCons 8 (natsCons 9 natsNil)))
+def fxNonemptyLast : Nat := nonemptyLast (nonemptyNats 7 (natsCons 8 (natsCons 9 natsNil)))
+def fxNonemptySingleton : Nat := nonemptyLast (nonemptyNats 7 natsNil)

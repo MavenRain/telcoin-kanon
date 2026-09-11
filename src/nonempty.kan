@@ -1,0 +1,90 @@
+-- Generic Nonempty stores a head and a concrete typed tail.
+def Nonempty : (0 A : Type 0) -> (0 L : Type 0) -> Type 0 := fun (0 A : Type 0) (0 L : Type 0) => prod (A, L)
+def nonemptySingleton : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> A -> Nonempty A L :=
+  fun (0 A : Type 0) (0 L : Type 0) (ops : ListOps A L) (value : A) => tuple (value, ops.0)
+def nonemptyCons : (0 A : Type 0) -> (0 L : Type 0) -> A -> L -> Nonempty A L :=
+  fun (0 A : Type 0) (0 L : Type 0) (head : A) (tail : L) => tuple (head, tail)
+def nonemptyOfList : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> L -> ValueOption (Nonempty A L) :=
+  fun (0 A : Type 0) (0 L : Type 0) (ops : ListOps A L) (values : L) =>
+    case (ops.4 values) with
+    | 0 (unit : prod ()) => valueNone (Nonempty A L)
+    | 1 (head : A) => valueSome (Nonempty A L) (tuple (head, ops.5 values))
+def nonemptyToList : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> Nonempty A L -> L :=
+  fun (0 A : Type 0) (0 L : Type 0) (ops : ListOps A L) (values : Nonempty A L) => ops.1 values.0 values.1
+def nonemptyFirst : (0 A : Type 0) -> (0 L : Type 0) -> Nonempty A L -> A :=
+  fun (0 A : Type 0) (0 L : Type 0) (values : Nonempty A L) => values.0
+def nonemptyFinal : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> Nonempty A L -> A :=
+  fun (0 A : Type 0) (0 L : Type 0) (ops : ListOps A L) (values : Nonempty A L) =>
+    case (ops.4 (ops.2 values.1)) with
+    | 0 (unit : prod ()) => values.0
+    | 1 (last : A) => last
+def nonemptyLength : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> Nonempty A L -> Nat :=
+  fun (0 A : Type 0) (0 L : Type 0) (ops : ListOps A L) (values : Nonempty A L) => natAdd 1 (ops.3 values.1)
+def steps64 : Steps := stepsBuild fuel64 stepOne
+def listFoldLeft : (0 A : Type 0) -> (0 L : Type 0) -> (0 S : Type 0) -> ListOps A L -> (S -> A -> S) -> S -> L -> S :=
+  fun (0 A : Type 0) (0 L : Type 0) (0 S : Type 0) (ops : ListOps A L) (step : S -> A -> S) (initial : S) (values : L) =>
+    let stop : prod (L, S) -> Nat := fun (state : prod (L, S)) =>
+      case (ops.4 state.0) with
+      | 0 (unit : prod ()) => 1
+      | 1 (value : A) => 0
+    in
+    let advance : prod (L, S) -> prod (L, S) := fun (state : prod (L, S)) =>
+      case (ops.4 state.0) with
+      | 0 (unit : prod ()) => state
+      | 1 (value : A) => tuple (ops.5 state.0, step state.1 value)
+    in
+    let final : prod (L, S) := stepsFold (prod (L, S)) steps64 stop advance (tuple (values, initial)) in final.1
+def listMapInto : (0 A : Type 0) -> (0 L : Type 0) -> (0 B : Type 0) -> (0 M : Type 0) ->
+    ListOps A L -> ListOps B M -> (A -> B) -> L -> M :=
+  fun (0 A : Type 0) (0 L : Type 0) (0 B : Type 0) (0 M : Type 0) (source : ListOps A L) (target : ListOps B M) (map : A -> B) (values : L) =>
+    target.2 (listFoldLeft A L M source (fun (acc : M) (value : A) => target.1 (map value) acc) target.0 values)
+def nonemptyFoldLeft : (0 A : Type 0) -> (0 L : Type 0) -> (0 S : Type 0) -> ListOps A L ->
+    (S -> A -> S) -> S -> Nonempty A L -> S :=
+  fun (0 A : Type 0) (0 L : Type 0) (0 S : Type 0) (ops : ListOps A L) (step : S -> A -> S) (initial : S) (values : Nonempty A L) =>
+    listFoldLeft A L S ops step (step initial values.0) values.1
+def nonemptyMap : (0 A : Type 0) -> (0 L : Type 0) -> (0 B : Type 0) -> (0 M : Type 0) ->
+    ListOps A L -> ListOps B M -> (A -> B) -> Nonempty A L -> Nonempty B M :=
+  fun (0 A : Type 0) (0 L : Type 0) (0 B : Type 0) (0 M : Type 0) (source : ListOps A L) (target : ListOps B M)
+    (map : A -> B) (values : Nonempty A L) => tuple (map values.0, listMapInto A L B M source target map values.1)
+def nonemptyAppend : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> Nonempty A L -> L -> Nonempty A L :=
+  fun (0 A : Type 0) (0 L : Type 0) (ops : ListOps A L) (values : Nonempty A L) (more : L) =>
+    tuple (values.0, listFoldLeft A L L ops (fun (acc : L) (head : A) => ops.1 head acc) more (ops.2 values.1))
+def nonemptyIter : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> (A -> prod ()) -> Nonempty A L -> prod () :=
+  fun (0 A : Type 0) (0 L : Type 0) (ops : ListOps A L) (visit : A -> prod ()) (values : Nonempty A L) =>
+    let visited : Nat := nonemptyFoldLeft A L Nat ops
+      (fun (count : Nat) (value : A) => let effect : prod () := visit value in natAdd count 1) 0 values in ()
+def listCompare : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> (A -> A -> Ordering) -> L -> L -> Ordering :=
+  fun (0 A : Type 0) (0 L : Type 0) (ops : ListOps A L) (compare : A -> A -> Ordering) (left : L) (right : L) =>
+    let advance : prod (L, L, Ordering, Nat) -> prod (L, L, Ordering, Nat) := fun (state : prod (L, L, Ordering, Nat)) =>
+      case (ops.4 state.0) with
+      | 0 (unit : prod ()) =>
+        (case (ops.4 state.1) with
+        | 0 (unit : prod ()) => tuple (state.0, state.1, orderEqual, 1)
+        | 1 (value : A) => tuple (state.0, state.1, orderLess, 1))
+      | 1 (a : A) =>
+        case (ops.4 state.1) with
+        | 0 (unit : prod ()) => tuple (state.0, state.1, orderGreater, 1)
+        | 1 (b : A) =>
+          let order : Ordering := compare a b in
+          let done : Nat := match order as self in Ordering return Nat with
+            | orderLess => 1
+            | orderEqual => 0
+            | orderGreater => 1
+          in tuple (ops.5 state.0, ops.5 state.1, order, done)
+    in
+    let final : prod (L, L, Ordering, Nat) := stepsFold (prod (L, L, Ordering, Nat)) steps64
+      (fun (state : prod (L, L, Ordering, Nat)) => state.3) advance (tuple (left, right, orderEqual, 0)) in final.2
+def nonemptyCompare : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> (A -> A -> Ordering) -> Nonempty A L -> Nonempty A L -> Ordering :=
+  fun (0 A : Type 0) (0 L : Type 0) (ops : ListOps A L) (compare : A -> A -> Ordering) (a : Nonempty A L) (b : Nonempty A L) =>
+    listCompare A L ops compare (nonemptyToList A L ops a) (nonemptyToList A L ops b)
+def nonemptyEqual : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> (A -> A -> Bool) -> Nonempty A L -> Nonempty A L -> Bool :=
+  fun (0 A : Type 0) (0 L : Type 0) (ops : ListOps A L) (equal : A -> A -> Bool) (a : Nonempty A L) (b : Nonempty A L) =>
+    let compare : A -> A -> Ordering := fun (x : A) (y : A) =>
+      case (equal x y) with
+      | 0 (unit : prod ()) => orderLess
+      | 1 (unit : prod ()) => orderEqual
+    in
+    match (nonemptyCompare A L ops compare a b) as self in Ordering return Bool with
+    | orderLess => natEq 0 1
+    | orderEqual => natEq 0 0
+    | orderGreater => natEq 0 1

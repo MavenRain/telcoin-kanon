@@ -1,0 +1,86 @@
+-- Byte lists follow the standard Kanon reactor ABI. Protocol input is octets.
+mu Bytes : Type 0 :=
+| bytesNil : Bytes
+| bytesCons (head : Nat) (tail : Bytes) : Bytes
+
+def Bool : Type 0 := sum ((prod () : Type 0), (prod () : Type 0))
+def choose : Bool -> Nat -> Nat -> Nat := fun (test : Bool) (yes : Nat) (no : Nat) =>
+  case test with
+  | 0 (unit : prod ()) => no
+  | 1 (unit : prod ()) => yes
+def boolNat : Bool -> Nat := fun (test : Bool) => choose test 1 0
+def minNat : Nat -> Nat -> Nat := fun (a : Nat) (b : Nat) => choose (natLt a b) a b
+def maxNat : Nat -> Nat -> Nat := fun (a : Nat) (b : Nat) => choose (natLt a b) b a
+def emptyBytes : Bytes := bytesNil
+-- The host adapter checks the byte range before calling this ABI constructor.
+def consBytes : Nat -> Bytes -> Bytes := fun (head : Nat) (tail : Bytes) => bytesCons head tail
+def bytesEmpty : Bytes -> Nat := fun (xs : Bytes) =>
+  match xs as self in Bytes return Nat with
+  | bytesNil => 1
+  | bytesCons head tail => 0
+def bytesHead : Bytes -> Nat := fun (xs : Bytes) =>
+  match xs as self in Bytes return Nat with
+  | bytesNil => 0
+  | bytesCons head tail => head
+def bytesTail : Bytes -> Bytes := fun (xs : Bytes) =>
+  match xs as self in Bytes return Bytes with
+  | bytesNil => bytesNil
+  | bytesCons head tail => tail
+def rec reverseOnto : Bytes -> Bytes -> Bytes := fun (xs : Bytes) (acc : Bytes) =>
+  match xs as self in Bytes return Bytes with
+  | bytesNil => acc
+  | bytesCons head tail => reverseOnto tail (bytesCons head acc)
+def reverse : Bytes -> Bytes := fun (xs : Bytes) => reverseOnto xs bytesNil
+def append : Bytes -> Bytes -> Bytes := fun (xs : Bytes) (ys : Bytes) => reverseOnto (reverse xs) ys
+def rec bytesLengthAcc : Bytes -> Nat -> Nat := fun (xs : Bytes) (acc : Nat) =>
+  match xs as self in Bytes return Nat with
+  | bytesNil => acc
+  | bytesCons head tail => bytesLengthAcc tail (natAdd acc 1)
+def bytesLength : Bytes -> Nat := fun (xs : Bytes) => bytesLengthAcc xs 0
+def rec bytesValid : Bytes -> Nat := fun (xs : Bytes) =>
+  match xs as self in Bytes return Nat with
+  | bytesNil => 1
+  | bytesCons head tail =>
+    case (natLt head 256) with
+    | 0 (unit : prod ()) => 0
+    | 1 (unit : prod ()) => bytesValid tail
+def rec takeAcc : Bytes -> Nat -> Bytes -> Bytes := fun (xs : Bytes) (n : Nat) (acc : Bytes) =>
+  match xs as self in Bytes return Bytes with
+  | bytesNil => reverse acc
+  | bytesCons head tail =>
+    case (natEq n 0) with
+    | 0 (unit : prod ()) => takeAcc tail (natSub n 1) (bytesCons head acc)
+    | 1 (unit : prod ()) => reverse acc
+def take : Nat -> Bytes -> Bytes := fun (n : Nat) (xs : Bytes) => takeAcc xs n bytesNil
+def rec drop : Bytes -> Nat -> Bytes := fun (xs : Bytes) (n : Nat) =>
+  match xs as self in Bytes return Bytes with
+  | bytesNil => bytesNil
+  | bytesCons head tail =>
+    case (natEq n 0) with
+    | 0 (unit : prod ()) => drop tail (natSub n 1)
+    | 1 (unit : prod ()) => xs
+
+mu NatOption : Type 0 :=
+| natNone : NatOption
+| natSome (value : Nat) : NatOption
+def natOptionSet : NatOption -> Nat := fun (result : NatOption) =>
+  match result as self in NatOption return Nat with
+  | natNone => 0
+  | natSome value => 1
+
+-- Nat lists are distinct from bytes and may contain full protocol integers.
+mu Nats : Type 0 :=
+| natsNil : Nats
+| natsCons (head : Nat) (tail : Nats) : Nats
+mu NonemptyNats : Type 0 :=
+| nonemptyNats (head : Nat) (tail : Nats) : NonemptyNats
+def nonemptyHead : NonemptyNats -> Nat := fun (xs : NonemptyNats) =>
+  match xs as self in NonemptyNats return Nat with
+  | nonemptyNats head tail => head
+def rec natsLast : Nats -> Nat -> Nat := fun (xs : Nats) (previous : Nat) =>
+  match xs as self in Nats return Nat with
+  | natsNil => previous
+  | natsCons head tail => natsLast tail head
+def nonemptyLast : NonemptyNats -> Nat := fun (xs : NonemptyNats) =>
+  match xs as self in NonemptyNats return Nat with
+  | nonemptyNats head tail => natsLast tail head

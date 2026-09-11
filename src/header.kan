@@ -1,0 +1,101 @@
+-- Header payload preserves the first key position and the last worker value.
+def rec payloadHas : BatchWorkers -> BatchDigest -> Bool := fun (entries : BatchWorkers) (key : BatchDigest) =>
+  match entries as self in BatchWorkers return Bool with
+  | batchWorkersNil => natEq 0 1
+  | batchWorkersCons entry tail =>
+    case (batchDigestEqual entry.0 key) with
+    | 0 (unit : prod ()) => payloadHas tail key
+    | 1 (unit : prod ()) => natEq 0 0
+def rec payloadReplace : BatchWorkers -> BatchDigest -> WorkerId -> BatchWorkers :=
+  fun (entries : BatchWorkers) (key : BatchDigest) (worker : WorkerId) =>
+    match entries as self in BatchWorkers return BatchWorkers with
+    | batchWorkersNil => batchWorkersNil
+    | batchWorkersCons entry tail =>
+      case (batchDigestEqual entry.0 key) with
+      | 0 (unit : prod ()) => batchWorkersCons entry (payloadReplace tail key worker)
+      | 1 (unit : prod ()) => batchWorkersCons (tuple (entry.0, worker)) (payloadReplace tail key worker)
+def rec payloadCanonicalScan : BatchWorkers -> BatchWorkers -> BatchWorkers := fun (entries : BatchWorkers) (acc : BatchWorkers) =>
+  match entries as self in BatchWorkers return BatchWorkers with
+  | batchWorkersNil => seqBatchWorkerReverse acc
+  | batchWorkersCons entry tail =>
+    case (payloadHas acc entry.0) with
+    | 0 (unit : prod ()) => payloadCanonicalScan tail (batchWorkersCons entry acc)
+    | 1 (unit : prod ()) => payloadCanonicalScan tail (payloadReplace acc entry.0 entry.1)
+def headerCanonicalPayload : BatchWorkers -> BatchWorkers := fun (entries : BatchWorkers) => payloadCanonicalScan entries batchWorkersNil
+def headerCanonicalParents : HeaderDigests -> HeaderDigests := fun (parents : HeaderDigests) =>
+  seqHeaderDigestUniq headerDigestCompare (seqHeaderDigestSort headerDigestCompare parents)
+
+-- The source header's hand-written sequence reader admits the full u32 count,
+-- unlike Bcs.list's 2^31-1 length guard. Both stop at the first missing element.
+def headerListCodec : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> Codec A -> Codec L :=
+  fun (0 A : Type 0) (0 L : Type 0) (ops : ListOps A L) (codec : Codec A) =>
+    codecMake L (codecWrite L (codecList A L ops codec)) (fun (reader : BcsReader) =>
+      codecBind Nat L (codecRead Nat codecUleb reader) (fun (length : Nat) (next : BcsReader) =>
+        let initial : ListReadState L := inj 1 of 2 tuple (ops.0, next, length) in
+        let final : ListReadState L := stepsFold (ListReadState L) steps32 (listReadStop L)
+          (listReadStep A L codec (codecListAdmit A L ops)) initial in
+        case final with
+        | 0 (error : BcsError) => codecError L error
+        | 1 (fields : prod (L, BcsReader, Nat)) => codecOk L (ops.2 fields.0) fields.1))
+def HeaderFields : Type 0 := prod (AuthorityId, Round, Epoch, Timestamp, BatchWorkers, HeaderDigests, BlockNumHash)
+mu Header : Type 0 :=
+| headerValue (fields : HeaderFields) (digest : HeaderDigest) : Header
+def headerFields : Header -> HeaderFields := fun (header : Header) =>
+  match header as self in Header return HeaderFields with
+  | headerValue fields digest => fields
+def headerDigest : Header -> HeaderDigest := fun (header : Header) =>
+  match header as self in Header return HeaderDigest with
+  | headerValue fields digest => digest
+def headerAuthor : Header -> AuthorityId := fun (header : Header) => (headerFields header).0
+def headerRound : Header -> Round := fun (header : Header) => (headerFields header).1
+def headerEpoch : Header -> Epoch := fun (header : Header) => (headerFields header).2
+def headerCreatedAt : Header -> Timestamp := fun (header : Header) => (headerFields header).3
+def headerPayload : Header -> BatchWorkers := fun (header : Header) => (headerFields header).4
+def headerParents : Header -> HeaderDigests := fun (header : Header) => (headerFields header).5
+def headerLatestExecutionBlock : Header -> BlockNumHash := fun (header : Header) => (headerFields header).6
+def headerPayloadCodec : Codec BatchWorkers := headerListCodec (prod (BatchDigest, WorkerId)) BatchWorkers seqBatchWorkerOps (codecPair BatchDigest WorkerId batchDigestCodec workerIdCodec)
+def headerParentsCodec : Codec HeaderDigests := headerListCodec HeaderDigest HeaderDigests seqHeaderDigestOps headerDigestCodec
+def headerWriteFields : HeaderFields -> Bytes := fun (f : HeaderFields) =>
+  append (authorityIdBytes f.0) (append (bcsEncodeU32 (roundNat f.1)) (append (bcsEncodeU32 (epochNat f.2))
+    (append (bcsEncodeU64 (timestampNat f.3)) (append (codecWrite BatchWorkers headerPayloadCodec f.4)
+      (append (codecWrite HeaderDigests headerParentsCodec f.5) (codecWrite BlockNumHash blockNumHashCodec f.6))))))
+def headerReadFields : BcsReader -> CodecResult HeaderFields := fun (reader : BcsReader) =>
+  codecBind AuthorityId HeaderFields (codecRead AuthorityId authorityIdRawCodec reader) (fun (author : AuthorityId) (r1 : BcsReader) =>
+  codecBind Round HeaderFields (codecRead Round roundCodec r1) (fun (round : Round) (r2 : BcsReader) =>
+  codecBind Epoch HeaderFields (codecRead Epoch epochCodec r2) (fun (epoch : Epoch) (r3 : BcsReader) =>
+  codecBind Timestamp HeaderFields (codecRead Timestamp timestampCodec r3) (fun (created : Timestamp) (r4 : BcsReader) =>
+  codecBind BatchWorkers HeaderFields (codecRead BatchWorkers headerPayloadCodec r4) (fun (payload : BatchWorkers) (r5 : BcsReader) =>
+  codecBind HeaderDigests HeaderFields (codecRead HeaderDigests headerParentsCodec r5) (fun (parents : HeaderDigests) (r6 : BcsReader) =>
+  codecBind BlockNumHash HeaderFields (codecRead BlockNumHash blockNumHashCodec r6) (fun (anchor : BlockNumHash) (r7 : BcsReader) =>
+    codecOk HeaderFields (tuple (author, round, epoch, created, headerCanonicalPayload payload, headerCanonicalParents parents, anchor)) r7)))))))
+def headerFieldsCodec : Codec HeaderFields := codecMake HeaderFields headerWriteFields headerReadFields
+def headerOfFields : HeaderFields -> Header := fun (f : HeaderFields) =>
+  let canonical : HeaderFields := tuple (f.0, f.1, f.2, f.3, headerCanonicalPayload f.4, headerCanonicalParents f.5, f.6) in
+  headerValue canonical (headerDigestOfDigest (digestHash (headerWriteFields canonical)))
+def headerMake : AuthorityId -> Round -> Epoch -> Timestamp -> BatchWorkers -> HeaderDigests -> BlockNumHash -> Header :=
+  fun (author : AuthorityId) (round : Round) (epoch : Epoch) (created : Timestamp) (payload : BatchWorkers) (parents : HeaderDigests) (anchor : BlockNumHash) =>
+    headerOfFields (tuple (author, round, epoch, created, payload, parents, anchor))
+def headerCodec : Codec Header := codecIso HeaderFields Header headerOfFields headerFields headerFieldsCodec
+def headerEqual : Header -> Header -> Bool := fun (a : Header) (b : Header) => headerDigestEqual (headerDigest a) (headerDigest b)
+def headerCompare : Header -> Header -> Ordering := fun (a : Header) (b : Header) => headerDigestCompare (headerDigest a) (headerDigest b)
+mu HeaderValidation : Type 0 :=
+| headerValid : HeaderValidation
+| headerWrongEpoch : HeaderValidation
+| headerAuthorUnknown : HeaderValidation
+| headerEmptyParents : HeaderValidation
+def headerValidationText : HeaderValidation -> Bytes := fun (result : HeaderValidation) =>
+  match result as self in HeaderValidation return Bytes with
+  | headerValid => b"ok"
+  | headerWrongEpoch => b"header epoch does not match committee epoch"
+  | headerAuthorUnknown => b"header author is not a committee member"
+  | headerEmptyParents => b"non-genesis header has no parents"
+def headerValidate : Committee -> Header -> HeaderValidation := fun (committee : Committee) (header : Header) =>
+  case (epochEqual (headerEpoch header) (committeeEpoch committee)) with
+  | 0 (unit : prod ()) => headerWrongEpoch
+  | 1 (unit : prod ()) =>
+    case (committeeContains committee (headerAuthor header)) with
+    | 0 (unit : prod ()) => headerAuthorUnknown
+    | 1 (unit : prod ()) =>
+      case (boolAnd (natLt 0 (roundNat (headerRound header))) (natEq (seqHeaderDigestLength (headerParents header)) 0)) with
+      | 0 (unit : prod ()) => headerValid
+      | 1 (unit : prod ()) => headerEmptyParents

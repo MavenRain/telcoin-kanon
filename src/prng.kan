@@ -1,0 +1,109 @@
+-- SplitMix64 matches tn_std/Prng, including unsigned reduction and split's gap.
+def wordModulus : Nat := 18446744073709551616
+def bitPowers64 : Powers := powersBuild fuel64 1 1 powersNil
+def rec wordXorScan : Powers -> Nat -> Nat -> Nat -> Nat :=
+  fun (powers : Powers) (left : Nat) (right : Nat) (acc : Nat) =>
+    match powers as self in Powers return Nat with
+    | powersNil => acc
+    | powersCons power weight tail =>
+      let a : Nat := choose (natLt left power) 0 1 in
+      let b : Nat := choose (natLt right power) 0 1 in
+      let different : Nat := choose (natEq a b) 0 1 in
+      wordXorScan tail (natSub left (natMul a power)) (natSub right (natMul b power)) (natAdd acc (natMul different power))
+def wordXor64 : Nat -> Nat -> Nat := fun (a : Nat) (b : Nat) => wordXorScan bitPowers64 a b 0
+-- For inputs below 2^128, division by 2^64 has a quotient fitting 64 bits.
+def wordLow64 : Nat -> Nat := fun (wide : Nat) =>
+  divRemainder (divideScan (powersBuild fuel64 wordModulus 1 powersNil) wide 0)
+def wordAdd64 : Nat -> Nat -> Nat := fun (a : Nat) (b : Nat) =>
+  let total : Nat := natAdd a b in choose (natLt total wordModulus) total (natSub total wordModulus)
+def wordMul64 : Nat -> Nat -> Nat := fun (a : Nat) (b : Nat) => wordLow64 (natMul a b)
+mu Prng : Type 0 :=
+| prngState (bits : Nat) : Prng
+mu PrngDraw : Type 0 :=
+| prngDraw (value : Nat) (state : Prng) : PrngDraw
+def prngBits : Prng -> Nat := fun (state : Prng) =>
+  match state as self in Prng return Nat with
+  | prngState bits => bits
+def prngDrawValue : PrngDraw -> Nat := fun (draw : PrngDraw) =>
+  match draw as self in PrngDraw return Nat with
+  | prngDraw value state => value
+def prngDrawState : PrngDraw -> Prng := fun (draw : PrngDraw) =>
+  match draw as self in PrngDraw return Prng with
+  | prngDraw value state => state
+def prngGolden : Nat := 11400714819323198485
+def prngMix : Nat -> Nat := fun (input : Nat) =>
+  let first : Nat := wordMul64 (wordXor64 input (quotient64 input 1073741824)) 13787848793156543929 in
+  let second : Nat := wordMul64 (wordXor64 first (quotient64 first 134217728)) 10723151780598845931 in
+  wordXor64 second (quotient64 second 2147483648)
+def prngNext : Prng -> PrngDraw := fun (state : Prng) =>
+  let next : Nat := wordAdd64 (prngBits state) prngGolden in prngDraw (prngMix next) (prngState next)
+def prngSplit : Prng -> prod (Prng, Prng) := fun (state : Prng) =>
+  let first : PrngDraw := prngNext state in
+  let skipped : Prng := prngState (wordAdd64 (prngBits (prngDrawState first)) prngGolden) in
+  let second : PrngDraw := prngNext skipped in
+  tuple (prngState (prngDrawValue first), prngState (prngDrawValue second))
+
+mu HostInt : Type 0 :=
+| hostIntPositive (value : Nat) : HostInt
+| hostIntNegative (magnitude : Nat) : HostInt
+def hostIntParseMagnitude : Nat -> NatOption -> ValueOption HostInt := fun (negative : Nat) (parsed : NatOption) =>
+  match parsed as self in NatOption return ValueOption HostInt with
+  | natNone => valueNone HostInt
+  | natSome n =>
+    let bound : Nat := natAdd hostIntMax negative in
+    let value : HostInt :=
+      case (natEq (natMul negative n) 0) with
+      | 0 (unit : prod ()) => hostIntNegative n
+      | 1 (unit : prod ()) => hostIntPositive n
+    in
+    case (natLt bound n) with
+    | 0 (unit : prod ()) => valueSome HostInt value
+    | 1 (unit : prod ()) => valueNone HostInt
+def hostIntParse : Bytes -> ValueOption HostInt := fun (text : Bytes) =>
+  match text as self in Bytes return ValueOption HostInt with
+  | bytesNil => valueNone HostInt
+  | bytesCons head tail =>
+    case (natEq head 45) with
+    | 0 (unit : prod ()) => hostIntParseMagnitude 0 (parseU64 text)
+    | 1 (unit : prod ()) => hostIntParseMagnitude 1 (parseU64 tail)
+def hostIntText : HostInt -> Bytes := fun (value : HostInt) =>
+  match value as self in HostInt return Bytes with
+  | hostIntPositive n => decimal64 n
+  | hostIntNegative n => bytesCons 45 (decimal64 n)
+def hostIntLess : HostInt -> HostInt -> Nat := fun (a : HostInt) (b : HostInt) =>
+  match a as self in HostInt return Nat with
+  | hostIntPositive x =>
+    (match b as other in HostInt return Nat with
+    | hostIntPositive y => boolNat (natLt x y)
+    | hostIntNegative y => 0)
+  | hostIntNegative x =>
+    match b as other in HostInt return Nat with
+    | hostIntPositive y => 1
+    | hostIntNegative y => boolNat (natLt y x)
+def hostIntDistance : HostInt -> HostInt -> Nat := fun (lo : HostInt) (hi : HostInt) =>
+  match lo as self in HostInt return Nat with
+  | hostIntPositive x =>
+    (match hi as other in HostInt return Nat with
+    | hostIntPositive y => natSub y x
+    | hostIntNegative y => 0)
+  | hostIntNegative x =>
+    match hi as other in HostInt return Nat with
+    | hostIntPositive y => natAdd x y
+    | hostIntNegative y => natSub x y
+def hostIntOffset : HostInt -> Nat -> HostInt := fun (lo : HostInt) (offset : Nat) =>
+  match lo as self in HostInt return HostInt with
+  | hostIntPositive n => hostIntPositive (natAdd n offset)
+  | hostIntNegative n =>
+    case (natLt offset n) with
+    | 0 (unit : prod ()) => hostIntPositive (natSub offset n)
+    | 1 (unit : prod ()) => hostIntNegative (natSub n offset)
+mu PrngIntDraw : Type 0 :=
+| prngIntDraw (value : HostInt) (state : Prng) : PrngIntDraw
+def prngIntIn : Prng -> HostInt -> HostInt -> PrngIntDraw := fun (state : Prng) (lo : HostInt) (hi : HostInt) =>
+  let draw : PrngDraw := prngNext state in
+  case (natEq (hostIntLess lo hi) 1) with
+  | 0 (unit : prod ()) => prngIntDraw lo (prngDrawState draw)
+  | 1 (unit : prod ()) =>
+    let span : Nat := natAdd (hostIntDistance lo hi) 1 in
+    let offset : Nat := remainder64 (prngDrawValue draw) span in
+    prngIntDraw (hostIntOffset lo offset) (prngDrawState draw)

@@ -1,0 +1,129 @@
+mu CommitteeError : Type 0 :=
+| committeeTooSmall (size : Nat) : CommitteeError
+| committeeDuplicateKey : CommitteeError
+mu Committee : Type 0 :=
+| committeeValue (epoch : Epoch) (authorities : Authorities) (first : Authority) (quorum : Stake) (validity : Stake) : Committee
+mu CommitteeResult : Type 0 :=
+| committeeError (error : CommitteeError) : CommitteeResult
+| committeeOk (committee : Committee) : CommitteeResult
+def committeeErrorText : CommitteeError -> Bytes := fun (error : CommitteeError) =>
+  match error as self in CommitteeError return Bytes with
+  | committeeTooSmall size => append b"committee needs at least 2 authorities, got " (decimal64 size)
+  | committeeDuplicateKey => b"committee has a duplicate protocol key"
+def rec committeeUnique : Authorities -> ValueOption AuthorityId -> Nat := fun (authorities : Authorities) (previous : ValueOption AuthorityId) =>
+  match authorities as self in Authorities return Nat with
+  | authoritiesNil => 1
+  | authoritiesCons head tail =>
+    let duplicate : Nat :=
+      case previous with
+      | 0 (unit : prod ()) => 0
+      | 1 (id : AuthorityId) => boolNat (authorityIdEqual id (authorityId head))
+    in
+    case (natEq duplicate 1) with
+    | 0 (unit : prod ()) => committeeUnique tail (valueSome AuthorityId (authorityId head))
+    | 1 (unit : prod ()) => 0
+def committeeCreate : Epoch -> Authorities -> CommitteeResult := fun (epoch : Epoch) (authorities : Authorities) =>
+  let size : Nat := seqAuthorityLength authorities in
+  case (natLt size 2) with
+  | 1 (unit : prod ()) => committeeError (committeeTooSmall size)
+  | 0 (unit : prod ()) =>
+    let sorted : Authorities := seqAuthoritySort authorityCompare authorities in
+    case (natEq (committeeUnique sorted (valueNone AuthorityId)) 1) with
+    | 0 (unit : prod ()) => committeeError committeeDuplicateKey
+    | 1 (unit : prod ()) =>
+      match sorted as self in Authorities return CommitteeResult with
+      | authoritiesNil => committeeError (committeeTooSmall 0)
+      | authoritiesCons first rest => committeeOk (committeeValue epoch sorted first
+          (stakeValue (natAdd (quotient64 (natMul 2 size) 3) 1)) (stakeValue (quotient64 (natAdd size 2) 3)))
+def committeeEpoch : Committee -> Epoch := fun (value : Committee) =>
+  match value as self in Committee return Epoch with
+  | committeeValue epoch authorities first quorum validity => epoch
+def committeeAuthorities : Committee -> Authorities := fun (value : Committee) =>
+  match value as self in Committee return Authorities with
+  | committeeValue epoch authorities first quorum validity => authorities
+def committeeFirst : Committee -> Authority := fun (value : Committee) =>
+  match value as self in Committee return Authority with
+  | committeeValue epoch authorities first quorum validity => first
+def committeeQuorum : Committee -> Stake := fun (value : Committee) =>
+  match value as self in Committee return Stake with
+  | committeeValue epoch authorities first quorum validity => quorum
+def committeeValidity : Committee -> Stake := fun (value : Committee) =>
+  match value as self in Committee return Stake with
+  | committeeValue epoch authorities first quorum validity => validity
+def committeeSize : Committee -> Nat := fun (value : Committee) => seqAuthorityLength (committeeAuthorities value)
+def committeeTotalStake : Committee -> Stake := fun (value : Committee) => stakeValue (committeeSize value)
+def committeeReachesQuorum : Committee -> Stake -> Bool := fun (value : Committee) (stake : Stake) => stakeAtLeast stake (committeeQuorum value)
+def committeeReachesValidity : Committee -> Stake -> Bool := fun (value : Committee) (stake : Stake) => stakeAtLeast stake (committeeValidity value)
+def rec authorityLookup : Authorities -> AuthorityId -> ValueOption Authority := fun (authorities : Authorities) (id : AuthorityId) =>
+  match authorities as self in Authorities return ValueOption Authority with
+  | authoritiesNil => valueNone Authority
+  | authoritiesCons head tail =>
+    case (authorityIdEqual id (authorityId head)) with
+    | 0 (unit : prod ()) => authorityLookup tail id
+    | 1 (unit : prod ()) => valueSome Authority head
+def committeeAuthority : Committee -> AuthorityId -> ValueOption Authority := fun (committee : Committee) (id : AuthorityId) => authorityLookup (committeeAuthorities committee) id
+def committeeContains : Committee -> AuthorityId -> Bool := fun (committee : Committee) (id : AuthorityId) =>
+  case (committeeAuthority committee id) with
+  | 0 (unit : prod ()) => natEq 0 1
+  | 1 (value : Authority) => natEq 0 0
+def rec authorityIndex : Authorities -> AuthorityId -> Nat -> NatOption := fun (authorities : Authorities) (id : AuthorityId) (index : Nat) =>
+  match authorities as self in Authorities return NatOption with
+  | authoritiesNil => natNone
+  | authoritiesCons head tail =>
+    case (authorityIdEqual id (authorityId head)) with
+    | 0 (unit : prod ()) => authorityIndex tail id (natAdd index 1)
+    | 1 (unit : prod ()) => natSome index
+def committeeIndexOf : Committee -> AuthorityId -> NatOption := fun (committee : Committee) (id : AuthorityId) => authorityIndex (committeeAuthorities committee) id 0
+def rec authorityNth : Authorities -> Nat -> ValueOption Authority := fun (authorities : Authorities) (index : Nat) =>
+  match authorities as self in Authorities return ValueOption Authority with
+  | authoritiesNil => valueNone Authority
+  | authoritiesCons head tail =>
+    case (natEq index 0) with
+    | 0 (unit : prod ()) => authorityNth tail (natSub index 1)
+    | 1 (unit : prod ()) => valueSome Authority head
+def committeeNth : Committee -> Nat -> ValueOption Authority := fun (committee : Committee) (index : Nat) => authorityNth (committeeAuthorities committee) index
+def committeeNthSigned : Committee -> HostInt -> ValueOption Authority := fun (committee : Committee) (index : HostInt) =>
+  match index as self in HostInt return ValueOption Authority with
+  | hostIntNegative magnitude => valueNone Authority
+  | hostIntPositive n => committeeNth committee n
+def committeeNthMod : Committee -> HostInt -> Authority := fun (committee : Committee) (index : HostInt) =>
+  let size : Nat := committeeSize committee in
+  let position : Nat :=
+    match index as self in HostInt return Nat with
+    | hostIntPositive n => remainder64 n size
+    | hostIntNegative magnitude => remainder64 (natSub size (remainder64 magnitude size)) size
+  in
+  case (committeeNth committee position) with
+  | 0 (unit : prod ()) => committeeFirst committee
+  | 1 (authority : Authority) => authority
+def rec authorityIdMember : AuthorityIds -> AuthorityId -> Nat := fun (ids : AuthorityIds) (id : AuthorityId) =>
+  match ids as self in AuthorityIds return Nat with
+  | authorityIdsNil => 0
+  | authorityIdsCons head tail =>
+    case (authorityIdEqual head id) with
+    | 0 (unit : prod ()) => authorityIdMember tail id
+    | 1 (unit : prod ()) => 1
+def rec committeeStakeScan : Authorities -> AuthorityIds -> Nat -> Nat := fun (authorities : Authorities) (ids : AuthorityIds) (acc : Nat) =>
+  match authorities as self in Authorities return Nat with
+  | authoritiesNil => acc
+  | authoritiesCons head tail => committeeStakeScan tail ids (natAdd acc (authorityIdMember ids (authorityId head)))
+def committeeStakeOf : Committee -> AuthorityIds -> Stake := fun (committee : Committee) (ids : AuthorityIds) => stakeValue (committeeStakeScan (committeeAuthorities committee) ids 0)
+def rec authoritiesRosterEqual : Authorities -> Authorities -> Nat := fun (a : Authorities) (b : Authorities) =>
+  match a as self in Authorities return Nat with
+  | authoritiesNil =>
+    (match b as other in Authorities return Nat with
+    | authoritiesNil => 1
+    | authoritiesCons head tail => 0)
+  | authoritiesCons head tail =>
+    match b as other in Authorities return Nat with
+    | authoritiesNil => 0
+    | authoritiesCons otherHead otherTail =>
+      let same : Nat := natMul (boolNat (publicKeyEqual (authorityKey head) (authorityKey otherHead)))
+        (boolNat (addressEqual (authorityAddress head) (authorityAddress otherHead))) in
+      case (natEq same 1) with
+      | 0 (unit : prod ()) => 0
+      | 1 (unit : prod ()) => authoritiesRosterEqual tail otherTail
+def committeeEqual : Committee -> Committee -> Bool := fun (a : Committee) (b : Committee) =>
+  case (epochEqual (committeeEpoch a) (committeeEpoch b)) with
+  | 0 (unit : prod ()) => natEq 0 1
+  | 1 (unit : prod ()) => natEq (authoritiesRosterEqual (committeeAuthorities a) (committeeAuthorities b)) 1

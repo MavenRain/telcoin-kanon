@@ -1,0 +1,139 @@
+-- Fixed-width protocol values. Smart constructors validate octets and width.
+def bytesEqual : Bytes -> Bytes -> Bool := fun (a : Bytes) (b : Bytes) =>
+  match (bytesOrdering a b) as self in Ordering return Bool with
+  | orderLess => natEq 0 1
+  | orderEqual => natEq 0 0
+  | orderGreater => natEq 0 1
+def rec bytesHexAcc : Bytes -> Bytes -> Bytes := fun (input : Bytes) (acc : Bytes) =>
+  match input as self in Bytes return Bytes with
+  | bytesNil => reverse acc
+  | bytesCons head tail => bytesHexAcc tail (reverseOnto (bcsHexByte head) acc)
+def bytesHex : Bytes -> Bytes := fun (input : Bytes) => bytesHexAcc input bytesNil
+
+mu Digest : Type 0 :=
+| digestValue (bytes : Bytes) : Digest
+def digestBytes : Digest -> Bytes := fun (value : Digest) =>
+  match value as self in Digest return Bytes with
+  | digestValue bytes => bytes
+def digestOfBytes : Bytes -> ValueOption Digest := fun (bytes : Bytes) =>
+  case (natEq (natMul (boolNat (natEq (bytesLength bytes) 32)) (bytesValid bytes)) 1) with
+  | 0 (unit : prod ()) => valueNone Digest
+  | 1 (unit : prod ()) => valueSome Digest (digestValue bytes)
+def digestZero : Digest := digestValue b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+def digestEqual : Digest -> Digest -> Bool := fun (a : Digest) (b : Digest) => bytesEqual (digestBytes a) (digestBytes b)
+def digestCompare : Digest -> Digest -> Ordering := fun (a : Digest) (b : Digest) => bytesOrdering (digestBytes a) (digestBytes b)
+def digestHex : Digest -> Bytes := fun (value : Digest) => bytesHex (digestBytes value)
+def digestCodec : Codec Digest := codecRefine Bytes Digest digestOfBytes digestBytes (codecSizedBytes 32)
+
+mu Hash32 : Type 0 :=
+| hash32Value (bytes : Bytes) : Hash32
+def hash32Bytes : Hash32 -> Bytes := fun (value : Hash32) =>
+  match value as self in Hash32 return Bytes with
+  | hash32Value bytes => bytes
+def hash32OfBytes : Bytes -> ValueOption Hash32 := fun (bytes : Bytes) =>
+  case (natEq (natMul (boolNat (natEq (bytesLength bytes) 32)) (bytesValid bytes)) 1) with
+  | 0 (unit : prod ()) => valueNone Hash32
+  | 1 (unit : prod ()) => valueSome Hash32 (hash32Value bytes)
+def hash32Zero : Hash32 := hash32Value b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+def hash32Equal : Hash32 -> Hash32 -> Bool := fun (a : Hash32) (b : Hash32) => bytesEqual (hash32Bytes a) (hash32Bytes b)
+def hash32Compare : Hash32 -> Hash32 -> Ordering := fun (a : Hash32) (b : Hash32) => bytesOrdering (hash32Bytes a) (hash32Bytes b)
+def hash32Hex : Hash32 -> Bytes := fun (value : Hash32) => bytesHex (hash32Bytes value)
+def hash32Codec : Codec Hash32 := codecRefine Bytes Hash32 hash32OfBytes hash32Bytes (codecSizedBytes 32)
+
+mu AuthorityId : Type 0 :=
+| authorityIdValue (bytes : Bytes) : AuthorityId
+def authorityIdBytes : AuthorityId -> Bytes := fun (value : AuthorityId) =>
+  match value as self in AuthorityId return Bytes with
+  | authorityIdValue bytes => bytes
+def authorityIdOfBytes : Bytes -> ValueOption AuthorityId := fun (bytes : Bytes) =>
+  case (natEq (natMul (boolNat (natEq (bytesLength bytes) 32)) (bytesValid bytes)) 1) with
+  | 0 (unit : prod ()) => valueNone AuthorityId
+  | 1 (unit : prod ()) => valueSome AuthorityId (authorityIdValue bytes)
+def authorityIdZero : AuthorityId := authorityIdValue b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+def authorityIdEqual : AuthorityId -> AuthorityId -> Bool := fun (a : AuthorityId) (b : AuthorityId) => bytesEqual (authorityIdBytes a) (authorityIdBytes b)
+def authorityIdCompare : AuthorityId -> AuthorityId -> Ordering := fun (a : AuthorityId) (b : AuthorityId) => bytesOrdering (authorityIdBytes a) (authorityIdBytes b)
+def authorityIdHex : AuthorityId -> Bytes := fun (value : AuthorityId) => bytesHex (authorityIdBytes value)
+def authorityIdCodec : Codec AuthorityId := codecRefine Bytes AuthorityId authorityIdOfBytes authorityIdBytes (codecSizedBytes 32)
+
+mu Address : Type 0 :=
+| addressValue (bytes : Bytes) : Address
+def addressBytes : Address -> Bytes := fun (value : Address) =>
+  match value as self in Address return Bytes with
+  | addressValue bytes => bytes
+def addressOfBytes : Bytes -> ValueOption Address := fun (bytes : Bytes) =>
+  case (natEq (natMul (boolNat (natEq (bytesLength bytes) 20)) (bytesValid bytes)) 1) with
+  | 0 (unit : prod ()) => valueNone Address
+  | 1 (unit : prod ()) => valueSome Address (addressValue bytes)
+def addressZero : Address := addressValue b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+def addressEqual : Address -> Address -> Bool := fun (a : Address) (b : Address) => bytesEqual (addressBytes a) (addressBytes b)
+def addressCompare : Address -> Address -> Ordering := fun (a : Address) (b : Address) => bytesOrdering (addressBytes a) (addressBytes b)
+def addressHex : Address -> Bytes := fun (value : Address) => bytesHex (addressBytes value)
+def addressCodec : Codec Address := codecRefine Bytes Address addressOfBytes addressBytes (codecSizedBytes 20)
+
+mu HeaderDigest : Type 0 :=
+| headerDigestValue (bytes : Bytes) : HeaderDigest
+def headerDigestBytes : HeaderDigest -> Bytes := fun (value : HeaderDigest) =>
+  match value as self in HeaderDigest return Bytes with
+  | headerDigestValue bytes => bytes
+def headerDigestOfBytes : Bytes -> ValueOption HeaderDigest := fun (bytes : Bytes) =>
+  case (natEq (natMul (boolNat (natEq (bytesLength bytes) 32)) (bytesValid bytes)) 1) with
+  | 0 (unit : prod ()) => valueNone HeaderDigest
+  | 1 (unit : prod ()) => valueSome HeaderDigest (headerDigestValue bytes)
+def headerDigestZero : HeaderDigest := headerDigestValue b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+def headerDigestEqual : HeaderDigest -> HeaderDigest -> Bool := fun (a : HeaderDigest) (b : HeaderDigest) => bytesEqual (headerDigestBytes a) (headerDigestBytes b)
+def headerDigestCompare : HeaderDigest -> HeaderDigest -> Ordering := fun (a : HeaderDigest) (b : HeaderDigest) => bytesOrdering (headerDigestBytes a) (headerDigestBytes b)
+def headerDigestHex : HeaderDigest -> Bytes := fun (value : HeaderDigest) => bytesHex (headerDigestBytes value)
+def headerDigestCodec : Codec HeaderDigest := codecRefine Bytes HeaderDigest headerDigestOfBytes headerDigestBytes (codecSizedBytes 32)
+def headerDigestOfDigest : Digest -> HeaderDigest := fun (value : Digest) => headerDigestValue (digestBytes value)
+def headerDigestToDigest : HeaderDigest -> Digest := fun (value : HeaderDigest) => digestValue (headerDigestBytes value)
+
+mu BatchDigest : Type 0 :=
+| batchDigestValue (bytes : Bytes) : BatchDigest
+def batchDigestBytes : BatchDigest -> Bytes := fun (value : BatchDigest) =>
+  match value as self in BatchDigest return Bytes with
+  | batchDigestValue bytes => bytes
+def batchDigestOfBytes : Bytes -> ValueOption BatchDigest := fun (bytes : Bytes) =>
+  case (natEq (natMul (boolNat (natEq (bytesLength bytes) 32)) (bytesValid bytes)) 1) with
+  | 0 (unit : prod ()) => valueNone BatchDigest
+  | 1 (unit : prod ()) => valueSome BatchDigest (batchDigestValue bytes)
+def batchDigestZero : BatchDigest := batchDigestValue b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+def batchDigestEqual : BatchDigest -> BatchDigest -> Bool := fun (a : BatchDigest) (b : BatchDigest) => bytesEqual (batchDigestBytes a) (batchDigestBytes b)
+def batchDigestCompare : BatchDigest -> BatchDigest -> Ordering := fun (a : BatchDigest) (b : BatchDigest) => bytesOrdering (batchDigestBytes a) (batchDigestBytes b)
+def batchDigestHex : BatchDigest -> Bytes := fun (value : BatchDigest) => bytesHex (batchDigestBytes value)
+def batchDigestCodec : Codec BatchDigest := codecRefine Bytes BatchDigest batchDigestOfBytes batchDigestBytes (codecSizedBytes 32)
+def batchDigestOfDigest : Digest -> BatchDigest := fun (value : Digest) => batchDigestValue (digestBytes value)
+def batchDigestToDigest : BatchDigest -> Digest := fun (value : BatchDigest) => digestValue (batchDigestBytes value)
+
+mu SubDagDigest : Type 0 :=
+| subDagDigestValue (bytes : Bytes) : SubDagDigest
+def subDagDigestBytes : SubDagDigest -> Bytes := fun (value : SubDagDigest) =>
+  match value as self in SubDagDigest return Bytes with
+  | subDagDigestValue bytes => bytes
+def subDagDigestOfBytes : Bytes -> ValueOption SubDagDigest := fun (bytes : Bytes) =>
+  case (natEq (natMul (boolNat (natEq (bytesLength bytes) 32)) (bytesValid bytes)) 1) with
+  | 0 (unit : prod ()) => valueNone SubDagDigest
+  | 1 (unit : prod ()) => valueSome SubDagDigest (subDagDigestValue bytes)
+def subDagDigestZero : SubDagDigest := subDagDigestValue b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+def subDagDigestEqual : SubDagDigest -> SubDagDigest -> Bool := fun (a : SubDagDigest) (b : SubDagDigest) => bytesEqual (subDagDigestBytes a) (subDagDigestBytes b)
+def subDagDigestCompare : SubDagDigest -> SubDagDigest -> Ordering := fun (a : SubDagDigest) (b : SubDagDigest) => bytesOrdering (subDagDigestBytes a) (subDagDigestBytes b)
+def subDagDigestHex : SubDagDigest -> Bytes := fun (value : SubDagDigest) => bytesHex (subDagDigestBytes value)
+def subDagDigestCodec : Codec SubDagDigest := codecRefine Bytes SubDagDigest subDagDigestOfBytes subDagDigestBytes (codecSizedBytes 32)
+def subDagDigestOfDigest : Digest -> SubDagDigest := fun (value : Digest) => subDagDigestValue (digestBytes value)
+def subDagDigestToDigest : SubDagDigest -> Digest := fun (value : SubDagDigest) => digestValue (subDagDigestBytes value)
+
+mu OutputDigest : Type 0 :=
+| outputDigestValue (bytes : Bytes) : OutputDigest
+def outputDigestBytes : OutputDigest -> Bytes := fun (value : OutputDigest) =>
+  match value as self in OutputDigest return Bytes with
+  | outputDigestValue bytes => bytes
+def outputDigestOfBytes : Bytes -> ValueOption OutputDigest := fun (bytes : Bytes) =>
+  case (natEq (natMul (boolNat (natEq (bytesLength bytes) 32)) (bytesValid bytes)) 1) with
+  | 0 (unit : prod ()) => valueNone OutputDigest
+  | 1 (unit : prod ()) => valueSome OutputDigest (outputDigestValue bytes)
+def outputDigestZero : OutputDigest := outputDigestValue b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+def outputDigestEqual : OutputDigest -> OutputDigest -> Bool := fun (a : OutputDigest) (b : OutputDigest) => bytesEqual (outputDigestBytes a) (outputDigestBytes b)
+def outputDigestCompare : OutputDigest -> OutputDigest -> Ordering := fun (a : OutputDigest) (b : OutputDigest) => bytesOrdering (outputDigestBytes a) (outputDigestBytes b)
+def outputDigestHex : OutputDigest -> Bytes := fun (value : OutputDigest) => bytesHex (outputDigestBytes value)
+def outputDigestCodec : Codec OutputDigest := codecRefine Bytes OutputDigest outputDigestOfBytes outputDigestBytes (codecSizedBytes 32)
+def outputDigestOfDigest : Digest -> OutputDigest := fun (value : Digest) => outputDigestValue (digestBytes value)
+def outputDigestToDigest : OutputDigest -> Digest := fun (value : OutputDigest) => digestValue (outputDigestBytes value)

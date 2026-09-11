@@ -1,0 +1,64 @@
+def compositeReport : (0 A : Type 0) -> Codec A -> Bytes -> Bytes :=
+  fun (0 A : Type 0) (codec : Codec A) (input : Bytes) =>
+    case (codecDecode A codec input) with
+    | 0 (error : BcsError) => append b"error: " (bcsErrorText error)
+    | 1 (pair : prod (A, BcsReader)) => bytesCons 0 (codecWrite A codec pair.0)
+def list8Codec : Codec Nats := codecList Nat Nats seqNatOps codecU8
+def list16Codec : Codec Nats := codecList Nat Nats seqNatOps codecU16
+def list64Codec : Codec Nats := codecList Nat Nats seqNatOps codecU64
+def listBytesCodec : Codec ByteStrings := codecList Bytes ByteStrings seqBytesOps codecBytes
+def map8Codec : Codec NatPairs := codecSortedMap Nat Nat NatPairs seqNatPairOps codecU8 codecU8 natOrdering
+def map16Codec : Codec NatPairs := codecSortedMap Nat Nat NatPairs seqNatPairOps codecU16 codecU8 (codecEncodedCompare Nat codecU16)
+def mapBytesCodec : Codec ByteNatPairs := codecSortedMap Bytes Nat ByteNatPairs seqByteNatPairOps codecBytes codecU8 (codecEncodedCompare Bytes codecBytes)
+def set8Codec : Codec Nats := codecBtreeSet Nat Nats seqNatOps codecU8 natOrdering
+def unitsCodec : Codec UnitsList := codecList CodecUnit UnitsList seqUnitOps codecUnit
+def nestedCodec : Codec NatLists := codecList Nats NatLists seqNatListOps list8Codec
+def smallNat : Nat -> ValueOption Nat := fun (n : Nat) =>
+  case (natLt n 4) with
+  | 0 (unit : prod ()) => valueNone Nat
+  | 1 (unit : prod ()) => valueSome Nat n
+def refinedCodec : Codec Nat := codecRefine Nat Nat smallNat (fun (n : Nat) => n) codecU8
+def composite_list8 : Bytes -> Bytes := fun (input : Bytes) => compositeReport Nats list8Codec input
+def composite_list16 : Bytes -> Bytes := fun (input : Bytes) => compositeReport Nats list16Codec input
+def composite_list64 : Bytes -> Bytes := fun (input : Bytes) => compositeReport Nats list64Codec input
+def composite_listbytes : Bytes -> Bytes := fun (input : Bytes) => compositeReport ByteStrings listBytesCodec input
+def composite_map8 : Bytes -> Bytes := fun (input : Bytes) => compositeReport NatPairs map8Codec input
+def composite_map16 : Bytes -> Bytes := fun (input : Bytes) => compositeReport NatPairs map16Codec input
+def composite_mapbytes : Bytes -> Bytes := fun (input : Bytes) => compositeReport ByteNatPairs mapBytesCodec input
+def composite_set8 : Bytes -> Bytes := fun (input : Bytes) => compositeReport Nats set8Codec input
+def composite_units : Bytes -> Bytes := fun (input : Bytes) => compositeReport UnitsList unitsCodec input
+def composite_nested : Bytes -> Bytes := fun (input : Bytes) => compositeReport NatLists nestedCodec input
+def composite_optionbytes : Bytes -> Bytes := fun (input : Bytes) => compositeReport (ValueOption Bytes) (codecOption Bytes codecBytes) input
+def composite_triple : Bytes -> Bytes := fun (input : Bytes) => compositeReport (prod (Nat, Nat, Bytes)) (codecTriple Nat Nat Bytes codecU32 codecU32 codecBytes) input
+def composite_refine : Bytes -> Bytes := fun (input : Bytes) => compositeReport Nat refinedCodec input
+def composite_refineoffset : Bytes -> Bytes := fun (input : Bytes) => compositeReport (prod (Nat, Nat)) (codecPair Nat Nat codecU16 refinedCodec) input
+def composite_string : Bytes -> Bytes := fun (input : Bytes) => compositeReport Bytes codecStringUtf8 input
+def composite_mapencode : Bytes := codecWrite NatPairs map8Codec (natPairsCons (tuple (9, 170)) (natPairsCons (tuple (2, 187)) (natPairsCons (tuple (5, 204)) natPairsNil)))
+def composite_setencode : Bytes := codecWrite Nats set8Codec (natsCons 2 (natsCons 1 (natsCons 2 natsNil)))
+
+mu FixtureSum : Type 0 :=
+| fixtureEmpty : FixtureSum
+| fixtureNumber (value : Nat) : FixtureSum
+| fixtureBlob (value : Bytes) : FixtureSum
+def fixtureUnitProject : FixtureSum -> ValueOption CodecUnit := fun (value : FixtureSum) =>
+  match value as self in FixtureSum return ValueOption CodecUnit with
+  | fixtureEmpty => valueSome CodecUnit codecUnitValue
+  | fixtureNumber n => valueNone CodecUnit
+  | fixtureBlob bytes => valueNone CodecUnit
+def fixtureNumberProject : FixtureSum -> ValueOption Nat := fun (value : FixtureSum) =>
+  match value as self in FixtureSum return ValueOption Nat with
+  | fixtureEmpty => valueNone Nat
+  | fixtureNumber n => valueSome Nat n
+  | fixtureBlob bytes => valueNone Nat
+def fixtureBlobProject : FixtureSum -> ValueOption Bytes := fun (value : FixtureSum) =>
+  match value as self in FixtureSum return ValueOption Bytes with
+  | fixtureEmpty => valueNone Bytes
+  | fixtureNumber n => valueNone Bytes
+  | fixtureBlob bytes => valueSome Bytes bytes
+def fixtureUnitCase : CodecCases FixtureSum := codecCase FixtureSum CodecUnit 0 codecUnit (fun (unit : CodecUnit) => fixtureEmpty) fixtureUnitProject
+def fixtureNumberCase : CodecCases FixtureSum := codecCase FixtureSum Nat 128 codecU32 (fun (n : Nat) => fixtureNumber n) fixtureNumberProject
+def fixtureBlobCase : CodecCases FixtureSum := codecCase FixtureSum Bytes 2 codecBytes (fun (bytes : Bytes) => fixtureBlob bytes) fixtureBlobProject
+def fixtureSumCodec : Codec FixtureSum := codecSum FixtureSum (codecCasesPrepend FixtureSum fixtureUnitCase (codecCasesPrepend FixtureSum fixtureNumberCase fixtureBlobCase))
+def composite_sum : Bytes -> Bytes := fun (input : Bytes) => compositeReport FixtureSum fixtureSumCodec input
+def composite_sumoffset : Bytes -> Bytes := fun (input : Bytes) => compositeReport (prod (Nat, FixtureSum)) (codecPair Nat FixtureSum codecU8 fixtureSumCodec) input
+def composite_sumemptywrite : Bytes := codecWrite FixtureSum (codecSum FixtureSum (codecCasesEmpty FixtureSum)) fixtureEmpty

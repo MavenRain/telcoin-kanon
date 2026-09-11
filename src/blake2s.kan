@@ -1,0 +1,185 @@
+-- Unkeyed BLAKE2s-256 for the existing simulation crypto profile.
+-- Algorithm and constants: RFC 7693, sections 2 and 3, appendix D.
+-- This module does not implement the production BLAKE3/BLS profile.
+def Blake8 : Type 0 := prod (Nat, Nat, Nat, Nat, Nat, Nat, Nat, Nat)
+def Blake16 : Type 0 := prod (Nat, Nat, Nat, Nat, Nat, Nat, Nat, Nat, Nat, Nat, Nat, Nat, Nat, Nat, Nat, Nat)
+def bitPowers32 : Powers := powersBuild fuel32 1 1 powersNil
+def wordXor32 : Nat -> Nat -> Nat := fun (a : Nat) (b : Nat) => wordXorScan bitPowers32 a b 0
+def wordAdd32 : Nat -> Nat -> Nat := fun (a : Nat) (b : Nat) =>
+  let total : Nat := natAdd a b in choose (natLt total 4294967296) total (natSub total 4294967296)
+def wordRotate32 : Nat -> Nat -> Nat -> Nat := fun (value : Nat) (lowPower : Nat) (highPower : Nat) =>
+  let split : DivResult := divideScan (powersBuild fuel32 lowPower 1 powersNil) value 0 in
+  natAdd (divQuotient split) (natMul (divRemainder split) highPower)
+def blakeG : prod (Nat, Nat, Nat, Nat) -> Nat -> Nat -> prod (Nat, Nat, Nat, Nat) :=
+  fun (lane : prod (Nat, Nat, Nat, Nat)) (x : Nat) (y : Nat) =>
+    let a : Nat := wordAdd32 (wordAdd32 lane.0 lane.1) x in
+    let d : Nat := wordRotate32 (wordXor32 lane.3 a) 65536 65536 in
+    let c : Nat := wordAdd32 lane.2 d in
+    let b : Nat := wordRotate32 (wordXor32 lane.1 c) 4096 1048576 in
+    let aa : Nat := wordAdd32 (wordAdd32 a b) y in
+    let dd : Nat := wordRotate32 (wordXor32 d aa) 256 16777216 in
+    let cc : Nat := wordAdd32 c dd in
+    let bb : Nat := wordRotate32 (wordXor32 b cc) 128 33554432 in
+    tuple (aa, bb, cc, dd)
+def blakeStep0 : Blake16 -> Nat -> Nat -> Blake16 := fun (state : Blake16) (x : Nat) (y : Nat) =>
+  let changed : prod (Nat, Nat, Nat, Nat) := blakeG (tuple (state.0, state.4, state.8, state.12)) x y in
+  tuple (changed.0, state.1, state.2, state.3, changed.1, state.5, state.6, state.7, changed.2, state.9, state.10, state.11, changed.3, state.13, state.14, state.15)
+def blakeStep1 : Blake16 -> Nat -> Nat -> Blake16 := fun (state : Blake16) (x : Nat) (y : Nat) =>
+  let changed : prod (Nat, Nat, Nat, Nat) := blakeG (tuple (state.1, state.5, state.9, state.13)) x y in
+  tuple (state.0, changed.0, state.2, state.3, state.4, changed.1, state.6, state.7, state.8, changed.2, state.10, state.11, state.12, changed.3, state.14, state.15)
+def blakeStep2 : Blake16 -> Nat -> Nat -> Blake16 := fun (state : Blake16) (x : Nat) (y : Nat) =>
+  let changed : prod (Nat, Nat, Nat, Nat) := blakeG (tuple (state.2, state.6, state.10, state.14)) x y in
+  tuple (state.0, state.1, changed.0, state.3, state.4, state.5, changed.1, state.7, state.8, state.9, changed.2, state.11, state.12, state.13, changed.3, state.15)
+def blakeStep3 : Blake16 -> Nat -> Nat -> Blake16 := fun (state : Blake16) (x : Nat) (y : Nat) =>
+  let changed : prod (Nat, Nat, Nat, Nat) := blakeG (tuple (state.3, state.7, state.11, state.15)) x y in
+  tuple (state.0, state.1, state.2, changed.0, state.4, state.5, state.6, changed.1, state.8, state.9, state.10, changed.2, state.12, state.13, state.14, changed.3)
+def blakeStep4 : Blake16 -> Nat -> Nat -> Blake16 := fun (state : Blake16) (x : Nat) (y : Nat) =>
+  let changed : prod (Nat, Nat, Nat, Nat) := blakeG (tuple (state.0, state.5, state.10, state.15)) x y in
+  tuple (changed.0, state.1, state.2, state.3, state.4, changed.1, state.6, state.7, state.8, state.9, changed.2, state.11, state.12, state.13, state.14, changed.3)
+def blakeStep5 : Blake16 -> Nat -> Nat -> Blake16 := fun (state : Blake16) (x : Nat) (y : Nat) =>
+  let changed : prod (Nat, Nat, Nat, Nat) := blakeG (tuple (state.1, state.6, state.11, state.12)) x y in
+  tuple (state.0, changed.0, state.2, state.3, state.4, state.5, changed.1, state.7, state.8, state.9, state.10, changed.2, changed.3, state.13, state.14, state.15)
+def blakeStep6 : Blake16 -> Nat -> Nat -> Blake16 := fun (state : Blake16) (x : Nat) (y : Nat) =>
+  let changed : prod (Nat, Nat, Nat, Nat) := blakeG (tuple (state.2, state.7, state.8, state.13)) x y in
+  tuple (state.0, state.1, changed.0, state.3, state.4, state.5, state.6, changed.1, changed.2, state.9, state.10, state.11, state.12, changed.3, state.14, state.15)
+def blakeStep7 : Blake16 -> Nat -> Nat -> Blake16 := fun (state : Blake16) (x : Nat) (y : Nat) =>
+  let changed : prod (Nat, Nat, Nat, Nat) := blakeG (tuple (state.3, state.4, state.9, state.14)) x y in
+  tuple (state.0, state.1, state.2, changed.0, changed.1, state.5, state.6, state.7, state.8, changed.2, state.10, state.11, state.12, state.13, changed.3, state.15)
+def blakeRound0 : Blake16 -> Blake16 -> Blake16 := fun (message : Blake16) (initial : Blake16) =>
+  let s0 : Blake16 := blakeStep0 initial message.0 message.1 in
+  let s1 : Blake16 := blakeStep1 s0 message.2 message.3 in
+  let s2 : Blake16 := blakeStep2 s1 message.4 message.5 in
+  let s3 : Blake16 := blakeStep3 s2 message.6 message.7 in
+  let s4 : Blake16 := blakeStep4 s3 message.8 message.9 in
+  let s5 : Blake16 := blakeStep5 s4 message.10 message.11 in
+  let s6 : Blake16 := blakeStep6 s5 message.12 message.13 in
+  let s7 : Blake16 := blakeStep7 s6 message.14 message.15 in
+  s7
+def blakeRound1 : Blake16 -> Blake16 -> Blake16 := fun (message : Blake16) (initial : Blake16) =>
+  let s0 : Blake16 := blakeStep0 initial message.14 message.10 in
+  let s1 : Blake16 := blakeStep1 s0 message.4 message.8 in
+  let s2 : Blake16 := blakeStep2 s1 message.9 message.15 in
+  let s3 : Blake16 := blakeStep3 s2 message.13 message.6 in
+  let s4 : Blake16 := blakeStep4 s3 message.1 message.12 in
+  let s5 : Blake16 := blakeStep5 s4 message.0 message.2 in
+  let s6 : Blake16 := blakeStep6 s5 message.11 message.7 in
+  let s7 : Blake16 := blakeStep7 s6 message.5 message.3 in
+  s7
+def blakeRound2 : Blake16 -> Blake16 -> Blake16 := fun (message : Blake16) (initial : Blake16) =>
+  let s0 : Blake16 := blakeStep0 initial message.11 message.8 in
+  let s1 : Blake16 := blakeStep1 s0 message.12 message.0 in
+  let s2 : Blake16 := blakeStep2 s1 message.5 message.2 in
+  let s3 : Blake16 := blakeStep3 s2 message.15 message.13 in
+  let s4 : Blake16 := blakeStep4 s3 message.10 message.14 in
+  let s5 : Blake16 := blakeStep5 s4 message.3 message.6 in
+  let s6 : Blake16 := blakeStep6 s5 message.7 message.1 in
+  let s7 : Blake16 := blakeStep7 s6 message.9 message.4 in
+  s7
+def blakeRound3 : Blake16 -> Blake16 -> Blake16 := fun (message : Blake16) (initial : Blake16) =>
+  let s0 : Blake16 := blakeStep0 initial message.7 message.9 in
+  let s1 : Blake16 := blakeStep1 s0 message.3 message.1 in
+  let s2 : Blake16 := blakeStep2 s1 message.13 message.12 in
+  let s3 : Blake16 := blakeStep3 s2 message.11 message.14 in
+  let s4 : Blake16 := blakeStep4 s3 message.2 message.6 in
+  let s5 : Blake16 := blakeStep5 s4 message.5 message.10 in
+  let s6 : Blake16 := blakeStep6 s5 message.4 message.0 in
+  let s7 : Blake16 := blakeStep7 s6 message.15 message.8 in
+  s7
+def blakeRound4 : Blake16 -> Blake16 -> Blake16 := fun (message : Blake16) (initial : Blake16) =>
+  let s0 : Blake16 := blakeStep0 initial message.9 message.0 in
+  let s1 : Blake16 := blakeStep1 s0 message.5 message.7 in
+  let s2 : Blake16 := blakeStep2 s1 message.2 message.4 in
+  let s3 : Blake16 := blakeStep3 s2 message.10 message.15 in
+  let s4 : Blake16 := blakeStep4 s3 message.14 message.1 in
+  let s5 : Blake16 := blakeStep5 s4 message.11 message.12 in
+  let s6 : Blake16 := blakeStep6 s5 message.6 message.8 in
+  let s7 : Blake16 := blakeStep7 s6 message.3 message.13 in
+  s7
+def blakeRound5 : Blake16 -> Blake16 -> Blake16 := fun (message : Blake16) (initial : Blake16) =>
+  let s0 : Blake16 := blakeStep0 initial message.2 message.12 in
+  let s1 : Blake16 := blakeStep1 s0 message.6 message.10 in
+  let s2 : Blake16 := blakeStep2 s1 message.0 message.11 in
+  let s3 : Blake16 := blakeStep3 s2 message.8 message.3 in
+  let s4 : Blake16 := blakeStep4 s3 message.4 message.13 in
+  let s5 : Blake16 := blakeStep5 s4 message.7 message.5 in
+  let s6 : Blake16 := blakeStep6 s5 message.15 message.14 in
+  let s7 : Blake16 := blakeStep7 s6 message.1 message.9 in
+  s7
+def blakeRound6 : Blake16 -> Blake16 -> Blake16 := fun (message : Blake16) (initial : Blake16) =>
+  let s0 : Blake16 := blakeStep0 initial message.12 message.5 in
+  let s1 : Blake16 := blakeStep1 s0 message.1 message.15 in
+  let s2 : Blake16 := blakeStep2 s1 message.14 message.13 in
+  let s3 : Blake16 := blakeStep3 s2 message.4 message.10 in
+  let s4 : Blake16 := blakeStep4 s3 message.0 message.7 in
+  let s5 : Blake16 := blakeStep5 s4 message.6 message.3 in
+  let s6 : Blake16 := blakeStep6 s5 message.9 message.2 in
+  let s7 : Blake16 := blakeStep7 s6 message.8 message.11 in
+  s7
+def blakeRound7 : Blake16 -> Blake16 -> Blake16 := fun (message : Blake16) (initial : Blake16) =>
+  let s0 : Blake16 := blakeStep0 initial message.13 message.11 in
+  let s1 : Blake16 := blakeStep1 s0 message.7 message.14 in
+  let s2 : Blake16 := blakeStep2 s1 message.12 message.1 in
+  let s3 : Blake16 := blakeStep3 s2 message.3 message.9 in
+  let s4 : Blake16 := blakeStep4 s3 message.5 message.0 in
+  let s5 : Blake16 := blakeStep5 s4 message.15 message.4 in
+  let s6 : Blake16 := blakeStep6 s5 message.8 message.6 in
+  let s7 : Blake16 := blakeStep7 s6 message.2 message.10 in
+  s7
+def blakeRound8 : Blake16 -> Blake16 -> Blake16 := fun (message : Blake16) (initial : Blake16) =>
+  let s0 : Blake16 := blakeStep0 initial message.6 message.15 in
+  let s1 : Blake16 := blakeStep1 s0 message.14 message.9 in
+  let s2 : Blake16 := blakeStep2 s1 message.11 message.3 in
+  let s3 : Blake16 := blakeStep3 s2 message.0 message.8 in
+  let s4 : Blake16 := blakeStep4 s3 message.12 message.2 in
+  let s5 : Blake16 := blakeStep5 s4 message.13 message.7 in
+  let s6 : Blake16 := blakeStep6 s5 message.1 message.4 in
+  let s7 : Blake16 := blakeStep7 s6 message.10 message.5 in
+  s7
+def blakeRound9 : Blake16 -> Blake16 -> Blake16 := fun (message : Blake16) (initial : Blake16) =>
+  let s0 : Blake16 := blakeStep0 initial message.10 message.2 in
+  let s1 : Blake16 := blakeStep1 s0 message.8 message.4 in
+  let s2 : Blake16 := blakeStep2 s1 message.7 message.6 in
+  let s3 : Blake16 := blakeStep3 s2 message.1 message.5 in
+  let s4 : Blake16 := blakeStep4 s3 message.15 message.11 in
+  let s5 : Blake16 := blakeStep5 s4 message.9 message.14 in
+  let s6 : Blake16 := blakeStep6 s5 message.3 message.12 in
+  let s7 : Blake16 := blakeStep7 s6 message.13 message.0 in
+  s7
+def blakeRounds : Blake16 -> Blake16 -> Blake16 := fun (message : Blake16) (initial : Blake16) =>
+  let r0 : Blake16 := blakeRound0 message initial in
+  let r1 : Blake16 := blakeRound1 message r0 in
+  let r2 : Blake16 := blakeRound2 message r1 in
+  let r3 : Blake16 := blakeRound3 message r2 in
+  let r4 : Blake16 := blakeRound4 message r3 in
+  let r5 : Blake16 := blakeRound5 message r4 in
+  let r6 : Blake16 := blakeRound6 message r5 in
+  let r7 : Blake16 := blakeRound7 message r6 in
+  let r8 : Blake16 := blakeRound8 message r7 in
+  let r9 : Blake16 := blakeRound9 message r8 in
+  r9
+-- Missing bytes of the final block are read as zero padding.
+def blakeWord : Bytes -> Nat := fun (input : Bytes) =>
+  natAdd (bytesHead input) (natMul 256
+    (natAdd (bytesHead (bytesTail input)) (natMul 256
+      (natAdd (bytesHead (bytesTail (bytesTail input))) (natMul 256 (bytesHead (bytesTail (bytesTail (bytesTail input)))))))))
+def blakeMessage : Bytes -> Blake16 := fun (block : Bytes) =>
+  tuple (blakeWord (drop block 0), blakeWord (drop block 4), blakeWord (drop block 8), blakeWord (drop block 12), blakeWord (drop block 16), blakeWord (drop block 20), blakeWord (drop block 24), blakeWord (drop block 28), blakeWord (drop block 32), blakeWord (drop block 36), blakeWord (drop block 40), blakeWord (drop block 44), blakeWord (drop block 48), blakeWord (drop block 52), blakeWord (drop block 56), blakeWord (drop block 60))
+def blakeCompress : Blake8 -> Bytes -> Nat -> Nat -> Blake8 := fun (hash : Blake8) (block : Bytes) (count : Nat) (last : Nat) =>
+  let counter : DivResult := divide64 count 4294967296 in
+  let initial : Blake16 := tuple (hash.0, hash.1, hash.2, hash.3, hash.4, hash.5, hash.6, hash.7,
+    1779033703, 3144134277, 1013904242, 2773480762, wordXor32 1359893119 (divRemainder counter), wordXor32 2600822924 (divQuotient counter),
+    wordXor32 528734635 (choose (natEq last 1) 4294967295 0), 1541459225) in
+  let final : Blake16 := blakeRounds (blakeMessage block) initial in
+  tuple (wordXor32 hash.0 (wordXor32 final.0 final.8), wordXor32 hash.1 (wordXor32 final.1 final.9), wordXor32 hash.2 (wordXor32 final.2 final.10), wordXor32 hash.3 (wordXor32 final.3 final.11), wordXor32 hash.4 (wordXor32 final.4 final.12), wordXor32 hash.5 (wordXor32 final.5 final.13), wordXor32 hash.6 (wordXor32 final.6 final.14), wordXor32 hash.7 (wordXor32 final.7 final.15))
+def blakeInitial : Blake8 := tuple (1795745351, 3144134277, 1013904242, 2773480762, 1359893119, 2600822924, 528734635, 1541459225)
+def blakeRender : Blake8 -> Bytes := fun (state : Blake8) =>
+  append (bcsEncodeU32 state.0) (append (bcsEncodeU32 state.1) (append (bcsEncodeU32 state.2) (append (bcsEncodeU32 state.3) (append (bcsEncodeU32 state.4) (append (bcsEncodeU32 state.5) (append (bcsEncodeU32 state.6) (append (bcsEncodeU32 state.7) (bytesNil))))))))
+def rec blakeScan : Bytes -> Nat -> Bytes -> Nat -> Blake8 -> Bytes :=
+  fun (input : Bytes) (count : Nat) (block : Bytes) (length : Nat) (hash : Blake8) =>
+    match input as self in Bytes return Bytes with
+    | bytesNil => blakeRender (blakeCompress hash (reverse block) count 1)
+    | bytesCons head tail =>
+      case (natEq length 64) with
+      | 0 (unit : prod ()) => blakeScan tail (natAdd count 1) (bytesCons head block) (natAdd length 1) hash
+      | 1 (unit : prod ()) => blakeScan tail (natAdd count 1) (bytesCons head bytesNil) 1 (blakeCompress hash (reverse block) count 0)
+def blake2s256 : Bytes -> Bytes := fun (input : Bytes) => blakeScan input 0 bytesNil 0 blakeInitial

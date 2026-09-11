@@ -1,0 +1,2639 @@
+{
+  "version": 1,
+  "upstream": {
+    "root": "/Users/oobi/Documents/telcoin-ocaml",
+    "revision": "6b8bafe5ef1bb14376cddea5be6f4222c5720dfe",
+    "status": "",
+    "files": [
+      {
+        "path": "LICENSE-APACHE",
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+        "lines": 202
+      },
+      {
+        "path": "LICENSE-MIT",
+        "sha256": "76e08ed18f0286b869790d44f73b5149c2da7d624ce76c284f4e90ebde635c3f",
+        "lines": 21
+      },
+      {
+        "path": "PORTING.md",
+        "sha256": "031300955d261e3bc7b2b4f5df7c5eaa59d0930a3d9f0b5ee4d205aeb01f5c04",
+        "lines": 126
+      },
+      {
+        "path": "README.md",
+        "sha256": "51ba774ee1e7a12e1287972e02dd12624e3f40e825b6ade1da3087c7dfc8bcb2",
+        "lines": 562
+      },
+      {
+        "path": "bin/dune",
+        "sha256": "32e09eaf472ce884f60bbbe719db4f26c882eb929e335f6e1e9cdfb5f5e522e0",
+        "lines": 3
+      },
+      {
+        "path": "bin/tn_sim.ml",
+        "sha256": "c85198020bda10f9bc247ea80e13648507bb383289fb6acdc21d39f19ee6cc59",
+        "lines": 141
+      },
+      {
+        "path": "dune-project",
+        "sha256": "e6d5926b652e14e3fa391c6e296c6612805aa564559c2bf6fe8eece2269de597",
+        "lines": 29
+      },
+      {
+        "path": "lib/batch/batch_payload.ml",
+        "sha256": "199a07b7e06420042532ae7f7ea70610362b8c74756ec79441b8d90346e6a6fc",
+        "lines": 29
+      },
+      {
+        "path": "lib/batch/batch_payload.mli",
+        "sha256": "526334870e171cda10fab67a1f0b1a1808bba2cf90d204b6de280411acd71682",
+        "lines": 32
+      },
+      {
+        "path": "lib/batch/batch_validator.ml",
+        "sha256": "40ff39538cdd5dfacf9b3f805575765eb6562aa2e728890ff2a28a614362573b",
+        "lines": 244
+      },
+      {
+        "path": "lib/batch/batch_validator.mli",
+        "sha256": "a3f4664cbafc3cd8bd4229a9e57b2817c92148ede75ea051f63f893fc2c4d1cd",
+        "lines": 151
+      },
+      {
+        "path": "lib/batch/block_plan.ml",
+        "sha256": "f6f59d82a8106249d28ab5c64db16e17c750809bff5926cd5f5fdaad585298bb",
+        "lines": 167
+      },
+      {
+        "path": "lib/batch/block_plan.mli",
+        "sha256": "5b8e20b52432be38710032a91be0c435a3df12471d2e95e5f6f5c3b90a61a1c5",
+        "lines": 107
+      },
+      {
+        "path": "lib/batch/dune",
+        "sha256": "a5eae5550cd20bb5a887e010258f1a4b45f3b41e46d5f016aa9e8ba4b24fb71a",
+        "lines": 9
+      },
+      {
+        "path": "lib/batch/output.ml",
+        "sha256": "8cba6be5abee9bd2e48315d64de79a13104eeb44fd393caf939f293afe5712ce",
+        "lines": 104
+      },
+      {
+        "path": "lib/batch/output.mli",
+        "sha256": "2699331c013c905f37b9305dbf7609a56875de073be05b1cdf93438c9d1ca18a",
+        "lines": 89
+      },
+      {
+        "path": "lib/batch/tx_shape.ml",
+        "sha256": "ea24ab90e5e3e6b19a9ffcbe6bce96a3ba47b5f5b860a07283547f29b1a1da1a",
+        "lines": 496
+      },
+      {
+        "path": "lib/batch/tx_shape.mli",
+        "sha256": "0b16fed0e475366e6f07d0d3df832b2013e114e64054f94a53a43605824402e0",
+        "lines": 89
+      },
+      {
+        "path": "lib/codec/bcs.ml",
+        "sha256": "4bec8deee912157101464f860e64929b87838ece25c666cf5bbb45ba0a27931a",
+        "lines": 406
+      },
+      {
+        "path": "lib/codec/bcs.mli",
+        "sha256": "41eef31169f78abdaa18e1efecc5b14fbdbd26158ff065e06832805cc6320a54",
+        "lines": 194
+      },
+      {
+        "path": "lib/codec/dune",
+        "sha256": "efbdf0e42584dbe57fac3ff5d600d95e4275a54e853c686099c5192a64f6e6fb",
+        "lines": 3
+      },
+      {
+        "path": "lib/consensus/bullshark.ml",
+        "sha256": "37a83254b3c8ab0ff0765e3833ab5a25aacf6e68409dd0c2e5578d1a2c82bed7",
+        "lines": 316
+      },
+      {
+        "path": "lib/consensus/bullshark.mli",
+        "sha256": "5d14cf1833eb059deb5f824a54922efb2b58c66d55eb2dab482ae1465836314a",
+        "lines": 115
+      },
+      {
+        "path": "lib/consensus/committed_log.ml",
+        "sha256": "6a8432b9dd30c8cc8f1f2177cde2fcf764557fca12a235e5ee4c458af5552595",
+        "lines": 38
+      },
+      {
+        "path": "lib/consensus/committed_log.mli",
+        "sha256": "5358cee1de260be136e40a39ab7b90eb6d336c94f429eb788b41bcf889f4f317",
+        "lines": 57
+      },
+      {
+        "path": "lib/consensus/dag.ml",
+        "sha256": "3bb94615b0e3505d5c46418fef94aaa2f8802e41e34313ef4ff366116bcec800",
+        "lines": 186
+      },
+      {
+        "path": "lib/consensus/dag.mli",
+        "sha256": "5d363a39f4c966bb891304e45b936eb3398aff4e53b46493ff7ab55ee8ae4f44",
+        "lines": 137
+      },
+      {
+        "path": "lib/consensus/dune",
+        "sha256": "69fc484e96fbdb7b31e252ae0ad1ee939d25c900edcfc0176c7eed4e4795abb2",
+        "lines": 11
+      },
+      {
+        "path": "lib/consensus/leader_schedule.ml",
+        "sha256": "b671584f0e9b29eb265ad7da2a62114c18544dd7099dc58afb113036e5240141",
+        "lines": 157
+      },
+      {
+        "path": "lib/consensus/leader_schedule.mli",
+        "sha256": "fd8ff5ab6b686731a4fad358a7654627f5e6e9bc6bf1da3c59bb39dc9b314087",
+        "lines": 86
+      },
+      {
+        "path": "lib/consensus/node.ml",
+        "sha256": "0032f15a0ccaf38f0cc40781528cf754bc45d260a959966bc91f6e78fe0be7c7",
+        "lines": 357
+      },
+      {
+        "path": "lib/consensus/node.mli",
+        "sha256": "dd57a373895dfb05e1593a9b83e4f817fda31073172a8eea1eb4aa4f9d73557c",
+        "lines": 135
+      },
+      {
+        "path": "lib/consensus/parent_aggregator.ml",
+        "sha256": "0dc78016e1921d73d8d49e78ef1892c7cefbc8d13cbf518735c1ae0b247c82ee",
+        "lines": 32
+      },
+      {
+        "path": "lib/consensus/parent_aggregator.mli",
+        "sha256": "bfe522faf9d89787e72b03f764af33bcfd37229504ad350a555c652342e4b8b9",
+        "lines": 45
+      },
+      {
+        "path": "lib/consensus/proposer.ml",
+        "sha256": "7937c68aeb461eff587826aaee60432b7181f0700232a293a5181981755ac6c6",
+        "lines": 442
+      },
+      {
+        "path": "lib/consensus/proposer.mli",
+        "sha256": "46119845d70d5376afea1016a6fcb36b8d23584cc2b3fdc43eab1ed6521ed9d6",
+        "lines": 167
+      },
+      {
+        "path": "lib/consensus/reputation_scores.ml",
+        "sha256": "d9a297e0b0eccbae8b5ab83ac25123ef51966c95a9936470fff8e64e7f5225c9",
+        "lines": 97
+      },
+      {
+        "path": "lib/consensus/reputation_scores.mli",
+        "sha256": "d7de91cedbf8aa35e3a41251841161fc0bce800c7b4f164206a1a433628606de",
+        "lines": 73
+      },
+      {
+        "path": "lib/consensus/sub_dag.ml",
+        "sha256": "f40b912447bc769b3ad292f17d6bb1859e5a4ac0944b9cdfc8426aca41c271d4",
+        "lines": 147
+      },
+      {
+        "path": "lib/consensus/sub_dag.mli",
+        "sha256": "ee7d726c74c7e927cd218f285506671f42cfc38a21725422f48d855faf36edb5",
+        "lines": 155
+      },
+      {
+        "path": "lib/consensus/vote_aggregator.ml",
+        "sha256": "c62ff18d594a25e5a14dd9c6f6dbc9de734648fcf020fd0f7c69d5ffca52b9d0",
+        "lines": 62
+      },
+      {
+        "path": "lib/consensus/vote_aggregator.mli",
+        "sha256": "bd024766e97fe881a769e708b01897c4c1db45648d1a5fa41ea0741c7428b755",
+        "lines": 42
+      },
+      {
+        "path": "lib/consensus/voter.ml",
+        "sha256": "6a8df6ca5f38109a9f199d6dd286815af9c003f05b8b819017181b2d308fba6c",
+        "lines": 177
+      },
+      {
+        "path": "lib/consensus/voter.mli",
+        "sha256": "868d30b22b7b53a3f57081b04c7021a6ad9a33ad022c104b59c9e37fc68ce871",
+        "lines": 119
+      },
+      {
+        "path": "lib/crypto/dune",
+        "sha256": "1a2b964c6982a9e52244b3be37392e2aef40df2f7f799c358414e395c43fa596",
+        "lines": 8
+      },
+      {
+        "path": "lib/crypto/tn_crypto.mli",
+        "sha256": "09dd647b74a5095d35cc949dd7bbfa4643e279298ec8463c49d9e60b474870ac",
+        "lines": 98
+      },
+      {
+        "path": "lib/crypto_blst/blake3.ml",
+        "sha256": "531f4c9e0a0cb66157441b3b1f7b7b40763571b219a11632964bb52ced2aa665",
+        "lines": 213
+      },
+      {
+        "path": "lib/crypto_blst/blake3.mli",
+        "sha256": "0f9f06c7eee07aab52cd73d44ba7766f206e9efa41d5df2024e1e100324a46a3",
+        "lines": 25
+      },
+      {
+        "path": "lib/crypto_blst/dune",
+        "sha256": "4e37a0a8269eb489c87219db788e64431c2972990206b7038cfddc8145bfd396",
+        "lines": 11
+      },
+      {
+        "path": "lib/crypto_blst/tn_crypto.ml",
+        "sha256": "a21238cf4da383b4cd3adfa3d60ac38dc232a4a4036eb6d2268a094625e7193c",
+        "lines": 192
+      },
+      {
+        "path": "lib/crypto_stub/dune",
+        "sha256": "b6ca9f1ba92e05f892bd7b75efa0dcc290f633f4ec283c103ac554c0adfc5609",
+        "lines": 8
+      },
+      {
+        "path": "lib/crypto_stub/tn_crypto.ml",
+        "sha256": "b89febcbecb768f37d10101728136aea8781add7faa090fe76b5f33a79e95445",
+        "lines": 133
+      },
+      {
+        "path": "lib/driver/address_book.ml",
+        "sha256": "3f2beef6e73236031fd5564b633fa022040db2cabb10af9fba8c874b718fb647",
+        "lines": 19
+      },
+      {
+        "path": "lib/driver/address_book.mli",
+        "sha256": "33785c36b6e3657bee9c62e5602b4597ca644d2189db67bb219c6e1852775b12",
+        "lines": 28
+      },
+      {
+        "path": "lib/driver/batch_store.ml",
+        "sha256": "c56609ded69a443b76054ea1f7e549c8d52ea5f49cce022de223111c78cb8938",
+        "lines": 16
+      },
+      {
+        "path": "lib/driver/batch_store.mli",
+        "sha256": "fdeaa19e498198c26d485d486a601d9a977a58683de5b5e33ec3cd5e26add324",
+        "lines": 63
+      },
+      {
+        "path": "lib/driver/chain_spec.ml",
+        "sha256": "bc3edce9b167c366f6cfa482e6041ba9b9177440ef16e560b5db69a1a314c2c7",
+        "lines": 86
+      },
+      {
+        "path": "lib/driver/chain_spec.mli",
+        "sha256": "a05340e305ca6ff3f4cf581979b9bf928d95567c50fa02562e2041ec238349e4",
+        "lines": 153
+      },
+      {
+        "path": "lib/driver/checkpoint.ml",
+        "sha256": "3add9b16884d9ff3041ffb20ac8bfd90e306539c01ac70b5ca082c174271b8a8",
+        "lines": 62
+      },
+      {
+        "path": "lib/driver/checkpoint.mli",
+        "sha256": "f4962888aa0cfa2d2218cdf333d47ef0e797f558f1ab51c95b9d25a0abd613a4",
+        "lines": 161
+      },
+      {
+        "path": "lib/driver/driver.ml",
+        "sha256": "8349b68f3649bfe5cef9df14665af843895e9e094040d2622a4b5187fa5e5426",
+        "lines": 291
+      },
+      {
+        "path": "lib/driver/driver.mli",
+        "sha256": "ccac4de576d9d5fd6d326e93553cc3794545d9a10976d566a7812418896c5ef3",
+        "lines": 383
+      },
+      {
+        "path": "lib/driver/dune",
+        "sha256": "34fe1bf45deb0bf1c0f5935726a7035a2d71b5ad014608df6485e5e43365cfc4",
+        "lines": 12
+      },
+      {
+        "path": "lib/driver/outcome.ml",
+        "sha256": "4f619bdad0a2c0c2e7a681ebb55586132990ac0854b9d7ff97763f959cbd5db3",
+        "lines": 37
+      },
+      {
+        "path": "lib/driver/outcome.mli",
+        "sha256": "51d4c7a0215c9139e8a32fdfe88eb52fd8358b5c2b5d0d5d5c6d0792cdb50b8e",
+        "lines": 131
+      },
+      {
+        "path": "lib/driver/subscriber.ml",
+        "sha256": "94bedc2aa26bd776893d31312e5186f4756364b463b18b3107827c6c2b5edaf9",
+        "lines": 34
+      },
+      {
+        "path": "lib/driver/subscriber.mli",
+        "sha256": "3a4c3c156c68baf4700060bf5e768d79a5294f681e5cfb7585de548880aa53c3",
+        "lines": 83
+      },
+      {
+        "path": "lib/durable/append_log.ml",
+        "sha256": "6955d149ab69dfcb0c1520a092017468a0d3e3053f110976af4b5ec75a07dc47",
+        "lines": 251
+      },
+      {
+        "path": "lib/durable/append_log.mli",
+        "sha256": "6ef08aac19612ababd000009624ee4ef7217bd12bf3389468e72b8d7e78b178f",
+        "lines": 102
+      },
+      {
+        "path": "lib/durable/atomic_file.ml",
+        "sha256": "e6abb72a5cc7e90a7feb0a15679ef88f7454c0ce79e691fc2ee23ff11cdbd68f",
+        "lines": 171
+      },
+      {
+        "path": "lib/durable/atomic_file.mli",
+        "sha256": "577abca98fbf19f3364e13b881867fee2cb02ae9bfcd733e8ecdeb33fe5cca85",
+        "lines": 78
+      },
+      {
+        "path": "lib/durable/dune",
+        "sha256": "9e28f5eae22309d9a2934b7bd8ba1911c22edc2ec44616b691d6132f60fc65eb",
+        "lines": 4
+      },
+      {
+        "path": "lib/durable/frame.ml",
+        "sha256": "ef40fb44c478304f5b86b0f0c308b2f060aa74a7aa00e62a0317e556299fdd43",
+        "lines": 245
+      },
+      {
+        "path": "lib/durable/frame.mli",
+        "sha256": "143d106c1f5285d528a4584df80ee345147c5e982281756474dd4fde61f32609",
+        "lines": 136
+      },
+      {
+        "path": "lib/durable/io.ml",
+        "sha256": "3786f289e3e472a58957eabb9bbbc2a69a2e0747224d793b155e0727a08ea802",
+        "lines": 279
+      },
+      {
+        "path": "lib/durable/io.mli",
+        "sha256": "4b05c1b0be367991535c9fd848350852f00ed284736c5d60698ff66c5edcf6e3",
+        "lines": 184
+      },
+      {
+        "path": "lib/durable/io_ops.ml",
+        "sha256": "7fe116ef99c209247d8b25c6b3c62d672da9c2dcaa5200db41f782bedfde2995",
+        "lines": 45
+      },
+      {
+        "path": "lib/durable/io_ops.mli",
+        "sha256": "ee6e47a1b029a2f4998d0c79f4a792e0056c41bafe866e762d4a95a066e09776",
+        "lines": 52
+      },
+      {
+        "path": "lib/durable/store_lock.ml",
+        "sha256": "26f97da67ccb0c1c725ab32596d0a1f1345a7ccd86820e2bbb73dbe7523a36af",
+        "lines": 57
+      },
+      {
+        "path": "lib/durable/store_lock.mli",
+        "sha256": "c69b87b5a039fd6a04cc7879f6ee737691b92f31e29c77cbe1d201b5633d3791",
+        "lines": 42
+      },
+      {
+        "path": "lib/durable_checkpoint/checkpoint_codec.ml",
+        "sha256": "44e829fcdf6917cc19de916bbd855af9eb3993ce1b3d3ff35bd72c76283af310",
+        "lines": 382
+      },
+      {
+        "path": "lib/durable_checkpoint/checkpoint_codec.mli",
+        "sha256": "969a94f51ae017d9f5f8c9709e5b15e80da530c12fd2c1d8201b09c42a4d2b47",
+        "lines": 114
+      },
+      {
+        "path": "lib/durable_checkpoint/checkpoint_file.ml",
+        "sha256": "9b1bdec4d46bfda9337e53f01a987930d3cd48e7b38387504fc1c370dadd8307",
+        "lines": 145
+      },
+      {
+        "path": "lib/durable_checkpoint/checkpoint_file.mli",
+        "sha256": "56792e9cef50044efcb2ce4d526cfc423a46a0c3816132bc441182506dbb4bee",
+        "lines": 111
+      },
+      {
+        "path": "lib/durable_checkpoint/dune",
+        "sha256": "ae09b856a989d538824aa6b380b29082cd8d4731b7b5f3a4045fddde85622232",
+        "lines": 11
+      },
+      {
+        "path": "lib/durable_store/consensus_store_disk.ml",
+        "sha256": "337955432022a91111b222f5156885399aab12aa9f3ecbdca9169e868f7c80cc",
+        "lines": 331
+      },
+      {
+        "path": "lib/durable_store/consensus_store_disk.mli",
+        "sha256": "fb94e06f4892dd3f878da518537a38ffe3a33c8048c8466acc18e42d4c7e2c94",
+        "lines": 213
+      },
+      {
+        "path": "lib/durable_store/dune",
+        "sha256": "e84945d7dc5fe91529160f07e82234c0550330a856755344aadd7c988e0e5232",
+        "lines": 4
+      },
+      {
+        "path": "lib/durable_store/record_codec.ml",
+        "sha256": "6716a9bcff5d1429be457d63696af0cf793923410743ca64ef6a33a215bc7860",
+        "lines": 83
+      },
+      {
+        "path": "lib/durable_store/record_codec.mli",
+        "sha256": "11ccc943bde5ca1881bccbb5f3fe5eb38332ec74910df16e5fe2840ddd511b25",
+        "lines": 73
+      },
+      {
+        "path": "lib/engine/anchor.ml",
+        "sha256": "01c83ace0d9dc907f064a5e9f7637b48e9a07833adea7138679818d316dd53cd",
+        "lines": 25
+      },
+      {
+        "path": "lib/engine/anchor.mli",
+        "sha256": "404fed970e972958067f879223289585df2a2e70050a17dd7e1f72bd9559c920",
+        "lines": 44
+      },
+      {
+        "path": "lib/engine/block_number.ml",
+        "sha256": "03fea70c7c0b472e5483c7a7dbe5daa72bf8cbafce78357d85031eab642c7dfb",
+        "lines": 8
+      },
+      {
+        "path": "lib/engine/block_number.mli",
+        "sha256": "44d02a464d86474b2bcedfe3dc8a6d4829986239a9c11e6851e61dfbd264c807",
+        "lines": 37
+      },
+      {
+        "path": "lib/engine/config.ml",
+        "sha256": "94896fa8fce1de331d2c6306cdcc43bf07848a07735a822676b99bdb4aa6bcf3",
+        "lines": 48
+      },
+      {
+        "path": "lib/engine/config.mli",
+        "sha256": "2425ab79beb80d5d3e564d19ec28b7ac307b5bfb31cfb47cb629eabe8351a516",
+        "lines": 86
+      },
+      {
+        "path": "lib/engine/dune",
+        "sha256": "5dbf9ad85cfbdbf69034e40022a39958b9cbeff3f6486b4d0c6acb6934afd28f",
+        "lines": 12
+      },
+      {
+        "path": "lib/engine/engine.ml",
+        "sha256": "ca7bea75118163b9323f4466a362bb03dfa68a4230c8a71cf0bc21c665ee2b0e",
+        "lines": 548
+      },
+      {
+        "path": "lib/engine/engine.mli",
+        "sha256": "cde6dbfff052d2790f1cab3c1aaff6a474d5ab5bdbaac7b35475f81531a37db9",
+        "lines": 353
+      },
+      {
+        "path": "lib/engine/executed_block.ml",
+        "sha256": "0c76540c28355bd34f5a45a9cb9558e35971c5ff69c69fb8c8b3254cf771ebfa",
+        "lines": 33
+      },
+      {
+        "path": "lib/engine/executed_block.mli",
+        "sha256": "ff0be1cfdf2b1d3475c933dc4b1a8931728b4925d5dd24e234114f640a970c30",
+        "lines": 75
+      },
+      {
+        "path": "lib/engine/recent_hashes.ml",
+        "sha256": "a02193c9ef4f63b17afd729327146185363e18e55d4a6d1c637ee121fb2f1c76",
+        "lines": 24
+      },
+      {
+        "path": "lib/engine/recent_hashes.mli",
+        "sha256": "fd7a6463ce893324e2b6097daa4b2766403ed47f708a0e5123e21cf2886399f0",
+        "lines": 58
+      },
+      {
+        "path": "lib/evm/access.ml",
+        "sha256": "b25ab0d060b5b590ab5db0fc4b6d284756f40b538f403a87951627e42ad48636",
+        "lines": 55
+      },
+      {
+        "path": "lib/evm/access.mli",
+        "sha256": "a843b789b8178cdf0cf92527413abfececa831692d5fdc9016a79c1fb2eb0205",
+        "lines": 90
+      },
+      {
+        "path": "lib/evm/alu.ml",
+        "sha256": "5263b3521b5404bd9c6c348cab31da9dbf2aaeee2953077b49386a264e7d2110",
+        "lines": 92
+      },
+      {
+        "path": "lib/evm/alu.mli",
+        "sha256": "cf4cfc19decdccbbe26f609bee9a214e9e3d8b39f7c5102a7f3711e414ec6bbd",
+        "lines": 99
+      },
+      {
+        "path": "lib/evm/auth_list.ml",
+        "sha256": "3bfb3e350974a75ccb3ad6cff472611481cea59737dd57d0f23364958ac2c7a4",
+        "lines": 118
+      },
+      {
+        "path": "lib/evm/auth_list.mli",
+        "sha256": "d1d4b67ff9b7a0008f7de93f6d369fe8e5f30d08cd8a1610496c8210b7da152d",
+        "lines": 143
+      },
+      {
+        "path": "lib/evm/authorization.ml",
+        "sha256": "5b80d74fcd56b94ed17a1f84ae8f6e53dd37a8f7e5f4351943b6ecf5839cb84e",
+        "lines": 134
+      },
+      {
+        "path": "lib/evm/authorization.mli",
+        "sha256": "8eed2271ebf7a2a247cae500ae589ccd3f93baad7f9bb5afbe579ff4da9f1523",
+        "lines": 192
+      },
+      {
+        "path": "lib/evm/batch_position.ml",
+        "sha256": "0d1096043af9edcc1d5280a15c00da543f8f202e5bc2870abf0dafad141661e3",
+        "lines": 36
+      },
+      {
+        "path": "lib/evm/batch_position.mli",
+        "sha256": "db4d42cb7a62ef448e7a2d915db9864115b82ba20e4a1cf383bca6d75b67b43a",
+        "lines": 61
+      },
+      {
+        "path": "lib/evm/blake2.ml",
+        "sha256": "a7c7be547e9aa0fc83b63bd80c66bead9b85f155764421014fb927624605e96f",
+        "lines": 78
+      },
+      {
+        "path": "lib/evm/blake2.mli",
+        "sha256": "9b75037c5fda85638a308d2a5fe9aa8045b1cd659877807af41cc373286bbc0f",
+        "lines": 32
+      },
+      {
+        "path": "lib/evm/block_context.ml",
+        "sha256": "b3044a0b302f01f860b2e73f9583324178107cc178848e778fa31fd1418be23e",
+        "lines": 103
+      },
+      {
+        "path": "lib/evm/block_context.mli",
+        "sha256": "63348eef1ca82704ef8f4839495aa3a64af7ccfa7d91325d80a83d3716db0ff5",
+        "lines": 192
+      },
+      {
+        "path": "lib/evm/block_execution.ml",
+        "sha256": "aeaa5d130aa7f702b0bd5afb723f15ec3812dcd25e4608a5398ad6634bd031b6",
+        "lines": 337
+      },
+      {
+        "path": "lib/evm/block_execution.mli",
+        "sha256": "2e29417c2d43c9e3cdb62187fee8c3c82cdc64d45372986eb379b000c7d5b3f7",
+        "lines": 506
+      },
+      {
+        "path": "lib/evm/block_gas.ml",
+        "sha256": "9ab5186874e739918cf8518e5deb82d446dbaa7894ef29111ec15188c2806d16",
+        "lines": 21
+      },
+      {
+        "path": "lib/evm/block_gas.mli",
+        "sha256": "b02ce8344fbe5252742f5033081c8af83d3ef7bf0f4f27aee2da3da2ca1d2bde",
+        "lines": 61
+      },
+      {
+        "path": "lib/evm/block_hashes.ml",
+        "sha256": "b64b25314bdc1539898e16ff9169055417ddedfbe247add1cbe278e9572196f3",
+        "lines": 30
+      },
+      {
+        "path": "lib/evm/block_hashes.mli",
+        "sha256": "8c596759a67a685100338145cf7b748ebbe572f8948c84d092e4fae8a3cbd364",
+        "lines": 58
+      },
+      {
+        "path": "lib/evm/block_header.ml",
+        "sha256": "3b96b76447e9a739b9d3d844d3945d08b2e94b4762d7bdff56a64fafc7a9bb19",
+        "lines": 270
+      },
+      {
+        "path": "lib/evm/block_header.mli",
+        "sha256": "2ec8b8563b8bc6875ec8d9f18ee4bdfe5e58ccbedf4614044cbc0c0ea9cf8f97",
+        "lines": 389
+      },
+      {
+        "path": "lib/evm/block_roots.ml",
+        "sha256": "fbf1bfafbf918960f44d4f4e578a94848d8891866ac6c7f19b7ea99301a234ba",
+        "lines": 78
+      },
+      {
+        "path": "lib/evm/block_roots.mli",
+        "sha256": "20ed1967b9aaf6da99593621d5ccd27a01b49e47699b2d2b2d488f6fb2c41f06",
+        "lines": 82
+      },
+      {
+        "path": "lib/evm/bloom.ml",
+        "sha256": "0a473ddfad72c215803263da236919fa3e670248fd5e4dde2c45eb4ee6b27268",
+        "lines": 70
+      },
+      {
+        "path": "lib/evm/bloom.mli",
+        "sha256": "c5454e3c1d3176405e76bf1408c3c9e0853b2f3855623741066b9018f5af25b3",
+        "lines": 33
+      },
+      {
+        "path": "lib/evm/bn254_curve.ml",
+        "sha256": "fe04d9718f547963943aaba2aad5e0764645920bbf7e626b6b5faad88bc6969b",
+        "lines": 293
+      },
+      {
+        "path": "lib/evm/bn254_curve.mli",
+        "sha256": "fff5fc9b9fc6567f1fbae8a4d63671d57812d1a089901f004d480c78c0845f40",
+        "lines": 167
+      },
+      {
+        "path": "lib/evm/bn254_field.ml",
+        "sha256": "6bf167f6cf96eeb6c9936b60066b1ecf596ba8b9c0ecab7eef74758e1382c104",
+        "lines": 329
+      },
+      {
+        "path": "lib/evm/bn254_field.mli",
+        "sha256": "76d61411e1fa2d37085d589ca623d4f8f69c6968e6d0c2bc49c7b21180536f8c",
+        "lines": 260
+      },
+      {
+        "path": "lib/evm/bn254_pairing.ml",
+        "sha256": "f873b342fc53e378a1f5ec77365b7a81df0eed3885907aaf6df833e728be9044",
+        "lines": 227
+      },
+      {
+        "path": "lib/evm/bn254_pairing.mli",
+        "sha256": "0152f0dd0756829a5623adf1caf39bcec6f6e2c9f9d1e5c5199133b7ffa5b636",
+        "lines": 43
+      },
+      {
+        "path": "lib/evm/call_depth.ml",
+        "sha256": "22f18440f8e2f15022be37f8fdfa39b5ea52e47992acfa97070034bbd6695d3a",
+        "lines": 14
+      },
+      {
+        "path": "lib/evm/call_depth.mli",
+        "sha256": "af3b953c6137e93e5d072d2bb9f2539cba69e99f07c574d3607c99c366a3a37c",
+        "lines": 42
+      },
+      {
+        "path": "lib/evm/call_target.ml",
+        "sha256": "a9aaa4a2ce73fa4eb2f626f56a9bf5b9adba052dfa03c9b8479f2a83102ee30e",
+        "lines": 46
+      },
+      {
+        "path": "lib/evm/call_target.mli",
+        "sha256": "037482246748f70889ed8aae149e295f32c3d23f1fe2dbca7928e5d157ef73c7",
+        "lines": 64
+      },
+      {
+        "path": "lib/evm/code.ml",
+        "sha256": "09cd8fb1c1da95cde18a5e45e838cc7e8c0ebf2d46b8ad11d3636c1ed5f56edd",
+        "lines": 47
+      },
+      {
+        "path": "lib/evm/code.mli",
+        "sha256": "116c8a1296d7403f48f17e28d1fb4674b60e5035129941e9bc24e19f6f1818c7",
+        "lines": 52
+      },
+      {
+        "path": "lib/evm/committee_shuffle.ml",
+        "sha256": "5ea8bbf802578f86e137e14fcdc44ea69a3cf011ab9a6a62a87382af2c094f9f",
+        "lines": 63
+      },
+      {
+        "path": "lib/evm/committee_shuffle.mli",
+        "sha256": "46eab52d8ee4e111b723962a402e15a04719d9af9fe77ed611c3c46a316223f3",
+        "lines": 35
+      },
+      {
+        "path": "lib/evm/contract_address.ml",
+        "sha256": "b5b3a3ecf93d2d7c3268577873d21ce2e0b725994d829ad19fcba3f81f2ff8d3",
+        "lines": 60
+      },
+      {
+        "path": "lib/evm/contract_address.mli",
+        "sha256": "e3bf59d88dd24de43c434a3919b85c516568e13e2c81c657b1aa4439850d90b5",
+        "lines": 50
+      },
+      {
+        "path": "lib/evm/data.ml",
+        "sha256": "1d399d1d835b401839cb1952a854cd79434c3fe63ce58a372899f2c80e6c38c9",
+        "lines": 44
+      },
+      {
+        "path": "lib/evm/data.mli",
+        "sha256": "d97562bac9d18a3df6445aa39dc6c41a893bfd030c0a696401557bfae65d2c80",
+        "lines": 62
+      },
+      {
+        "path": "lib/evm/depth.ml",
+        "sha256": "52fc472fbb54e823917ec6e429402fe069ea503ddcfb87a578774a4dadc00560",
+        "lines": 11
+      },
+      {
+        "path": "lib/evm/depth.mli",
+        "sha256": "92666d3e63c8878a17d08993e4c6f1084910b94c1f92b0244c2d313ad8b0200a",
+        "lines": 23
+      },
+      {
+        "path": "lib/evm/destruction.ml",
+        "sha256": "a97ca56a372ed50b3014c101b53b2ac3132dc1c2c2e4afccc7e3788bb01a8327",
+        "lines": 29
+      },
+      {
+        "path": "lib/evm/destruction.mli",
+        "sha256": "7058621ca2c6bee74eb7e23ba84d55de42cbc91b7dfb36e96a6db9d794f78814",
+        "lines": 65
+      },
+      {
+        "path": "lib/evm/dune",
+        "sha256": "de5c433c948e9a16b47eb8ba6b06e34dac658cfbf2baac3de345dc7f619b4d76",
+        "lines": 5
+      },
+      {
+        "path": "lib/evm/effects.ml",
+        "sha256": "4f2e99778c7a5f7f1f07fb2ee9070c99d641dd536fb42dcf2287a6a7d9ffee6d",
+        "lines": 310
+      },
+      {
+        "path": "lib/evm/effects.mli",
+        "sha256": "01572d4d9abb9fdd4b09eac8da09349e93cbe905d24aa828593acaf49e05817a",
+        "lines": 326
+      },
+      {
+        "path": "lib/evm/eip2718.ml",
+        "sha256": "0c324a005d79cc35345b1764653e7efa06d39e56ad46a6b9a450d251c3b3ccaa",
+        "lines": 12
+      },
+      {
+        "path": "lib/evm/eip2718.mli",
+        "sha256": "3e8f3e7493e1f817ea027aa6d3be0fb296712646c7c8e7cae5ed5ae4923157bd",
+        "lines": 27
+      },
+      {
+        "path": "lib/evm/env.ml",
+        "sha256": "8bbf84b7c63f7e2965fe3e154862287797909e158db1416744f34941722c5a71",
+        "lines": 166
+      },
+      {
+        "path": "lib/evm/env.mli",
+        "sha256": "986d9f23e2651dbd630fa674566a0b2a4fb9b4a2b59c54a9d376dc817f89481a",
+        "lines": 316
+      },
+      {
+        "path": "lib/evm/epoch_boundary.ml",
+        "sha256": "463ad0fbba9d2a8bbff0391981d2d774f66a004c03131cf74e1656a09dd85bab",
+        "lines": 69
+      },
+      {
+        "path": "lib/evm/epoch_boundary.mli",
+        "sha256": "39d3249606cea2d9e1ac1714a218a83991a091fa9ac746dc519446782cfad41d",
+        "lines": 85
+      },
+      {
+        "path": "lib/evm/epoch_close.ml",
+        "sha256": "26f011de35649a034c93c8dd15f9fb6ae5f0e0a0360174390690e06cc972a646",
+        "lines": 126
+      },
+      {
+        "path": "lib/evm/epoch_close.mli",
+        "sha256": "7456507e3289739541e8ef3a25c209eddf07b8a83614fa340d1bd2c5194adf43",
+        "lines": 132
+      },
+      {
+        "path": "lib/evm/executor.ml",
+        "sha256": "e0c3aadeb1a7a9772563aac4c25d193d10860ae1addcb7346402fb1126eb4b9c",
+        "lines": 617
+      },
+      {
+        "path": "lib/evm/executor.mli",
+        "sha256": "0c065b1120f3c475c638872302527123f0b75e6d22c081c586d940058a51ec13",
+        "lines": 216
+      },
+      {
+        "path": "lib/evm/fork_schedule.ml",
+        "sha256": "429c530a08f079cdaf03647d571deced330f0e2919ca8dbc6cc261616bdb58d1",
+        "lines": 68
+      },
+      {
+        "path": "lib/evm/fork_schedule.mli",
+        "sha256": "cc4e06ca68a349dda98ea1e10bc174a57c15ea7d657b4a675fade0e17c8f5e01",
+        "lines": 73
+      },
+      {
+        "path": "lib/evm/gas.ml",
+        "sha256": "547fcc86da2742e3caf65bcedc84c7e01c8b8effcbc81a7a9229155699de846e",
+        "lines": 467
+      },
+      {
+        "path": "lib/evm/gas.mli",
+        "sha256": "1923175679a93e60a64d68b241f2c29ad6b1319e982c99c23ec405de437b75c5",
+        "lines": 395
+      },
+      {
+        "path": "lib/evm/gas_penalty.ml",
+        "sha256": "2a7f19b4ef177a161a38f9e5623d5dfc9e0e7619df29e52e7904cbe68382f354",
+        "lines": 26
+      },
+      {
+        "path": "lib/evm/gas_penalty.mli",
+        "sha256": "41192c6d823ff718f1c5cb3bf908d5121684c5409518a13f40b824173f075411",
+        "lines": 37
+      },
+      {
+        "path": "lib/evm/hash32.ml",
+        "sha256": "fad96db522d398cd38509e9012a1205f2876bc73e1610d0cb523a8229a2495f8",
+        "lines": 7
+      },
+      {
+        "path": "lib/evm/hash32.mli",
+        "sha256": "a5727bff50fca9b3c1140d82434e8e24fc3a6a8f5ccbb601e84367e560077f09",
+        "lines": 15
+      },
+      {
+        "path": "lib/evm/hex.ml",
+        "sha256": "6af98ea6fb111b541fc4a10abbd9cf15cbde5c2639ed2f79f66cb34eb80e3c57",
+        "lines": 7
+      },
+      {
+        "path": "lib/evm/hex.mli",
+        "sha256": "1ae5cbdee155c3bd19e8028ac46552296d70d31caf52b09ae6a317342f7c6b5b",
+        "lines": 12
+      },
+      {
+        "path": "lib/evm/interpreter.ml",
+        "sha256": "0d9ad9986d0bb067bdb0bb4c1c0481b801bb45644b4f53811bdec3677cfc790b",
+        "lines": 1553
+      },
+      {
+        "path": "lib/evm/interpreter.mli",
+        "sha256": "4359950b6e5c1c84bd00c4c95f0a9c9d46fc60e9bbb8b9c84ea85f36118dec68",
+        "lines": 375
+      },
+      {
+        "path": "lib/evm/intrinsic.ml",
+        "sha256": "eeaac1397fbe8a0710f8ed28dfa9851c5f4457a7069631b627734fd7ede68843",
+        "lines": 43
+      },
+      {
+        "path": "lib/evm/intrinsic.mli",
+        "sha256": "8d4f4189618baed85e12d1a343a1155d6ea5aac6b453dfb648277978dda4327e",
+        "lines": 86
+      },
+      {
+        "path": "lib/evm/lifecycle.ml",
+        "sha256": "5ff87518ec43abeae22c4281bc4e99de9f30ea4c90fa68a4ebd1e5cfe8abe793",
+        "lines": 16
+      },
+      {
+        "path": "lib/evm/lifecycle.mli",
+        "sha256": "e4fc8d2237c6a58b73668d2a2c855ca1d1731ad3e1c6fca72d711065003227ba",
+        "lines": 52
+      },
+      {
+        "path": "lib/evm/log.ml",
+        "sha256": "e0e4e942128276ed0571c65b9f878b6ad562cccc62daab4f3cf2b32aad4138b1",
+        "lines": 76
+      },
+      {
+        "path": "lib/evm/log.mli",
+        "sha256": "741648e908d13b46890340e25727d8c84438252444e752d38a2037765254eeb6",
+        "lines": 73
+      },
+      {
+        "path": "lib/evm/log_journal.ml",
+        "sha256": "dc198fe133730acf9228503f77c55775d7b347f7ad134416de7f7b984c6181ba",
+        "lines": 9
+      },
+      {
+        "path": "lib/evm/log_journal.mli",
+        "sha256": "92789b35df1dae078a43d34339fc683c9c257f06beb7fb52cc884766a665fcdd",
+        "lines": 27
+      },
+      {
+        "path": "lib/evm/memory.ml",
+        "sha256": "82d10deb9cf240f36635bcecb01177210a56a2209aae02e25ec27551a5bed5cc",
+        "lines": 88
+      },
+      {
+        "path": "lib/evm/memory.mli",
+        "sha256": "9d7bab4edec5ddf9bf70db30e084ca3692c7ac186427d00dd16aef54a68dfda7",
+        "lines": 167
+      },
+      {
+        "path": "lib/evm/mutability.ml",
+        "sha256": "a45e51319a84f544fe95ce4d4e7db7c6e60ebae117ed56f98b54453eed5f2a09",
+        "lines": 16
+      },
+      {
+        "path": "lib/evm/mutability.mli",
+        "sha256": "1a8d27b00fb65a25fcdf720355d6e0b3d65a7e5012271501695cc9fb744854ef",
+        "lines": 70
+      },
+      {
+        "path": "lib/evm/opcode.ml",
+        "sha256": "d6fb25894f0520b25bb521bc1fa08f6301ad4273c8b81ecbec47c04ed05520bd",
+        "lines": 400
+      },
+      {
+        "path": "lib/evm/opcode.mli",
+        "sha256": "41a67ef1e7c44bf8ef82a5a4992b707cf66296525b9144b9119c3d38704b7ff2",
+        "lines": 251
+      },
+      {
+        "path": "lib/evm/precompile.ml",
+        "sha256": "a7b55d9ae46f4104540ee03c42c33040fc85b78b68d06821a66533717eefdb8a",
+        "lines": 376
+      },
+      {
+        "path": "lib/evm/precompile.mli",
+        "sha256": "a6a2756c18ba45c43c9daee3efd5c1a6ebafe6bca2af8cf8a2a53372b9804fb2",
+        "lines": 73
+      },
+      {
+        "path": "lib/evm/public_key.ml",
+        "sha256": "7a30b414e6e22f1f78801b39ed3502c7d4b55b5881bd89e44557d1dbc83c1d1d",
+        "lines": 17
+      },
+      {
+        "path": "lib/evm/public_key.mli",
+        "sha256": "b53c1cf8a13ee97a2abc1e4dabf50652b484d383749fef27e48bfe4258b529cd",
+        "lines": 23
+      },
+      {
+        "path": "lib/evm/receipt.ml",
+        "sha256": "6df5fdcf47b11026b53c96a1e951977972b7d6374b4f898db16e9b0ef834acad",
+        "lines": 50
+      },
+      {
+        "path": "lib/evm/receipt.mli",
+        "sha256": "cce9cfb2d916d551d01e1ac25f3eb932f02d51fd5e4625f4cbdc79d7de00a706",
+        "lines": 90
+      },
+      {
+        "path": "lib/evm/receipt_envelope.ml",
+        "sha256": "f1c86012580f698e76815b287dde7d05a4bd048805e1364bf45146fcf4a8cd30",
+        "lines": 46
+      },
+      {
+        "path": "lib/evm/receipt_envelope.mli",
+        "sha256": "70cac203cbcb295a5027bdb35926263bc32ea1910d61ef169c777f5a2863a64a",
+        "lines": 26
+      },
+      {
+        "path": "lib/evm/refund.ml",
+        "sha256": "c1c0ef1ea14ded08b748d53cb206947540f7844a6a0302daecc1efc39ccf0b97",
+        "lines": 10
+      },
+      {
+        "path": "lib/evm/refund.mli",
+        "sha256": "5850c32b3c8077ccd69e81ecd9073ca0746ea506e5ea2141a3863105e5258b7d",
+        "lines": 45
+      },
+      {
+        "path": "lib/evm/registry_abi.ml",
+        "sha256": "222fc2dd4bc180067af4726349ed113b4b890bb1aced5161458e99aebb5ba0fe",
+        "lines": 302
+      },
+      {
+        "path": "lib/evm/registry_abi.mli",
+        "sha256": "35b8f4f828c75d8352acfec32fa4ec976e84dddf05b01a279597a8df5f109da9",
+        "lines": 162
+      },
+      {
+        "path": "lib/evm/return_data.ml",
+        "sha256": "267433fff05f3c371d292ce8e33e554fa3be6d26e9d2c680e5d202f76c18ae98",
+        "lines": 24
+      },
+      {
+        "path": "lib/evm/return_data.mli",
+        "sha256": "bf1116344c959bdb359fde786a22b2ec7c98a9709c3e19696e3e8a09b9c78fed",
+        "lines": 50
+      },
+      {
+        "path": "lib/evm/rewards_counter.ml",
+        "sha256": "31b39b351e72debd54f8cb4c8196014b2661e78b06571d6b9cefb063b0eec69d",
+        "lines": 79
+      },
+      {
+        "path": "lib/evm/rewards_counter.mli",
+        "sha256": "2915caa32a0ffe5f3116e48a17b85a8268c3298fa4bc8528cf2fa3c71538e0a5",
+        "lines": 88
+      },
+      {
+        "path": "lib/evm/secp256k1.ml",
+        "sha256": "88bcb707ad7679ba92ff009b0dd77d91e8ddff34c25fbf9afc0cbc136e61ff6a",
+        "lines": 124
+      },
+      {
+        "path": "lib/evm/secp256k1.mli",
+        "sha256": "43ca354eda80f3643edac40dfa061d16c4c78f98ec5cc5dd06a7dbb8c1c611fc",
+        "lines": 42
+      },
+      {
+        "path": "lib/evm/spec.ml",
+        "sha256": "2cf6adc5ffa4cede766369b54925a4bbf7190504cf635a79113ae8afb9b90a6e",
+        "lines": 12
+      },
+      {
+        "path": "lib/evm/spec.mli",
+        "sha256": "ca868b643e55e9cfbc5bc00943bcc50582965058ac9df22790890e9506c85745",
+        "lines": 44
+      },
+      {
+        "path": "lib/evm/sstore_state.ml",
+        "sha256": "dcefacf8c74274f07acdc0800303575936bd5d0b83a6e483aa6021fc4e9cbfda",
+        "lines": 34
+      },
+      {
+        "path": "lib/evm/sstore_state.mli",
+        "sha256": "cad89d761360ec808e69c641c90bba9f4627bf2667237e0264b69532bb8bf61e",
+        "lines": 63
+      },
+      {
+        "path": "lib/evm/stack.ml",
+        "sha256": "4ab72e83edff09870930b2b762950945e8765ad485955924facce06a964df9dd",
+        "lines": 71
+      },
+      {
+        "path": "lib/evm/stack.mli",
+        "sha256": "c417cbe5dd914466a9b45e840c97a5be8b98ead519d674ae342f0e6999c98e56",
+        "lines": 80
+      },
+      {
+        "path": "lib/evm/system_call.ml",
+        "sha256": "456f588b19db91a45cba00900f371dc0894c77b561fe7924b1ba132dfa0400ec",
+        "lines": 89
+      },
+      {
+        "path": "lib/evm/system_call.mli",
+        "sha256": "d68fd5319bafc42c3025f395e6b16498c3a1e09b03619c5f478507c7457621bb",
+        "lines": 221
+      },
+      {
+        "path": "lib/evm/system_contracts.ml",
+        "sha256": "af3cc00d0a787953e01f46fbd2ba6c4e56a033754fde832d3a034574f0497872",
+        "lines": 100
+      },
+      {
+        "path": "lib/evm/system_contracts.mli",
+        "sha256": "ca3d708b1cbc7fab00e30e91237ee98c544faaf4ba2f8a36592adfd1a1ec03a7",
+        "lines": 101
+      },
+      {
+        "path": "lib/evm/topic_count.ml",
+        "sha256": "7903e76cfd254083cbeb815f4922a5afbb0279d018ab2990922e7042b4a902a2",
+        "lines": 14
+      },
+      {
+        "path": "lib/evm/topic_count.mli",
+        "sha256": "6f387aee960aeecc86163eff84929409ddf3c5c2c84d58ad1a3b380953afb8f3",
+        "lines": 23
+      },
+      {
+        "path": "lib/evm/transaction.ml",
+        "sha256": "ad87507bae74662920bedba334800ae14ebb204a8c6e5337c947d458e9cf5cb9",
+        "lines": 96
+      },
+      {
+        "path": "lib/evm/transaction.mli",
+        "sha256": "c813d028a8cbe80b8801fc70d213e19fa32698c3e77a3ff9ef9bc9d715f7eb68",
+        "lines": 186
+      },
+      {
+        "path": "lib/evm/transient.ml",
+        "sha256": "b5cfd89398bb08054083f728513279886957b24a3f4648b38dda00dd2d52cf3f",
+        "lines": 38
+      },
+      {
+        "path": "lib/evm/transient.mli",
+        "sha256": "573c7093d39da64e0f1c956407a794fac19d433cfe65d1746e5c1f2916676742",
+        "lines": 62
+      },
+      {
+        "path": "lib/evm/tx_envelope.ml",
+        "sha256": "fd8c7a4a2bd1d97ca8efb245684d228676aa5287d4247e4a305bd62c60e807a6",
+        "lines": 468
+      },
+      {
+        "path": "lib/evm/tx_envelope.mli",
+        "sha256": "6691e946bb9c81f09977fe5240150008d1e591fea2b98d8028014043ee46f3b0",
+        "lines": 303
+      },
+      {
+        "path": "lib/evm/tx_payload.ml",
+        "sha256": "4c55f680fe8493a97c6a3b2c763e29d0c2af807f5f7c4a220743e16c5a4511ef",
+        "lines": 215
+      },
+      {
+        "path": "lib/evm/tx_payload.mli",
+        "sha256": "56acfc82461b2d8566659e097d8e6fc6a0c54815d6c4d2df6b1e5d10178650e8",
+        "lines": 206
+      },
+      {
+        "path": "lib/evm/tx_recovery.ml",
+        "sha256": "cefa6bd2fb3f5c27b77b9ad07c9677a9bf2711aa2bae98a13dc1ebc73bc85964",
+        "lines": 34
+      },
+      {
+        "path": "lib/evm/tx_recovery.mli",
+        "sha256": "2a3c4618c8c64251a276af4396b84e9f4aae8d8899cf634aa5f35b92c8c752d6",
+        "lines": 68
+      },
+      {
+        "path": "lib/evm/tx_signature.ml",
+        "sha256": "2762c3b9f47b5ffcc3e8afc330e297ccc9b6332c8c63ddea80e4c7d951165b97",
+        "lines": 49
+      },
+      {
+        "path": "lib/evm/tx_signature.mli",
+        "sha256": "c87578789551368f92dd882fcacad5307f02b90fc3ecb18ae8820e47e893f738",
+        "lines": 80
+      },
+      {
+        "path": "lib/evm/withdrawal.ml",
+        "sha256": "328c1d7923eec6a498025433a14d500d60b0313918b113b076defa591287768e",
+        "lines": 46
+      },
+      {
+        "path": "lib/evm/withdrawal.mli",
+        "sha256": "e66b376e84ab84069f82cad61cea27f1df139eb6f0494fddb015d20019df184e",
+        "lines": 60
+      },
+      {
+        "path": "lib/execution/consensus_block.ml",
+        "sha256": "367ac659510fe357c078717222607410c41a11b8b401d3700b2f6d15b4334976",
+        "lines": 151
+      },
+      {
+        "path": "lib/execution/consensus_block.mli",
+        "sha256": "71fa60b07e422f1c518fd53fa0d713e32048a9be3e58dcf20b9adbb4798729f3",
+        "lines": 144
+      },
+      {
+        "path": "lib/execution/consensus_chain.ml",
+        "sha256": "e6317fc283282cbf1cf2d8f0957091170ca8934f27f66741ab9cc25b67071a8f",
+        "lines": 26
+      },
+      {
+        "path": "lib/execution/consensus_chain.mli",
+        "sha256": "d81324639796aa677cf3d7b966d9ab5e5e087cb981bc3cdb4e71b6a1adef7a16",
+        "lines": 82
+      },
+      {
+        "path": "lib/execution/consensus_store.ml",
+        "sha256": "e065ef0ae2067bd31c0196da7a3ef728edb0c515714b6e10eab66fe51461da77",
+        "lines": 381
+      },
+      {
+        "path": "lib/execution/consensus_store.mli",
+        "sha256": "5a1dc68f09f18222aa6ad9c6a99a257db8a66402b99783dfaedc93346f3b9192",
+        "lines": 441
+      },
+      {
+        "path": "lib/execution/dune",
+        "sha256": "be835db50d4213dc0cf53a12ee975f92cad3263a8e0879c3261654f097463339",
+        "lines": 10
+      },
+      {
+        "path": "lib/execution/engine.ml",
+        "sha256": "542b5767d748cb8d9115cb99251b361cd6a0e2c44ee1cef4dda49b520526b8fe",
+        "lines": 41
+      },
+      {
+        "path": "lib/execution/engine.mli",
+        "sha256": "c86a9c86b6ffbb0709f9753b37358a5eb767ac2e003d0578f04de12ddde67d05",
+        "lines": 124
+      },
+      {
+        "path": "lib/execution/nothing.ml",
+        "sha256": "8040006f4a182a19b8b126a94004f7864c624df32a4d020b80d07e94e5c5c65f",
+        "lines": 6
+      },
+      {
+        "path": "lib/execution/nothing.mli",
+        "sha256": "50e624cea848c152c9a855020391f29f6cab8bc43e8f84eb5dfc502d092baab4",
+        "lines": 16
+      },
+      {
+        "path": "lib/execution/replay.ml",
+        "sha256": "0f81cd30be9700e93c9fcb144d277de4dab10ff8a12aabe04087190b6e7a9f64",
+        "lines": 76
+      },
+      {
+        "path": "lib/execution/replay.mli",
+        "sha256": "ce86249ccfb5145cbe9e6aff7da1051327eaa0e966b167cf4614eaf529811dd5",
+        "lines": 118
+      },
+      {
+        "path": "lib/hash32/dune",
+        "sha256": "e3af1bb5b50059f3593f66b536f86e070f48d6e520260f6df0bc7cc37f4f17f0",
+        "lines": 9
+      },
+      {
+        "path": "lib/hash32/hash32.ml",
+        "sha256": "20da50e4b0536893eb95c5d9d34dcdbc94cc60591f99e906741b66c145f0fcba",
+        "lines": 27
+      },
+      {
+        "path": "lib/hash32/hash32.mli",
+        "sha256": "4cee3fc069873814344e9ac2e6193d4585fcb126123cff696d9e4c907ca282c7",
+        "lines": 55
+      },
+      {
+        "path": "lib/keccak/dune",
+        "sha256": "6519ad50737d2460f912872410165c7fdebb4c837be248fa55b874a36802b4a7",
+        "lines": 7
+      },
+      {
+        "path": "lib/keccak/tn_keccak.ml",
+        "sha256": "4c3bacb0dbde08cb7b536981cda7e82a0961e704b6235a890c71d62a499f8fe2",
+        "lines": 30
+      },
+      {
+        "path": "lib/keccak/tn_keccak.mli",
+        "sha256": "342a4e11fd2ccb7a4aa7ce19e181b3bc83d5f9057bc3c8bd9107905645d0a02b",
+        "lines": 86
+      },
+      {
+        "path": "lib/network/base58.ml",
+        "sha256": "c14ebc5c6c079874e9cb36142dd6431fa7b51d8c03e82906a33ca169c974ee52",
+        "lines": 48
+      },
+      {
+        "path": "lib/network/base58.mli",
+        "sha256": "6eda5fcb1e870d808a61cde039313e4e321932fef6b35ebdafbedd18df6c698e",
+        "lines": 21
+      },
+      {
+        "path": "lib/network/bls_public_key.ml",
+        "sha256": "66c6f538f0c6a3ce69e67fdc2c4d57856b4d7fd5aa423effbffbb731959cf288",
+        "lines": 17
+      },
+      {
+        "path": "lib/network/bls_public_key.mli",
+        "sha256": "e0865647e94f952fdb01bc412d113883e210c6882054e037e61914408e6790e4",
+        "lines": 32
+      },
+      {
+        "path": "lib/network/bls_signature.ml",
+        "sha256": "bffe4d1654e44c52ae75c0430c335e915fd20552bde2615d13a60b9e7c81498f",
+        "lines": 17
+      },
+      {
+        "path": "lib/network/bls_signature.mli",
+        "sha256": "c51a1552ecce68651943e2bf2dd7d598595dbf44702c584237907380a6f7b0a8",
+        "lines": 29
+      },
+      {
+        "path": "lib/network/certificate_wire.ml",
+        "sha256": "7012fd245b6d69e5c24894777ca8d4d107406355bdfaa4421b591241628450aa",
+        "lines": 160
+      },
+      {
+        "path": "lib/network/certificate_wire.mli",
+        "sha256": "97aa69c75d9c5610b82b9b8893219db6c3301873736e5ee2ddceeac197f67316",
+        "lines": 80
+      },
+      {
+        "path": "lib/network/consensus_result.ml",
+        "sha256": "fe18dd6a8118f539d23d4ad6d343bc4c6cc5515245d48dc1d56e506991d3920e",
+        "lines": 42
+      },
+      {
+        "path": "lib/network/consensus_result.mli",
+        "sha256": "007b339ac10e0d0dab555408ab3e923c0ab6d71d3faf00420f42e6bb24ceba90",
+        "lines": 30
+      },
+      {
+        "path": "lib/network/dune",
+        "sha256": "513a2cded08d0c1f19fb73876c434135d514a6a041e5cca7cb402f3323056b3f",
+        "lines": 18
+      },
+      {
+        "path": "lib/network/epoch_certificate.ml",
+        "sha256": "c625a361fa061b9faa05917117fa5253e5eb0d17521a46e72435a227919709ac",
+        "lines": 29
+      },
+      {
+        "path": "lib/network/epoch_certificate.mli",
+        "sha256": "98301a07855333b43206864c34d1ee6bd5589d8f7fd03a2b9183a08829f75067",
+        "lines": 25
+      },
+      {
+        "path": "lib/network/epoch_record.ml",
+        "sha256": "0f93b6b72670936514a54c656a7444f4cda6e7b9933f60a4e431fd1c98ece8dc",
+        "lines": 68
+      },
+      {
+        "path": "lib/network/epoch_record.mli",
+        "sha256": "d786cef291eabd6f965f51a920d5c7afa748100169539095cb28874c856164c0",
+        "lines": 48
+      },
+      {
+        "path": "lib/network/epoch_vote.ml",
+        "sha256": "bc10a8162b04ae5d1ea9b2ccc3453f46ad40bb151c8c93a7a4b17453c7d1e3b7",
+        "lines": 34
+      },
+      {
+        "path": "lib/network/epoch_vote.mli",
+        "sha256": "9d665e5a0f31b9e72d46b3cb9cadcebc8381ba6bf41406aa3c3a2b44ad86e540",
+        "lines": 26
+      },
+      {
+        "path": "lib/network/gossip.ml",
+        "sha256": "1c4f33bf84ed736c92d39505af6e564c11b819d35e1bf1ff2aa389c468e3a3aa",
+        "lines": 109
+      },
+      {
+        "path": "lib/network/gossip.mli",
+        "sha256": "346b49198948eafea0b3520b04bcb4da0be456d8cbaf05da44596f7714854e4b",
+        "lines": 132
+      },
+      {
+        "path": "lib/network/node_record.ml",
+        "sha256": "cf15d899dea9f46e704fd7e573872ed038f6a4628d5c344186afdd40d2988e87",
+        "lines": 95
+      },
+      {
+        "path": "lib/network/node_record.mli",
+        "sha256": "f2af7ea7ec6bb0d1665d757433da4962aa1c0853f64c0d36f9bfa5159ebf2786",
+        "lines": 74
+      },
+      {
+        "path": "lib/network/peer_exchange.ml",
+        "sha256": "b7d6be6137052e097ddd92368377da5336a1908625f70a72f4389cb4d5c68b2e",
+        "lines": 65
+      },
+      {
+        "path": "lib/network/peer_exchange.mli",
+        "sha256": "60d65e1fe1b2cc893cce265bfa259ea89aece3e70b3a8441cbe4ff522ceeeef3",
+        "lines": 57
+      },
+      {
+        "path": "lib/network/primary_msg.ml",
+        "sha256": "727dba78d06aaf32b74ea1208b2e6beaa05c1e301e7a5f0403e3acceaa4c7502",
+        "lines": 185
+      },
+      {
+        "path": "lib/network/primary_msg.mli",
+        "sha256": "0f671332a53dab6ef5fbebe0e4dcc8247cbbe4a98402819b04377cae08cdd290",
+        "lines": 67
+      },
+      {
+        "path": "lib/network/protocols.ml",
+        "sha256": "2b6bee3f2bf5d135742d60b6e1a756eca3beea8e47250d6b2377a01f858f7649",
+        "lines": 36
+      },
+      {
+        "path": "lib/network/protocols.mli",
+        "sha256": "0f348222a564d6deda2085eab519b1ac6ea923956c30fe0edb19084ed414389b",
+        "lines": 41
+      },
+      {
+        "path": "lib/network/roaring.ml",
+        "sha256": "579ab506a6ea2c5fef27b47448de8063c74192c55ebdaa41621520f064682c1f",
+        "lines": 253
+      },
+      {
+        "path": "lib/network/roaring.mli",
+        "sha256": "eafa0a264d75af5999fb5972c531cfdec529b5296d47d578e4c9aafed20c692b",
+        "lines": 75
+      },
+      {
+        "path": "lib/network/sync_chunking.ml",
+        "sha256": "a8de56697c4fe839869e09385eaea0287ece8a77061d5ec90de1a6b17beb0ce0",
+        "lines": 115
+      },
+      {
+        "path": "lib/network/sync_chunking.mli",
+        "sha256": "c0c26780f4fc598e9e3f51f4c9d78629f44255c0d082a45b49894e64d31abf63",
+        "lines": 146
+      },
+      {
+        "path": "lib/network/sync_frame.ml",
+        "sha256": "c81f119b51e4af656aa7c7224f5147bf28e85b3b7c5d78cce0acb2729be71aa9",
+        "lines": 105
+      },
+      {
+        "path": "lib/network/sync_frame.mli",
+        "sha256": "83c19e8b7d9a411eb637f2e4fcdaebe2c1b5c508a9f79444ad6e9f47d5707704",
+        "lines": 38
+      },
+      {
+        "path": "lib/network/sync_reader.ml",
+        "sha256": "38194987eb7bce96d1a6f831c815e88a14f5cb83e7d9a958d8c152c553517b4c",
+        "lines": 185
+      },
+      {
+        "path": "lib/network/sync_reader.mli",
+        "sha256": "19714265fb24ca6bd2c797d7a9974057d23fa8836ef03021f31080485b0dccd2",
+        "lines": 150
+      },
+      {
+        "path": "lib/network/sync_request.ml",
+        "sha256": "cf34150c533e0027bfd296c9c150e407f2b1a4493f5b75d12adabe222a825932",
+        "lines": 91
+      },
+      {
+        "path": "lib/network/sync_request.mli",
+        "sha256": "4ddb24eb15b68f5946b78d158c2c1a6a3b34ddbb054d48010afd93f5a5f2e116",
+        "lines": 37
+      },
+      {
+        "path": "lib/network/var_bytes.ml",
+        "sha256": "1290dc6e01845151f2b0a88f7f7af02f3801da037f98e902109151e7d3597e55",
+        "lines": 9
+      },
+      {
+        "path": "lib/network/var_bytes.mli",
+        "sha256": "690f0953eafb5fe25cbd973813cf57f9dc7cee85115ae1dbd83216b6992a9498",
+        "lines": 25
+      },
+      {
+        "path": "lib/network/vote_wire.ml",
+        "sha256": "a8b3502255bc5e67c036dec2a0a52fcf7ebb778ea83dadf78e45bed34497e6c9",
+        "lines": 79
+      },
+      {
+        "path": "lib/network/vote_wire.mli",
+        "sha256": "7fbede8d09c20b6b6d197d6e27d3d32d2bb5433cb30bcf98d500310cc45ae999",
+        "lines": 66
+      },
+      {
+        "path": "lib/network/wire.ml",
+        "sha256": "17352d987fdc3dd24b26d8b84b0f45432b52f1ea6a869b78eb8d04c256415946",
+        "lines": 147
+      },
+      {
+        "path": "lib/network/wire.mli",
+        "sha256": "94c1d2ea50c4b4a57eb4715e618653447a24eb57d1fd4a6c02ad46cdf4585998",
+        "lines": 128
+      },
+      {
+        "path": "lib/network/wire_frame.ml",
+        "sha256": "4473c9aff01de425470efc02f9947bfb90278f18bee04a02460437d116fbfb9e",
+        "lines": 167
+      },
+      {
+        "path": "lib/network/wire_frame.mli",
+        "sha256": "4c738c3c4af2384474eed821a6c48b94ae8d2feaf69e4a3633a5c38a9a68189b",
+        "lines": 154
+      },
+      {
+        "path": "lib/network/wire_scalar.ml",
+        "sha256": "519ca6d41dca588bf6059962bb2df842a248bd37cc3dfc224a94cce7bd721061",
+        "lines": 36
+      },
+      {
+        "path": "lib/network/wire_scalar.mli",
+        "sha256": "b2d6269595cbc698b5a52f9597575e2d304f02694857c4fe069f87eceea3e464",
+        "lines": 29
+      },
+      {
+        "path": "lib/network/worker_msg.ml",
+        "sha256": "1ac3513e1786e0d8971014a80dbf47201d787b6864112f59907b171a296ebf61",
+        "lines": 90
+      },
+      {
+        "path": "lib/network/worker_msg.mli",
+        "sha256": "b8aa9efff4bab67ff8ebd0a59b7391a9d9214fa49d74b0edf5cb4ed4b60a24ca",
+        "lines": 34
+      },
+      {
+        "path": "lib/rand/chacha12.ml",
+        "sha256": "17497293c946564fbc28c49fd53c54ba367445fc3b2e8038df22c8d20e164327",
+        "lines": 121
+      },
+      {
+        "path": "lib/rand/chacha12.mli",
+        "sha256": "8f7564bd2855f5e7b65de405bad60df4020f657a1a2b6c342f4803a72442be06",
+        "lines": 24
+      },
+      {
+        "path": "lib/rand/dune",
+        "sha256": "8a8d4b02e88cd5bcaf11584cde93afa60de695d64577192afc92baa83466726e",
+        "lines": 9
+      },
+      {
+        "path": "lib/rand/rand_seq.ml",
+        "sha256": "73172e885e7c9b6c32b48845a8efcbcf4a0ce67e4d31610f887468249b346047",
+        "lines": 47
+      },
+      {
+        "path": "lib/rand/rand_seq.mli",
+        "sha256": "34bcade07442b3e92bd4a3a1430c6b52754c78df7e790bd2293dc8530f24edf5",
+        "lines": 16
+      },
+      {
+        "path": "lib/rand/std_rng.ml",
+        "sha256": "6f442f8f7805283cc042fbf81bc7fc7bbd2814ba8db3c0f72f47e7c05cd58afa",
+        "lines": 129
+      },
+      {
+        "path": "lib/rand/std_rng.mli",
+        "sha256": "e66127630838fc78655afd688ddeb2a9ec9ab17752a0f11fa92929ff0c0495fe",
+        "lines": 54
+      },
+      {
+        "path": "lib/rlp/dune",
+        "sha256": "92a135c7e5f77215cf320d18c2c837fc2399f2fcf2f35924d880536eec3ace7a",
+        "lines": 6
+      },
+      {
+        "path": "lib/rlp/rlp.ml",
+        "sha256": "da79dc2ef633ef254910a989a96f52678a9da9b16e44204b8560d3b7e09defce",
+        "lines": 182
+      },
+      {
+        "path": "lib/rlp/rlp.mli",
+        "sha256": "e4b121aefdfa0db882bed0af65fd4e4738c150c82cd7cc22e694e53326ba4fc4",
+        "lines": 114
+      },
+      {
+        "path": "lib/sim/dune",
+        "sha256": "b6776acf867c61cdd8e678f11f5555158fd2dff3d600edeecb9631f99fffbd5c",
+        "lines": 4
+      },
+      {
+        "path": "lib/sim/sim.ml",
+        "sha256": "ef2ba0bca3db7b5e21fdbf3906c6256e74ef257a5180c0130f7e9f38561c1c39",
+        "lines": 403
+      },
+      {
+        "path": "lib/sim/sim.mli",
+        "sha256": "ca805304bd34bd47e04481cd86c311fb48afe3dd3e6376cdaa43c1cd972e4c6b",
+        "lines": 197
+      },
+      {
+        "path": "lib/snappy/byte_reader.ml",
+        "sha256": "148dd07cc0c79f488d376bb05cc52c4e25d9dc56001287ce7a95ad868da2eeb7",
+        "lines": 33
+      },
+      {
+        "path": "lib/snappy/byte_reader.mli",
+        "sha256": "2a721855106276075d786a05f2f10dd0ff7b20d91f8fb82f5deb0c5f42695c02",
+        "lines": 31
+      },
+      {
+        "path": "lib/snappy/crc32c.ml",
+        "sha256": "9a0f7f13f06466b419817690ccfd15fccfcb16a13db7f2072b83d5d1e2b27289",
+        "lines": 55
+      },
+      {
+        "path": "lib/snappy/crc32c.mli",
+        "sha256": "c6237c5194978a10645842a45753a4463e279699da1470839dd3b7d86ed4b27c",
+        "lines": 39
+      },
+      {
+        "path": "lib/snappy/dune",
+        "sha256": "da695ec7532f33c2e636754acf8a9616f23727e1c9835bfb62b62e2722bea3b4",
+        "lines": 8
+      },
+      {
+        "path": "lib/snappy/snappy_frame.ml",
+        "sha256": "132c07350441189513d304e001c8a2a546d2dce1ea3e236f2b0f4ace811867ad",
+        "lines": 213
+      },
+      {
+        "path": "lib/snappy/snappy_frame.mli",
+        "sha256": "b36c5a3de7704b57d8077c9001ed3d88edb2b3c5f22c48c01c23c66ed78097c1",
+        "lines": 80
+      },
+      {
+        "path": "lib/snappy/snappy_raw.ml",
+        "sha256": "99048c34f15db0c03cca25faadd96811418e4657ab1b4363285c4248ac9721bb",
+        "lines": 220
+      },
+      {
+        "path": "lib/snappy/snappy_raw.mli",
+        "sha256": "c9daaceba2e5e4cd7e0ff34e343610f1199b1a9916f898da71a9ab5a465b2df2",
+        "lines": 50
+      },
+      {
+        "path": "lib/state/account.ml",
+        "sha256": "d7b4e8452acecdf80881ce8b42c40f5b0a048d7d87c718d7c9d6fd03d4d52c6b",
+        "lines": 91
+      },
+      {
+        "path": "lib/state/account.mli",
+        "sha256": "c705ed18915af6f772c9e84334f5707760bafe8c9823880da907f942444f4c5e",
+        "lines": 196
+      },
+      {
+        "path": "lib/state/address_word.ml",
+        "sha256": "425fe01115fdf3205df5bfa2f2b5bd9b2493e93ca62cc990ddc448d2df392380",
+        "lines": 32
+      },
+      {
+        "path": "lib/state/address_word.mli",
+        "sha256": "46421537daebf608e815b4e683cfb401a4abf73d501a8bbc4e13b1cf5ee51915",
+        "lines": 26
+      },
+      {
+        "path": "lib/state/bytecode.ml",
+        "sha256": "72aa7ed2b72fde0a5bdb8e0bea3c518ae5ee95cf0747e8e0ab6f3b221bd3f07b",
+        "lines": 34
+      },
+      {
+        "path": "lib/state/bytecode.mli",
+        "sha256": "a13d8f9c109708fb370c447082d7bae7a2781c42284450f14ee555ae52b23b1d",
+        "lines": 108
+      },
+      {
+        "path": "lib/state/delegation.ml",
+        "sha256": "5268701fa997d5161b270f9e52abfbaf0e855f611feab7cd1a4714fe30de161b",
+        "lines": 98
+      },
+      {
+        "path": "lib/state/delegation.mli",
+        "sha256": "a021e2f98e28a5b9fd7bf1ed34eb5264f37f460a9995ea924e76bff017f81188",
+        "lines": 158
+      },
+      {
+        "path": "lib/state/dune",
+        "sha256": "1a9f0cfdd380e0ed66c9e9e4fddc04486a4e9b629a72c0af2b56a0fd3cf528a5",
+        "lines": 4
+      },
+      {
+        "path": "lib/state/genesis_account.ml",
+        "sha256": "eca1e6ead958a1b6661422a55d60b76fc8adf7808dee9b21027e78fa1a901c6b",
+        "lines": 36
+      },
+      {
+        "path": "lib/state/genesis_account.mli",
+        "sha256": "4eaac4f878332d5e86c88f8ee6f5501697bdc4d9055383cf2ffce7ce0de15c06",
+        "lines": 59
+      },
+      {
+        "path": "lib/state/nonce.ml",
+        "sha256": "d0dce1f7fe2eed98eb26c903ef9addd7406b1908d111ca1ded0eee626fb30291",
+        "lines": 12
+      },
+      {
+        "path": "lib/state/nonce.mli",
+        "sha256": "a535c8f4eae76d0704f4e9d7cd19d0145993b43b53e76421f1169a1ad1876f12",
+        "lines": 35
+      },
+      {
+        "path": "lib/state/storage.ml",
+        "sha256": "3bcacedbf96c9e9e07f6815d6bf1a45a1c8222c4a59f1858d793e6ce72ea003d",
+        "lines": 21
+      },
+      {
+        "path": "lib/state/storage.mli",
+        "sha256": "2d717e84a832f888164fb17fd7d6ad277f87e64d4265c3eab0df649a74a99ee3",
+        "lines": 47
+      },
+      {
+        "path": "lib/state/transfer.ml",
+        "sha256": "c88bb20b9ea89bd886af22425a39a52bc2881952757765a66112198e27c755b8",
+        "lines": 53
+      },
+      {
+        "path": "lib/state/transfer.mli",
+        "sha256": "f6c2427b774c21980c1aae5c695fc91b4714f370ff0c0931f5c386cdde5d2728",
+        "lines": 65
+      },
+      {
+        "path": "lib/state/u256.ml",
+        "sha256": "49865446b88e2dd9c5e1bdcdfbe442f3210993d0727d09c378336cfa23c3a717",
+        "lines": 290
+      },
+      {
+        "path": "lib/state/u256.mli",
+        "sha256": "b0f94909253dfde280418526183b49463a26c92649ea081442436ff64dca1960",
+        "lines": 132
+      },
+      {
+        "path": "lib/state/world_state.ml",
+        "sha256": "33629ceb6301921d7d33918a0cf52d1b0f8dc9d85e8d6e57f63ba3815c0fbca3",
+        "lines": 128
+      },
+      {
+        "path": "lib/state/world_state.mli",
+        "sha256": "eb4a116d44f554bbbd7de2517f811cf574f777787c82d8f8f9e8f2be83ae802e",
+        "lines": 152
+      },
+      {
+        "path": "lib/std/dune",
+        "sha256": "9307400c5000ce3d878ca7e483d8cb96cdaed329496090a5f86b50cc77449756",
+        "lines": 3
+      },
+      {
+        "path": "lib/std/nonempty.ml",
+        "sha256": "6055b31776270f5d03b4ddd5fa7a640686eb10ff58ca24dc014dba9127368629",
+        "lines": 25
+      },
+      {
+        "path": "lib/std/nonempty.mli",
+        "sha256": "4b7f91d91cf2ef784c513de785759523f40c484f1ee97fb4ad397b553ea24fcd",
+        "lines": 37
+      },
+      {
+        "path": "lib/std/prng.ml",
+        "sha256": "03b54468a35bf40c41bb0855f1707f10df11b7f7ff26b856fc2106782bd92411",
+        "lines": 38
+      },
+      {
+        "path": "lib/std/prng.mli",
+        "sha256": "dba91e92de812a739781e3cef77655cea8cb2011c4c52f0e6aeeb83d4b3e2238",
+        "lines": 27
+      },
+      {
+        "path": "lib/trie/dune",
+        "sha256": "953718e9373780288c1db31e5ea7b550afd982f4b4b857810067736498cec80c",
+        "lines": 9
+      },
+      {
+        "path": "lib/trie/hex_prefix.ml",
+        "sha256": "9c8aa4854ca24a26a34f732c5a5853d66692665a9170609b7421545f0056e65b",
+        "lines": 31
+      },
+      {
+        "path": "lib/trie/hex_prefix.mli",
+        "sha256": "3d2eade52a36270976b56d38ec16b46f8c53c0168d440e0a32371ac482d9a627",
+        "lines": 42
+      },
+      {
+        "path": "lib/trie/nibbles.ml",
+        "sha256": "f3c83e744fdb7a16770705900d4593d0367c6ae2327396e8a55c3199a23974fe",
+        "lines": 81
+      },
+      {
+        "path": "lib/trie/nibbles.mli",
+        "sha256": "4e464451e4e7554af9688b4830e2b3adc23568ced4ce88485e01d9b5be98941a",
+        "lines": 89
+      },
+      {
+        "path": "lib/trie/node.ml",
+        "sha256": "64b0ff81645964d872fcc3dded8abefc03b3de2f4e5e98a42a30a86f3e1b98e8",
+        "lines": 38
+      },
+      {
+        "path": "lib/trie/node.mli",
+        "sha256": "2b3718d632502622412a7bba8c0d4b04a3981e4069234ffacccd586a92334ca6",
+        "lines": 59
+      },
+      {
+        "path": "lib/trie/trie.ml",
+        "sha256": "f86e81ac89a53ccceef162d32c13dc52843a2285bdcafe201be39ef5311b35d7",
+        "lines": 116
+      },
+      {
+        "path": "lib/trie/trie.mli",
+        "sha256": "11fdb7a137471c58430fbca8920ac9593424aacaf5d302c836fa6289eb33b6bc",
+        "lines": 82
+      },
+      {
+        "path": "lib/types/authority.ml",
+        "sha256": "95876c03a39d327e9270d26f565e08f4f2917f40a491f4142444f8ab3199e3ed",
+        "lines": 15
+      },
+      {
+        "path": "lib/types/authority.mli",
+        "sha256": "cea4a4e09a1553f0222da82ff7258050b5cbb1f73d984d1d0fd644c54a87c492",
+        "lines": 24
+      },
+      {
+        "path": "lib/types/authority_id.ml",
+        "sha256": "09ac0587e3f00cf640320938aa4e730a6d22a427acc83e30e61e37ed0c03c360",
+        "lines": 25
+      },
+      {
+        "path": "lib/types/authority_id.mli",
+        "sha256": "d504f1a921ffc922f546f7d52e39229974f33cfd222f5f67f38ea83e40c650d6",
+        "lines": 27
+      },
+      {
+        "path": "lib/types/batch.ml",
+        "sha256": "a8b1087792abe9597216809f08429d1ada66c23439b2b03c5ce08d8499bf95f2",
+        "lines": 171
+      },
+      {
+        "path": "lib/types/batch.mli",
+        "sha256": "10b00cafff2b971d1b9652d0cbbdb367be6d8727feca8476a3de215cf586136c",
+        "lines": 131
+      },
+      {
+        "path": "lib/types/block_num_hash.ml",
+        "sha256": "583ebe9b201f836898f3e1f011320836c8a580f86126a5b60697463ea19ad3e0",
+        "lines": 37
+      },
+      {
+        "path": "lib/types/block_num_hash.mli",
+        "sha256": "f46a41df32e6e1cb40447fcb08f3f90e597fcb84e83601bfc0b1ffda78326ee1",
+        "lines": 36
+      },
+      {
+        "path": "lib/types/committee.ml",
+        "sha256": "34ef21e9520e609684f4fbc08fb4d4adeafa7bf03b61a08ed72a779358806d8a",
+        "lines": 119
+      },
+      {
+        "path": "lib/types/committee.mli",
+        "sha256": "2e2dd8772fb8f5fd897f6e4e93a1691f0a6a53c8ec1b97163fb9d6a952713b76",
+        "lines": 71
+      },
+      {
+        "path": "lib/types/digests.ml",
+        "sha256": "280b61f278e400b269b77bcccb2785975a4537a3fe485848a5d87cd60e8231c2",
+        "lines": 33
+      },
+      {
+        "path": "lib/types/digests.mli",
+        "sha256": "8b44ad0bf3f461466471d277c7337a00bfbf9473411e56ea05eccd6f75291071",
+        "lines": 39
+      },
+      {
+        "path": "lib/types/dune",
+        "sha256": "41eadbe81a5ca0b51a90d448f0ae8825e10c09e142d7382e79cffa23c21b811e",
+        "lines": 7
+      },
+      {
+        "path": "lib/types/leader_round.ml",
+        "sha256": "17afb1eefb267726254a386254a2bb16f72f60e09890cad9279601a097cfaf37",
+        "lines": 22
+      },
+      {
+        "path": "lib/types/leader_round.mli",
+        "sha256": "62851c87839f8f8d86746828371da38c3e3dd6962f746691d33c0e2318138581",
+        "lines": 30
+      },
+      {
+        "path": "lib/types/round.ml",
+        "sha256": "5c9551c7dc7063198f455f6c86715a2557e73ab23ec27cc77153d1a6d3bddb3e",
+        "lines": 22
+      },
+      {
+        "path": "lib/types/round.mli",
+        "sha256": "e00f8c0b0ae7ed185e4c89e315dde3e4d8fe1ee04eff191f4fba0b3d6e578928",
+        "lines": 40
+      },
+      {
+        "path": "lib/types/units.ml",
+        "sha256": "a41169aac062dd11297f0b5f31e9da8013bf1ff2912c7d3b99db1e689b10a25f",
+        "lines": 123
+      },
+      {
+        "path": "lib/types/units.mli",
+        "sha256": "4bfa28ca0e76b85f84fafb34630484ece4bfce032f992b472ddd28e0fcc06973",
+        "lines": 142
+      },
+      {
+        "path": "lib/vertex/certificate.ml",
+        "sha256": "06edf68aa8b5d188c6c9d695e6a07aeba71ed2af47adbcd5d70d05dca17d8405",
+        "lines": 154
+      },
+      {
+        "path": "lib/vertex/certificate.mli",
+        "sha256": "d852671da21312ef021dce3e7a21c5ea09f7f515ff0f398c1ec94dbb4fb2dfe0",
+        "lines": 78
+      },
+      {
+        "path": "lib/vertex/dune",
+        "sha256": "5668ea37d4107180c964a77ac6fe66933b43ad4850e429bc971a06df57b1e57b",
+        "lines": 4
+      },
+      {
+        "path": "lib/vertex/header.ml",
+        "sha256": "5bd9766211cc9abd881592c5587e26988b05a5166d2491036ff9387b1e011712",
+        "lines": 191
+      },
+      {
+        "path": "lib/vertex/header.mli",
+        "sha256": "07dca8caa62fde5a96d011f23ffed468a60c327b3a445cf4a70132b2c9bef6bb",
+        "lines": 84
+      },
+      {
+        "path": "lib/vertex/intent.ml",
+        "sha256": "8c6eb77ec0e0835f8700577cad9a966a091341b86f4e8a8e1f449066cf379f33",
+        "lines": 5
+      },
+      {
+        "path": "lib/vertex/intent.mli",
+        "sha256": "48c3d958a735a4514b0efe106e1cc598b5ca8154c2240357d58b997d943e673e",
+        "lines": 19
+      },
+      {
+        "path": "lib/vertex/vote.ml",
+        "sha256": "23dd5f05b3e124ca4250b94f22a447a0897417f2ab2429a58b3b148eda98fd3f",
+        "lines": 39
+      },
+      {
+        "path": "lib/vertex/vote.mli",
+        "sha256": "ebf1f94395d4d7d8d6f9f7ca8edc3430d30e919850d2bdb95c73b9668d077e0e",
+        "lines": 49
+      },
+      {
+        "path": "test/assoc_store.ml",
+        "sha256": "0f37ca4fefb7b4a0b76f19597f042758547770042c812d4446f6d1db1fa137c9",
+        "lines": 237
+      },
+      {
+        "path": "test/batch_fixtures.ml",
+        "sha256": "71d9a938fda1914f81dd560de913b2bee7e406f7f398dc9d1010d303aa810165",
+        "lines": 114
+      },
+      {
+        "path": "test/batch_vectors.ml",
+        "sha256": "c8b2965c91ed0d3d2f42532308c8b9dd33e29206d7844c8969e34577672346f3",
+        "lines": 116
+      },
+      {
+        "path": "test/block_fixtures.ml",
+        "sha256": "857476677a92735bb3eb82500d20ff99a66acbb5f0aaa3d73fda7ae82efd2680",
+        "lines": 230
+      },
+      {
+        "path": "test/block_vectors.ml",
+        "sha256": "5bcf16807d998df071e4ca5986955f0ab6f8df165881c1b178d948e70822ef5d",
+        "lines": 176
+      },
+      {
+        "path": "test/bn254_vectors.ml",
+        "sha256": "0c735ae744fc774f9f365344022aacc84cf33e7033eeb4aab5523c23c90f2d91",
+        "lines": 239
+      },
+      {
+        "path": "test/chacha_vectors.ml",
+        "sha256": "86ed80c1f6d38362b5f70a275e7b0c39aa101fbadbb38a4bb01326745c77186e",
+        "lines": 97
+      },
+      {
+        "path": "test/consensus_block_vectors.ml",
+        "sha256": "29962c73421319fc79825d83a682154afdae2eaa95c5f3dfbd031adeb840bf98",
+        "lines": 73
+      },
+      {
+        "path": "test/crypto_blst/dune",
+        "sha256": "d3dccdbd574d55b28e0e42e5bde610a6b89f2e8192c03edaff4720a11f4bffba",
+        "lines": 47
+      },
+      {
+        "path": "test/crypto_blst/test_crypto_blst.ml",
+        "sha256": "fb06f2348961c40725138c460c879115ade7efd6a6c89a6c0cbcc5eed1635040",
+        "lines": 1051
+      },
+      {
+        "path": "test/crypto_conformance/crypto_conformance.ml",
+        "sha256": "98bf9e6152737ed8b2dda0bfda00dfbaeac5fb6cf077d7e0f5f72eaef33e9393",
+        "lines": 326
+      },
+      {
+        "path": "test/crypto_conformance/dune",
+        "sha256": "a6e2ed0c6c45a28394919ea9837f4c207d564028a946a5388daa7ca381c793d4",
+        "lines": 9
+      },
+      {
+        "path": "test/crypto_stub_conformance/dune",
+        "sha256": "23e5a9fbaa12f3e9ac3f98176949e9091e1551f0db312db36be604f33ae3d483",
+        "lines": 11
+      },
+      {
+        "path": "test/crypto_stub_conformance/test_crypto_stub_conformance.ml",
+        "sha256": "099520f56e304078641760e25f6c4bc456217b1e90fec5202fb576116ed06600",
+        "lines": 37
+      },
+      {
+        "path": "test/driver_prelude.ml",
+        "sha256": "26266097e3be35cec225752d7091c51f9ec98bb03bc72592e55cf108962108d5",
+        "lines": 269
+      },
+      {
+        "path": "test/dune",
+        "sha256": "88966425aeac8e9983fab412ee5e0a300773efa14c63311ee0d03de39e59660c",
+        "lines": 26
+      },
+      {
+        "path": "test/durable_faults/dune",
+        "sha256": "f5bb21a5f623231b3da8bca8506482b40a533745344be099c49fcc0fb2da76f7",
+        "lines": 3
+      },
+      {
+        "path": "test/durable_faults/durable_faults.ml",
+        "sha256": "d7785f24d88102853934fd9b2e906f20dd9fdeb9be85ba9f949d517bd6517d2c",
+        "lines": 174
+      },
+      {
+        "path": "test/durable_faults/durable_faults.mli",
+        "sha256": "8d2d842aa9a9f95b95fa6b41d25aded44b7639e67f586456e9ecb7433a00b9af",
+        "lines": 54
+      },
+      {
+        "path": "test/durable_restart/dune",
+        "sha256": "83a5a3a817d5ac62215c65c77ea27415e03bde24bf3df579f0e132488b8a1bee",
+        "lines": 35
+      },
+      {
+        "path": "test/durable_restart/restart_child.ml",
+        "sha256": "f5ddc40d27b35dd79e1818a3dd1b76beceec2ee3bb9f6306a0bf01ac56c27068",
+        "lines": 365
+      },
+      {
+        "path": "test/durable_restart/restart_fixtures.ml",
+        "sha256": "7fe726e94efae87d4c069653e5c9d5827d94ce50972f9e9b8eb6b6f2e9c78f5f",
+        "lines": 386
+      },
+      {
+        "path": "test/durable_restart/test_durable_restart.ml",
+        "sha256": "014875d54e3603f8aea7ea0ec757d5b12064d1bc816bb8eeaf26eadd8f43e2c3",
+        "lines": 635
+      },
+      {
+        "path": "test/eip7702_vectors.ml",
+        "sha256": "7beb7bba61e19dcd5df06025d0a7067d8963f3fabf4d25f6ddce8e869530357c",
+        "lines": 489
+      },
+      {
+        "path": "test/fixtures/blake3_official_vectors.json",
+        "sha256": "dcb91ea8accc77e6d6e632af7cdc1a99a9f3ae78cf648da595c7d064db32f624",
+        "lines": 217
+      },
+      {
+        "path": "test/fixtures/blake3_official_vectors.txt",
+        "sha256": "e4ba1fdf644f2d2096690b603532eb5e3e66c1779c3f88d13dbdff61ec27ed8a",
+        "lines": 39
+      },
+      {
+        "path": "test/fixtures/tn_crypto_blst_vectors.txt",
+        "sha256": "0ecf7028a04005c9065608424b7103eb6a50a13d8a63128bab959d8ebee4909e",
+        "lines": 22
+      },
+      {
+        "path": "test/header_vectors.ml",
+        "sha256": "518e8e503b450a2147fd2f80d5a1b29da9fb62891232e21487c8205899e5a4ac",
+        "lines": 138
+      },
+      {
+        "path": "test/hex_bytes.ml",
+        "sha256": "bc2bc505c498fe8e87776a3034839cacf53b68dd55d8f38a90ff08a4b0c60346",
+        "lines": 41
+      },
+      {
+        "path": "test/network_vectors.ml",
+        "sha256": "d0be836fe122cc2a37716a6f52464f22f9048b8ca5bbf029f153ca85fc06f33b",
+        "lines": 425
+      },
+      {
+        "path": "test/oracle_headers.ml",
+        "sha256": "52b6f30abf7d2b6a773168887f1d8b5b8a94a03e9b73de0bac9669a2ae7f502a",
+        "lines": 124
+      },
+      {
+        "path": "test/registry_genesis.ml",
+        "sha256": "f33625e78b03e8e1c120a6caad592959d006d3ecd9f659b9c1a1b01c90ee92bf",
+        "lines": 1046
+      },
+      {
+        "path": "test/sealed_batch_vectors.ml",
+        "sha256": "52615221745807a7ee825e9963e4b03309489c547cf728b5a49b29a7fcf442ec",
+        "lines": 52
+      },
+      {
+        "path": "test/snappy_vectors.ml",
+        "sha256": "90011a47a59f75a1da206d68e6194064f43cd9c120fb50f86d7e9d33637ce44c",
+        "lines": 382
+      },
+      {
+        "path": "test/store_disk_adapter.ml",
+        "sha256": "7844156b75bd3af4ae39d81d5fa75d6d1722e5237e5e57d1bcb65f3e0547a3e4",
+        "lines": 178
+      },
+      {
+        "path": "test/sub_dag_vectors.ml",
+        "sha256": "23943a87d051d07e0b790f764381120f2afa61e2ebf34af6007ea193b34fcd93",
+        "lines": 95
+      },
+      {
+        "path": "test/test_batch.ml",
+        "sha256": "6f20c911b33e112fe781379903791d36499f5c261aee11b65796d4452624eec0",
+        "lines": 325
+      },
+      {
+        "path": "test/test_batch_validator.ml",
+        "sha256": "d8f71b00cf8cac448b4d71b2ca4764abb74216083a076fb30d4049cb9588626e",
+        "lines": 305
+      },
+      {
+        "path": "test/test_bcs.ml",
+        "sha256": "2082625bea205bd059b373a9abbeeeac60e7ccecb2ddada765388a0f943342ce",
+        "lines": 240
+      },
+      {
+        "path": "test/test_block_execution.ml",
+        "sha256": "bc79f7558a37c0ba1d9133014637c287df815a8c2020a63567536374fca984c3",
+        "lines": 1239
+      },
+      {
+        "path": "test/test_block_header.ml",
+        "sha256": "7eb8b609bf114e0c396e82f6950d450d05464e2a6fe2f50dea1fd691b086ff85",
+        "lines": 598
+      },
+      {
+        "path": "test/test_block_roots.ml",
+        "sha256": "0dd52549a92910e7e70f34c0d091cc1aab7ceb08cdbcabb22515540b0c4b22ae",
+        "lines": 222
+      },
+      {
+        "path": "test/test_bloom.ml",
+        "sha256": "fb708534bf4964dd563ffc974703df84ea49146177ec2b55fed8369e9bfac88d",
+        "lines": 97
+      },
+      {
+        "path": "test/test_bn254.ml",
+        "sha256": "b057acf1802b0b7eb3e5353dc6a1629506719e28cef304278a5004273d485ebc",
+        "lines": 1165
+      },
+      {
+        "path": "test/test_byte_compat.ml",
+        "sha256": "f2ba3e0bedc2426db6f5ab12e6f63fd93425dc970c38a6d637aea22cafe38155",
+        "lines": 430
+      },
+      {
+        "path": "test/test_calls.ml",
+        "sha256": "75ad16bba354cf9bf350881f383a9599d21cc7917a3a69d034fb246cec2c4502",
+        "lines": 765
+      },
+      {
+        "path": "test/test_checkpoint_file.ml",
+        "sha256": "8795e300af918349e5b96de5647b805b6697227f87caa3222095bd4b57701552",
+        "lines": 669
+      },
+      {
+        "path": "test/test_committee_shuffle.ml",
+        "sha256": "baca319c253557541ce200d9297d3496227c3749d3d128ae8232ba251ae2dd73",
+        "lines": 215
+      },
+      {
+        "path": "test/test_consensus.ml",
+        "sha256": "daf65ad6e8e8e52e3dcb0aa337d81432e7be9af985f9cf7c78a2a093e9de8ea4",
+        "lines": 1289
+      },
+      {
+        "path": "test/test_consensus_chain.ml",
+        "sha256": "ca0303cb6761416768bf89489e4c14b16e4239b5981dcea4a1387c73e92c9cef",
+        "lines": 309
+      },
+      {
+        "path": "test/test_consensus_store.ml",
+        "sha256": "b32a5906f9671037c3950074af6f1d01fbd9e876dae289d6fdf4d67b27335f52",
+        "lines": 1475
+      },
+      {
+        "path": "test/test_creation.ml",
+        "sha256": "b31503af4ad32402a754e4e251f7cbed5c6be2521a691ddcf5358591bc58c3f9",
+        "lines": 918
+      },
+      {
+        "path": "test/test_driver.ml",
+        "sha256": "4c1d3ba0b15d3c14b9ea361e4fa05f2625841e84aea9fffb56ec74f41b76db0b",
+        "lines": 408
+      },
+      {
+        "path": "test/test_driver_epoch.ml",
+        "sha256": "31ddbc0bad803309efc57578071f314cfc38ad1a3ee3131bda99a616d124914b",
+        "lines": 534
+      },
+      {
+        "path": "test/test_driver_resume.ml",
+        "sha256": "d8ca19436793e293ee542243101ad14757a63e3d37d17dfe127416d9d1651f28",
+        "lines": 1813
+      },
+      {
+        "path": "test/test_driver_sim.ml",
+        "sha256": "d886db8e5111a72c05e2a56a988ca61918a5620ec00663d1785ac9fe3405e605",
+        "lines": 316
+      },
+      {
+        "path": "test/test_driver_spec.ml",
+        "sha256": "711db0a08e794b55f1d3417ba76bbd003973ff5116e8342c8c0f5931da1094e3",
+        "lines": 567
+      },
+      {
+        "path": "test/test_driver_subscriber.ml",
+        "sha256": "8d79c40fd89da65b9360d115c5cb48a3d70ff7e740e2a626b55edaf754b7285b",
+        "lines": 300
+      },
+      {
+        "path": "test/test_durable_codec.ml",
+        "sha256": "ebd923727d000c5b14ee269fdc465208b3757d1de9dd5159de140b165303be34",
+        "lines": 965
+      },
+      {
+        "path": "test/test_durable_frame.ml",
+        "sha256": "00264930d57967745ab45d2f27f88bfebb5d63f557202155dd16453f5d0a8b93",
+        "lines": 519
+      },
+      {
+        "path": "test/test_durable_io.ml",
+        "sha256": "2887c8f9014db4146eeaafab929f878c558491424931bd1450c404941f313863",
+        "lines": 508
+      },
+      {
+        "path": "test/test_durable_log.ml",
+        "sha256": "2b3d2a6f5b6515a5e80c980e607561bda1250cafb1af5eaee7a8dd399ffb67e7",
+        "lines": 823
+      },
+      {
+        "path": "test/test_eip7702_calls.ml",
+        "sha256": "449ea8140827b7a34e3ccb5b586f0d97c4de22ddf16767b1a624a6e8e86a1708",
+        "lines": 975
+      },
+      {
+        "path": "test/test_eip7702_gas.ml",
+        "sha256": "3372224b5850b570de5bc0af1d0aa8257af48a3e34b7e5c9cf708117441d5ea7",
+        "lines": 435
+      },
+      {
+        "path": "test/test_eip7702_state.ml",
+        "sha256": "7798a403a89e0c2c24c58c1bfbaa13495deac4ec67322587f3449b1de6be9aea",
+        "lines": 562
+      },
+      {
+        "path": "test/test_eip7702_wire.ml",
+        "sha256": "2834a163ec5d2bcf7ee5bc29b24e649c4608b5d42ebce38d0880ecee93f75339",
+        "lines": 919
+      },
+      {
+        "path": "test/test_engine.ml",
+        "sha256": "16093b7f9bcc6d80812629a06df7f3edb4f41fc96386f1f3be460f4e073969c6",
+        "lines": 1799
+      },
+      {
+        "path": "test/test_engine_epoch.ml",
+        "sha256": "705e1ea1559f6be0d2767811162ddb16f83d0e851209cc394922158e8edfae6c",
+        "lines": 482
+      },
+      {
+        "path": "test/test_engine_txskip.ml",
+        "sha256": "aae4b5908b12b88c9b40d80f6d972a3cf00a606f2fa6313daf99e3685c8bddb8",
+        "lines": 245
+      },
+      {
+        "path": "test/test_epoch_close.ml",
+        "sha256": "d9acee0353ca47ce9173976bc062d2ea1556176fd2fd2009aade4e9cd1254dfd",
+        "lines": 482
+      },
+      {
+        "path": "test/test_evm.ml",
+        "sha256": "94b4f8d0e4e99e5d247f9565e390732a455a9c3e71c7266276ea842a31a055ae",
+        "lines": 310
+      },
+      {
+        "path": "test/test_execution.ml",
+        "sha256": "9aadfb1d111721969e560eb911622220246c79e2e409e0d02af3a2c3dfbc1a7b",
+        "lines": 247
+      },
+      {
+        "path": "test/test_executor.ml",
+        "sha256": "0ce7916e849a7a3c62cbf8f104a53b0eeda1af6651f8f698b314a65a9b8c82c9",
+        "lines": 900
+      },
+      {
+        "path": "test/test_extcode.ml",
+        "sha256": "a17973f60fea63ee7fb939a2ba36a915b88b6b607344bb84db2815ed4f1f1226",
+        "lines": 397
+      },
+      {
+        "path": "test/test_fork_dispatch.ml",
+        "sha256": "a5fd1e651a303e8d06bb994c9c3ff8873edcae8709c6673e77038a129d82b785",
+        "lines": 937
+      },
+      {
+        "path": "test/test_fork_schedule.ml",
+        "sha256": "d87e6ad54f176646dbebd3b4df738618af755fda874f262f0ed9391e156cb1ed",
+        "lines": 215
+      },
+      {
+        "path": "test/test_gas_penalty.ml",
+        "sha256": "a44f475774788294442f9b7ab610e9ead3ef86b44aa79355342f4320a20a6fb6",
+        "lines": 81
+      },
+      {
+        "path": "test/test_genesis_registry.ml",
+        "sha256": "3c83216cadac4e185465fb41c5510e7ab54bea054fa18982ba9b5a9d4e4d0e57",
+        "lines": 285
+      },
+      {
+        "path": "test/test_host_seam.ml",
+        "sha256": "69727d22636cbdea32fdc185fcef63db626555f1feb8e77ccf885e4a45c87959",
+        "lines": 2219
+      },
+      {
+        "path": "test/test_interpreter.ml",
+        "sha256": "2b1ab72babd69d84c83bec4d838932b55978740746e2f0828e78aee15ee40864",
+        "lines": 1249
+      },
+      {
+        "path": "test/test_keccak.ml",
+        "sha256": "ace486fcdcd97777fb1b8465743014da4e8f1e80b7fa334243dc0a78dfba3510",
+        "lines": 124
+      },
+      {
+        "path": "test/test_network.ml",
+        "sha256": "474b5cd6893c6ba54a93217a45475d2d413f691206147eb7e74a2e652c522769",
+        "lines": 2183
+      },
+      {
+        "path": "test/test_payload_seam.ml",
+        "sha256": "44dffd8c99afe4fbf1332be759153cc5478b89614475c2f0fdbb579077d16249",
+        "lines": 603
+      },
+      {
+        "path": "test/test_precompile.ml",
+        "sha256": "8018f4aa7f92e7168c8b7e19483e6f1785820686b1e3a4384ef1247c19599295",
+        "lines": 470
+      },
+      {
+        "path": "test/test_primary.ml",
+        "sha256": "93e13b2bc1125d2e92c421d664c3451f2980e2b5d5bd55ff93789608a0d0b156",
+        "lines": 599
+      },
+      {
+        "path": "test/test_properties.ml",
+        "sha256": "8c1466ac83f1bd448b7ad2613e4fcd17a1fccbe67eabb9f69357baeadd680002",
+        "lines": 248
+      },
+      {
+        "path": "test/test_rand.ml",
+        "sha256": "cdb5ff35725a8b40dd4e4eadebe4dd3754561f39b5571f4be4c5ad195a12b56e",
+        "lines": 440
+      },
+      {
+        "path": "test/test_receipt_envelope.ml",
+        "sha256": "459f9f9a18741012977a0675a468b672ed09427a1b74d1d942c9a68e24a80a9c",
+        "lines": 127
+      },
+      {
+        "path": "test/test_recovery.ml",
+        "sha256": "3e24a4619c23b9c1c6ada5213c260619eedba9719383efeac984ef319b507636",
+        "lines": 483
+      },
+      {
+        "path": "test/test_registry_abi.ml",
+        "sha256": "30265d9cf571b13420f14be8b1d199e48afdad17ce0fac632e61ecf48daadd5b",
+        "lines": 362
+      },
+      {
+        "path": "test/test_rewards_counter.ml",
+        "sha256": "8e453c6fbd8f2dd548bfc3a9dfae6faf85be48116fcb1a302dcd03b302e694b9",
+        "lines": 203
+      },
+      {
+        "path": "test/test_rlp.ml",
+        "sha256": "001ee9e64129893b0c43b39ca8c692fb963b3dad87aa31a82eee2c1fc98c1489",
+        "lines": 200
+      },
+      {
+        "path": "test/test_sim.ml",
+        "sha256": "55a09e71a1f5e766947aafaff419f59bbcdb5549bf97103583ca88c6e2ed2e14",
+        "lines": 420
+      },
+      {
+        "path": "test/test_snappy.ml",
+        "sha256": "eb623dd512df52c1f92fbbce11c1658866a962b0377847fee0b50fe08a82653c",
+        "lines": 723
+      },
+      {
+        "path": "test/test_state.ml",
+        "sha256": "cc9e18af89a3e2503b71869544d138a6a94b15ace5564cf3b1667e45f6b46033",
+        "lines": 524
+      },
+      {
+        "path": "test/test_store_disk.ml",
+        "sha256": "fb4e1d464c9d7ef8992b068e3a8d3ee466d58a36739444952778491b2a42f323",
+        "lines": 1152
+      },
+      {
+        "path": "test/test_trie.ml",
+        "sha256": "8a2193896a8803c877475d6469861b25f143ee86c986e7959fcec39df7d82704",
+        "lines": 391
+      },
+      {
+        "path": "test/test_tx_envelope.ml",
+        "sha256": "a785792838e2ba2f6d57095802a7f29a71f04d6056d125f5be9231dd49a927c7",
+        "lines": 501
+      },
+      {
+        "path": "test/test_tx_recovery.ml",
+        "sha256": "4d4d0569969145f9b47570d6cf4b26694e35fc9f7af5a25182669499dea86bb1",
+        "lines": 339
+      },
+      {
+        "path": "test/test_tx_shape.ml",
+        "sha256": "27c1b1f38c260438eb59f5ad380be29bae7dfb6a2b63bf2f0054547c2b0337dc",
+        "lines": 284
+      },
+      {
+        "path": "test/test_types.ml",
+        "sha256": "7df1c7e8cf6ad1ebb1342707cf25148cfe378c340f5780b18afaaea2d624f156",
+        "lines": 171
+      },
+      {
+        "path": "test/test_vertex.ml",
+        "sha256": "b58b5a74916070d45db4a56b805b992a6905ae8de841f6defbc8a421fb623d38",
+        "lines": 504
+      },
+      {
+        "path": "test/test_wire_frame.ml",
+        "sha256": "11147c3a12079c0aae8225ab784a647540bba362dc7afd211406b7584d7244d3",
+        "lines": 587
+      },
+      {
+        "path": "test/trie_vectors.ml",
+        "sha256": "2813ec9c7aadded72b054d44ccb0bb941726ef6bb4c4942965c7cfe3bd1dea44",
+        "lines": 27
+      },
+      {
+        "path": "test/tx_shape_vectors.ml",
+        "sha256": "b37ccee4715900ad2eaae849ddb203bd3367cdacf9672b988e0021642354c2d6",
+        "lines": 162
+      },
+      {
+        "path": "test/tx_vectors.ml",
+        "sha256": "74e6c29ee31d33ae381147fe6cb0463e987f55917ded90603bf8b8d848f8dfbf",
+        "lines": 250
+      },
+      {
+        "path": "test/vote_vectors.ml",
+        "sha256": "dbdee25496663b0f17d3ab5a42697b6a89809989b4aceafacd8de05256a70626",
+        "lines": 72
+      }
+    ],
+    "libraries": [
+      {
+        "name": "batch",
+        "modules": 5,
+        "implementationLines": 1040,
+        "dune": "; The batch seam: the port's one network-ingress boundary. This library sits\n; above BOTH tn_evm and tn_execution (which cannot see each other), so the\n; TN-mirror wire decoder, the batch validator and the payload seam can compose\n; the two without touching any existing dune file.\n(library\n (name tn_batch)\n (public_name telcoin_ocaml.batch)\n (libraries tn_std tn_codec tn_crypto tn_types tn_rlp tn_keccak tn_evm\n   tn_consensus tn_execution zarith))\n"
+      },
+      {
+        "name": "codec",
+        "modules": 1,
+        "implementationLines": 406,
+        "dune": "(library\n (name tn_codec)\n (public_name telcoin_ocaml.codec))\n"
+      },
+      {
+        "name": "consensus",
+        "modules": 11,
+        "implementationLines": 2011,
+        "dune": "; tn_keccak and tn_hash32 are DIRECT dependencies because the sub-DAG\n; randomness is keccak256, a fixed protocol fact rather than a link-time seam\n; choice, and it is carried as the 32-byte gate. tn_rand is direct because the\n; leader swap draws from rand 0.9.2's ChaCha12 StdRng. All three are acyclic:\n; tn_rand -> tn_hash32 -> tn_keccak -> digestif is a leaf chain and none of\n; them names tn_consensus.\n(library\n (name tn_consensus)\n (public_name telcoin_ocaml.consensus)\n (libraries tn_std tn_codec tn_crypto tn_types tn_vertex tn_keccak tn_hash32\n   tn_rand))\n"
+      },
+      {
+        "name": "crypto",
+        "modules": 0,
+        "implementationLines": 0,
+        "dune": "; Virtual library: declares the interface (tn_crypto.mli) with no\n; implementation. Exactly one implementation library (default\n; tn_crypto_stub) is linked per executable. See lib/crypto_stub/.\n(library\n (name tn_crypto)\n (public_name telcoin_ocaml.crypto)\n (virtual_modules tn_crypto)\n (default_implementation telcoin_ocaml.crypto_stub))\n"
+      },
+      {
+        "name": "crypto_blst",
+        "modules": 2,
+        "implementationLines": 405,
+        "dune": "; The real implementation of the virtual tn_crypto library: pure-OCaml\n; BLAKE3 (the private Blake3 module — no opam blake3 dependency exists for\n; this toolchain) plus BLS12-381 min-sig aggregation via bls12-381 and\n; bls12-381-signature. Selected per executable by naming\n; telcoin_ocaml.crypto_blst in that executable's (libraries ...); every\n; existing executable keeps resolving to the stub default.\n(library\n (name tn_crypto_blst)\n (public_name telcoin_ocaml.crypto_blst)\n (implements telcoin_ocaml.crypto)\n (libraries bls12-381 bls12-381-signature hex))\n"
+      },
+      {
+        "name": "crypto_stub",
+        "modules": 1,
+        "implementationLines": 133,
+        "dune": "; The default implementation of the virtual tn_crypto library: a deterministic\n; forgeable stub for simulation. Provides tn_crypto.ml against the interface in\n; lib/crypto/tn_crypto.mli.\n(library\n (name tn_crypto_stub)\n (public_name telcoin_ocaml.crypto_stub)\n (implements telcoin_ocaml.crypto)\n (libraries digestif))\n"
+      },
+      {
+        "name": "driver",
+        "modules": 7,
+        "implementationLines": 545,
+        "dune": "; The execution driver: the library that owns the consensus-chain accumulator\n; and the engine, feeding committed outputs through the batch-body seam. It\n; sits above tn_engine, and nothing but the test suite sits above it. It must\n; NEVER list tn_sim: the sim is a consensus shell below the batch seam, and\n; the test suite is the wiring layer where the two meet. Every library any\n; module here names is listed explicitly, as every other library in this repo\n; does: the implicit transitive closure is never relied on.\n(library\n (name tn_driver)\n (public_name telcoin_ocaml.driver)\n (libraries tn_types tn_state tn_evm tn_keccak tn_consensus tn_execution\n   tn_batch tn_engine zarith))\n"
+      },
+      {
+        "name": "durable",
+        "modules": 6,
+        "implementationLines": 1048,
+        "dune": "(library\n (name tn_durable)\n (public_name telcoin_ocaml.durable)\n (libraries unix digestif))\n"
+      },
+      {
+        "name": "durable_checkpoint",
+        "modules": 2,
+        "implementationLines": 527,
+        "dune": "; The durable checkpoint: the execution side's small artefact, published by\n; rename. It is a library of its own so the dependency edge from storage to the\n; whole execution stack (state, evm, engine, driver) is drawn once and in one\n; place; nothing below it learns that a checkpoint exists. Every library any\n; module here names is listed explicitly, as every other library in this repo\n; does: the implicit transitive closure is never relied on.\n(library\n (name tn_durable_checkpoint)\n (public_name telcoin_ocaml.durable_checkpoint)\n (libraries tn_durable tn_durable_store tn_codec tn_crypto tn_keccak tn_types\n   tn_execution tn_state tn_evm tn_engine tn_driver))\n"
+      },
+      {
+        "name": "durable_store",
+        "modules": 2,
+        "implementationLines": 414,
+        "dune": "(library\n (name tn_durable_store)\n (public_name telcoin_ocaml.durable_store)\n (libraries tn_durable tn_codec tn_crypto tn_types tn_consensus tn_execution))\n"
+      },
+      {
+        "name": "engine",
+        "modules": 6,
+        "implementationLines": 686,
+        "dune": "; The execution engine: the library that folds one committed consensus output\n; into the execution blocks it produces. It sits above tn_batch (which already\n; sits above both tn_evm and tn_execution), and nothing but tn_driver (the\n; execution driver, chunk 37) and the test suite sits above it. Every library\n; any module here names is listed explicitly, as every\n; other library in this repo does: the implicit transitive closure is never\n; relied on.\n(library\n (name tn_engine)\n (public_name telcoin_ocaml.engine)\n (libraries tn_std tn_types tn_crypto tn_keccak tn_hash32 tn_state tn_evm\n   tn_consensus tn_execution tn_batch zarith))\n"
+      },
+      {
+        "name": "evm",
+        "modules": 65,
+        "implementationLines": 8955,
+        "dune": "(library\n (name tn_evm)\n (public_name telcoin_ocaml.evm)\n (libraries tn_types tn_state tn_keccak tn_rlp tn_trie tn_crypto tn_hash32 tn_rand zarith\n   digestif))\n"
+      },
+      {
+        "name": "execution",
+        "modules": 6,
+        "implementationLines": 681,
+        "dune": "; tn_std, tn_vertex and tn_hash32 became DIRECT dependencies when the genesis\n; anchor stopped being a placeholder constant: computing it builds Rust's\n; default Header (tn_vertex) inside a singleton Nonempty (tn_std), and the\n; block's [extra] field is the 32-byte gate (tn_hash32). Every one of them\n; already sits below tn_consensus, so no edge is new to the graph.\n(library\n (name tn_execution)\n (public_name telcoin_ocaml.execution)\n (libraries tn_std tn_codec tn_crypto tn_types tn_hash32 tn_vertex\n   tn_consensus))\n"
+      },
+      {
+        "name": "hash32",
+        "modules": 1,
+        "implementationLines": 27,
+        "dune": "; The 32-byte gate as a leaf. It lived in tn_evm until chunk 32, when the\n; committee shuffle put tn_rand BELOW tn_evm (the shuffle consumes the RNG),\n; while tn_rand still needs this type for its seed; a leaf both can see is\n; the only acyclic home. tn_evm re-exports it as Tn_evm.Hash32, so every\n; existing reference and the type equality survive the move.\n(library\n (name tn_hash32)\n (public_name telcoin_ocaml.hash32)\n (libraries tn_keccak))\n"
+      },
+      {
+        "name": "keccak",
+        "modules": 1,
+        "implementationLines": 30,
+        "dune": "; Keccak-256 is a leaf: it depends on nothing else in this port, so both\n; tn_state (for a code hash) and tn_evm (for KECCAK256) can sit above it\n; without either depending on the other.\n(library\n (name tn_keccak)\n (public_name telcoin_ocaml.keccak)\n (libraries digestif))\n"
+      },
+      {
+        "name": "network",
+        "modules": 24,
+        "implementationLines": 2182,
+        "dune": "; The pure slice of telcoin-network's p2p layer: wire framing, message\n; codecs and the pure state machines that sit behind them. Placement follows\n; the chunk-44 ground truth's layering recommendation (GT:1017, dune\n; convention GT:977): this library sits ABOVE tn_consensus the way tn_sim\n; does, so Node.command and Node.event are consumed here and never modified\n; there. Nothing below this library names it, so the graph stays acyclic.\n(library\n (name tn_network)\n (public_name telcoin_ocaml.network)\n ; tn_crypto is DIRECT here because the wire leaf codecs rebuild the port's\n ; digest newtypes out of 32 wire bytes (Digests.*.of_digest takes a\n ; Tn_crypto.Digest.t), exactly as lib/vertex/header.ml does. The BLS key and\n ; signature FIELDS deliberately do not go through the seam: their wire widths\n ; are 96 and 48 bytes, a property of the Rust wire rather than of whichever\n ; crypto seam is linked, so they are opaque byte newtypes here and convert at\n ; the ingress boundary only.\n (libraries tn_std tn_codec tn_snappy tn_types tn_crypto tn_vertex\n   tn_consensus))\n"
+      },
+      {
+        "name": "rand",
+        "modules": 3,
+        "implementationLines": 297,
+        "dune": "; rand 0.9.2's StdRng (ChaCha12) restricted to what the epoch-close committee\n; shuffle consumes: the keystream, the u32/u64 draws, the usize range sampler\n; and the choose_multiple reservoir. Depends on tn_hash32 only for the seed\n; type (the close-epoch randomness arrives as that 32-byte gate); tn_evm sits\n; ABOVE this library since chunk 32, because the committee shuffle calls it.\n(library\n (name tn_rand)\n (public_name telcoin_ocaml.rand)\n (libraries tn_hash32))\n"
+      },
+      {
+        "name": "rlp",
+        "modules": 1,
+        "implementationLines": 182,
+        "dune": "; RLP (Recursive Length Prefix) is a leaf codec: it depends on nothing else in\n; this port. Keeping it free of keccak and of the trie lets the later receipt,\n; transaction and header chunks reuse it without pulling in the Merkle trie.\n(library\n (name tn_rlp)\n (public_name telcoin_ocaml.rlp))\n"
+      },
+      {
+        "name": "sim",
+        "modules": 1,
+        "implementationLines": 403,
+        "dune": "(library\n (name tn_sim)\n (public_name telcoin_ocaml.sim)\n (libraries tn_std tn_crypto tn_types tn_vertex tn_consensus tn_execution))\n"
+      },
+      {
+        "name": "snappy",
+        "modules": 4,
+        "implementationLines": 521,
+        "dune": "; Snappy is generic compression, not network-specific, so it is a leaf\n; library of its own the way tn_keccak and tn_hash32 are: tn_network (chunk\n; 44) sits above it and keeps its own dependency list minimal, and nothing\n; here needs anything above tn_std.\n(library\n (name tn_snappy)\n (public_name telcoin_ocaml.snappy)\n (libraries tn_std))\n"
+      },
+      {
+        "name": "state",
+        "modules": 10,
+        "implementationLines": 795,
+        "dune": "(library\n (name tn_state)\n (public_name telcoin_ocaml.state)\n (libraries tn_types tn_keccak))\n"
+      },
+      {
+        "name": "std",
+        "modules": 2,
+        "implementationLines": 63,
+        "dune": "(library\n (name tn_std)\n (public_name telcoin_ocaml.std))\n"
+      },
+      {
+        "name": "trie",
+        "modules": 4,
+        "implementationLines": 266,
+        "dune": "; The Merkle-Patricia-Trie root builder. It is where Keccak, RLP and the nibble\n; path encoding meet: a trie root is [keccak256] of the RLP of a tree whose keys\n; are nibble paths. Keeping it above tn_rlp (a domain-independent codec reused by\n; the later receipt, transaction and header chunks) lets those chunks depend on\n; RLP without pulling in the trie.\n(library\n (name tn_trie)\n (public_name telcoin_ocaml.trie)\n (libraries tn_rlp tn_keccak tn_state tn_types))\n"
+      },
+      {
+        "name": "types",
+        "modules": 9,
+        "implementationLines": 567,
+        "dune": "; tn_hash32 is the 32-byte gate Block_num_hash needs for the execution block\n; hash in a header. The edge is acyclic: tn_hash32 -> tn_keccak -> digestif is\n; a leaf chain and neither of those libraries names tn_types.\n(library\n (name tn_types)\n (public_name telcoin_ocaml.types)\n (libraries tn_crypto tn_codec tn_hash32))\n"
+      },
+      {
+        "name": "vertex",
+        "modules": 4,
+        "implementationLines": 389,
+        "dune": "(library\n (name tn_vertex)\n (public_name telcoin_ocaml.vertex)\n (libraries tn_crypto tn_codec tn_types))\n"
+      }
+    ]
+  },
+  "toolchain": {
+    "root": "/Users/oobi/Documents/kanon",
+    "revision": "69f3be5198cda4334de4fd23b4ccc92cac595789",
+    "status": "",
+    "compiler": "/Users/oobi/Documents/kanon/_build/default/bin/kanon.exe",
+    "compilerSha256": "d8b522e8b92ce11227fb16c5420d472e33f601013721e1826e9d04fc3231ccc3"
+  }
+}

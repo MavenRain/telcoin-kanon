@@ -1,0 +1,194 @@
+-- Generic codec composition uses ordinary sums, products and functions.
+def ValueOption : (0 A : Type 0) -> Type 0 := fun (0 A : Type 0) => sum ((prod () : Type 0), A)
+def valueNone : (0 A : Type 0) -> ValueOption A := fun (0 A : Type 0) => inj 0 of 2 ()
+def valueSome : (0 A : Type 0) -> A -> ValueOption A := fun (0 A : Type 0) (value : A) => inj 1 of 2 value
+def CodecResult : (0 A : Type 0) -> Type 0 := fun (0 A : Type 0) => sum (BcsError, prod (A, BcsReader))
+def codecOk : (0 A : Type 0) -> A -> BcsReader -> CodecResult A :=
+  fun (0 A : Type 0) (value : A) (reader : BcsReader) => inj 1 of 2 tuple (value, reader)
+def codecError : (0 A : Type 0) -> BcsError -> CodecResult A :=
+  fun (0 A : Type 0) (error : BcsError) => inj 0 of 2 error
+def Codec : (0 A : Type 0) -> Type 0 := fun (0 A : Type 0) => prod ((A -> Bytes), (BcsReader -> CodecResult A))
+def codecMake : (0 A : Type 0) -> (A -> Bytes) -> (BcsReader -> CodecResult A) -> Codec A :=
+  fun (0 A : Type 0) (write : A -> Bytes) (read : BcsReader -> CodecResult A) => tuple (write, read)
+def codecWrite : (0 A : Type 0) -> Codec A -> A -> Bytes :=
+  fun (0 A : Type 0) (codec : Codec A) (value : A) => codec.0 value
+def codecRead : (0 A : Type 0) -> Codec A -> BcsReader -> CodecResult A :=
+  fun (0 A : Type 0) (codec : Codec A) (reader : BcsReader) => codec.1 reader
+def codecFinish : (0 A : Type 0) -> CodecResult A -> CodecResult A :=
+  fun (0 A : Type 0) (result : CodecResult A) =>
+    case result with
+    | 0 (error : BcsError) => codecError A error
+    | 1 (pair : prod (A, BcsReader)) =>
+      case (natEq (bcsOffset pair.1) (bcsTotal pair.1)) with
+      | 0 (unit : prod ()) => codecError A (bcsTrailingBytes (bcsOffset pair.1) (bcsTotal pair.1))
+      | 1 (unit : prod ()) => result
+def codecDecode : (0 A : Type 0) -> Codec A -> Bytes -> CodecResult A :=
+  fun (0 A : Type 0) (codec : Codec A) (input : Bytes) => codecFinish A (codecRead A codec (bcsStart input))
+def codecFromNatResult : BcsNatResult -> CodecResult Nat := fun (result : BcsNatResult) =>
+  match result as self in BcsNatResult return CodecResult Nat with
+  | bcsNatError error => codecError Nat error
+  | bcsNatOk value reader => codecOk Nat value reader
+def codecFromBytesResult : BcsBytesResult -> CodecResult Bytes := fun (result : BcsBytesResult) =>
+  match result as self in BcsBytesResult return CodecResult Bytes with
+  | bcsBytesError error => codecError Bytes error
+  | bcsBytesOk value reader => codecOk Bytes value reader
+def codecNat : (Nat -> Bytes) -> (BcsReader -> BcsNatResult) -> Codec Nat :=
+  fun (write : Nat -> Bytes) (read : BcsReader -> BcsNatResult) =>
+    codecMake Nat write (fun (reader : BcsReader) => codecFromNatResult (read reader))
+def codecU8 : Codec Nat := codecNat bcsEncodeU8 bcsReadU8
+def codecU16 : Codec Nat := codecNat bcsEncodeU16 bcsReadU16
+def codecU32 : Codec Nat := codecNat bcsEncodeU32 bcsReadU32
+def codecU64 : Codec Nat := codecNat bcsEncodeU64 bcsReadU64
+def codecUleb : Codec Nat := codecNat bcsEncodeUleb bcsReadUleb
+-- A nominal unit avoids the pinned backend's empty-product payload trap.
+mu CodecUnit : Type 0 :=
+| codecUnitValue : CodecUnit
+def codecUnit : Codec CodecUnit :=
+  codecMake CodecUnit (fun (value : CodecUnit) => bytesNil)
+    (fun (reader : BcsReader) => codecOk CodecUnit codecUnitValue reader)
+def codecBool : Codec Bool :=
+  codecMake Bool (fun (value : Bool) => bcsEncodeU8 (boolNat value))
+    (fun (reader : BcsReader) =>
+      match (bcsReadBool reader) as self in BcsNatResult return CodecResult Bool with
+      | bcsNatError error => codecError Bool error
+      | bcsNatOk value next => codecOk Bool (natEq value 1) next)
+def codecBytes : Codec Bytes :=
+  codecMake Bytes bcsEncodeBytes (fun (reader : BcsReader) => codecFromBytesResult (bcsReadBytes reader))
+def codecStringUtf8 : Codec Bytes := codecBytes
+def codecFixedBytes : Nat -> Codec Bytes := fun (width : Nat) =>
+  codecMake Bytes (fun (value : Bytes) => value)
+    (fun (reader : BcsReader) => codecFromBytesResult (bcsReadRaw width reader))
+def codecSizedBytes : Nat -> Codec Bytes := fun (width : Nat) =>
+  codecMake Bytes bcsEncodeBytes
+    (fun (reader : BcsReader) => codecFromBytesResult (bcsReadSizedBytes width reader))
+def codecOption : (0 A : Type 0) -> Codec A -> Codec (ValueOption A) :=
+  fun (0 A : Type 0) (codec : Codec A) =>
+    codecMake (ValueOption A)
+      (fun (option : ValueOption A) =>
+        case option with
+        | 0 (unit : prod ()) => b"\x00"
+        | 1 (value : A) => bytesCons 1 (codecWrite A codec value))
+      (fun (reader : BcsReader) =>
+        match (bcsReadU8 reader) as self in BcsNatResult return CodecResult (ValueOption A) with
+        | bcsNatError error => codecError (ValueOption A) error
+        | bcsNatOk tag next =>
+          let other : CodecResult (ValueOption A) :=
+            case (natEq tag 1) with
+            | 0 (unit : prod ()) => codecError (ValueOption A) (bcsInvalidOptionTag (bcsOffset reader) tag)
+            | 1 (unit : prod ()) =>
+              case (codecRead A codec next) with
+              | 0 (error : BcsError) => codecError (ValueOption A) error
+              | 1 (pair : prod (A, BcsReader)) => codecOk (ValueOption A) (valueSome A pair.0) pair.1
+          in
+          case (natEq tag 0) with
+          | 0 (unit : prod ()) => other
+          | 1 (unit : prod ()) => codecOk (ValueOption A) (valueNone A) next)
+def codecPair : (0 A : Type 0) -> (0 B : Type 0) -> Codec A -> Codec B -> Codec (prod (A, B)) :=
+  fun (0 A : Type 0) (0 B : Type 0) (a : Codec A) (b : Codec B) =>
+    codecMake (prod (A, B))
+      (fun (value : prod (A, B)) => append (codecWrite A a value.0) (codecWrite B b value.1))
+      (fun (reader : BcsReader) =>
+        case (codecRead A a reader) with
+        | 0 (error : BcsError) => codecError (prod (A, B)) error
+        | 1 (first : prod (A, BcsReader)) =>
+          case (codecRead B b first.1) with
+          | 0 (error : BcsError) => codecError (prod (A, B)) error
+          | 1 (second : prod (B, BcsReader)) => codecOk (prod (A, B)) (tuple (first.0, second.0)) second.1)
+def codecIso : (0 A : Type 0) -> (0 B : Type 0) -> (A -> B) -> (B -> A) -> Codec A -> Codec B :=
+  fun (0 A : Type 0) (0 B : Type 0) (inject : A -> B) (project : B -> A) (codec : Codec A) =>
+    codecMake B (fun (value : B) => codecWrite A codec (project value))
+      (fun (reader : BcsReader) =>
+        case (codecRead A codec reader) with
+        | 0 (error : BcsError) => codecError B error
+        | 1 (pair : prod (A, BcsReader)) => codecOk B (inject pair.0) pair.1)
+def codecTriple : (0 A : Type 0) -> (0 B : Type 0) -> (0 C : Type 0) -> Codec A -> Codec B -> Codec C -> Codec (prod (A, B, C)) :=
+  fun (0 A : Type 0) (0 B : Type 0) (0 C : Type 0) (a : Codec A) (b : Codec B) (c : Codec C) =>
+    codecIso (prod (A, prod (B, C))) (prod (A, B, C))
+      (fun (nested : prod (A, prod (B, C))) => tuple (nested.0, nested.1.0, nested.1.1))
+      (fun (flat : prod (A, B, C)) => tuple (flat.0, tuple (flat.1, flat.2)))
+      (codecPair A (prod (B, C)) a (codecPair B C b c))
+def codecRefine : (0 A : Type 0) -> (0 B : Type 0) -> (A -> ValueOption B) -> (B -> A) -> Codec A -> Codec B :=
+  fun (0 A : Type 0) (0 B : Type 0) (inject : A -> ValueOption B) (project : B -> A) (codec : Codec A) =>
+    codecMake B (fun (value : B) => codecWrite A codec (project value))
+      (fun (reader : BcsReader) =>
+        case (codecRead A codec reader) with
+        | 0 (error : BcsError) => codecError B error
+        | 1 (pair : prod (A, BcsReader)) =>
+          case (inject pair.0) with
+          | 0 (unit : prod ()) => codecError B (bcsLengthOutOfRange (bcsOffset reader) 0)
+          | 1 (value : B) => codecOk B value pair.1)
+
+mu Ordering : Type 0 :=
+| orderLess : Ordering
+| orderEqual : Ordering
+| orderGreater : Ordering
+def natOrdering : Nat -> Nat -> Ordering := fun (a : Nat) (b : Nat) =>
+  let different : Ordering :=
+    case (natLt a b) with
+    | 0 (unit : prod ()) => orderGreater
+    | 1 (unit : prod ()) => orderLess
+  in
+  case (natEq a b) with
+  | 0 (unit : prod ()) => different
+  | 1 (unit : prod ()) => orderEqual
+def rec bytesOrdering : Bytes -> Bytes -> Ordering := fun (a : Bytes) (b : Bytes) =>
+  match a as self in Bytes return Ordering with
+  | bytesNil =>
+    (case (natEq (bytesEmpty b) 1) with
+    | 0 (unit : prod ()) => orderLess
+    | 1 (unit : prod ()) => orderEqual)
+  | bytesCons head tail =>
+    match b as other in Bytes return Ordering with
+    | bytesNil => orderGreater
+    | bytesCons otherHead otherTail =>
+      match (natOrdering head otherHead) as compared in Ordering return Ordering with
+      | orderLess => orderLess
+      | orderGreater => orderGreater
+      | orderEqual => bytesOrdering tail otherTail
+def codecEncodedCompare : (0 A : Type 0) -> Codec A -> A -> A -> Ordering :=
+  fun (0 A : Type 0) (codec : Codec A) (a : A) (b : A) => bytesOrdering (codecWrite A codec a) (codecWrite A codec b)
+
+-- Cases carry their existential payload through typed closures.
+def CodecCases : (0 A : Type 0) -> Type 0 := fun (0 A : Type 0) =>
+  prod ((A -> ValueOption Bytes), (Nat -> ValueOption (BcsReader -> CodecResult A)))
+def codecCasesEmpty : (0 A : Type 0) -> CodecCases A := fun (0 A : Type 0) =>
+  tuple ((fun (value : A) => valueNone Bytes), (fun (index : Nat) => valueNone (BcsReader -> CodecResult A)))
+def codecCase : (0 A : Type 0) -> (0 B : Type 0) -> Nat -> Codec B -> (B -> A) -> (A -> ValueOption B) -> CodecCases A :=
+  fun (0 A : Type 0) (0 B : Type 0) (index : Nat) (codec : Codec B) (inject : B -> A) (project : A -> ValueOption B) =>
+    tuple (
+      (fun (value : A) =>
+        case (project value) with
+        | 0 (unit : prod ()) => valueNone Bytes
+        | 1 (payload : B) => valueSome Bytes (append (bcsEncodeUleb index) (codecWrite B codec payload))),
+      (fun (tag : Nat) =>
+        case (natEq tag index) with
+        | 0 (unit : prod ()) => valueNone (BcsReader -> CodecResult A)
+        | 1 (unit : prod ()) => valueSome (BcsReader -> CodecResult A)
+          (fun (reader : BcsReader) =>
+            case (codecRead B codec reader) with
+            | 0 (error : BcsError) => codecError A error
+            | 1 (pair : prod (B, BcsReader)) => codecOk A (inject pair.0) pair.1)))
+def codecCasesPrepend : (0 A : Type 0) -> CodecCases A -> CodecCases A -> CodecCases A :=
+  fun (0 A : Type 0) (head : CodecCases A) (tail : CodecCases A) =>
+    tuple (
+      (fun (value : A) =>
+        case (head.0 value) with
+        | 0 (unit : prod ()) => tail.0 value
+        | 1 (bytes : Bytes) => valueSome Bytes bytes),
+      (fun (index : Nat) =>
+        case (head.1 index) with
+        | 0 (unit : prod ()) => tail.1 index
+        | 1 (read : BcsReader -> CodecResult A) => valueSome (BcsReader -> CodecResult A) read))
+def codecSum : (0 A : Type 0) -> CodecCases A -> Codec A := fun (0 A : Type 0) (cases : CodecCases A) =>
+  codecMake A
+    (fun (value : A) =>
+      case (cases.0 value) with
+      | 0 (unit : prod ()) => bytesNil
+      | 1 (bytes : Bytes) => bytes)
+    (fun (reader : BcsReader) =>
+      match (bcsReadUleb reader) as self in BcsNatResult return CodecResult A with
+      | bcsNatError error => codecError A error
+      | bcsNatOk index next =>
+        case (cases.1 index) with
+        | 0 (unit : prod ()) => codecError A (bcsUnknownVariant (bcsOffset reader) index)
+        | 1 (read : BcsReader -> CodecResult A) => read next)

@@ -1,0 +1,113 @@
+def cryptoKeyParse : Bytes -> ValueOption SecretKey := fun (text : Bytes) =>
+  match (parseU64 text) as self in NatOption return ValueOption SecretKey with
+  | natNone => valueNone SecretKey
+  | natSome seed => valueSome SecretKey (secretKeyDerive seed)
+def crypto_key : Bytes -> Bytes := fun (text : Bytes) =>
+  case (cryptoKeyParse text) with
+  | 0 (unit : prod ()) => b"none"
+  | 1 (key : SecretKey) => bytesHex (publicKeyBytes (secretKeyPublic key))
+def crypto_sign : Bytes -> Bytes -> Bytes := fun (text : Bytes) (message : Bytes) =>
+  case (cryptoKeyParse text) with
+  | 0 (unit : prod ()) => b"none"
+  | 1 (key : SecretKey) => bytesHex (signatureBytes (cryptoSign key message))
+def crypto_signature : Bytes -> Bytes := fun (bytes : Bytes) =>
+  case (signatureOfBytes bytes) with
+  | 0 (unit : prod ()) => b"none"
+  | 1 (value : Signature) => bytesHex (signatureBytes value)
+def crypto_verify : Bytes -> Bytes -> Bytes -> Bytes := fun (text : Bytes) (message : Bytes) (raw : Bytes) =>
+  case (cryptoKeyParse text) with
+  | 0 (unit : prod ()) => b"none"
+  | 1 (key : SecretKey) =>
+    case (signatureOfBytes raw) with
+    | 0 (unit : prod ()) => b"none"
+    | 1 (signature : Signature) => decimal64 (boolNat (cryptoVerify (secretKeyPublic key) message signature))
+def rec cryptoSignatures : ByteStrings -> Bytes -> ValueOption Signatures := fun (seeds : ByteStrings) (message : Bytes) =>
+  match seeds as self in ByteStrings return ValueOption Signatures with
+  | byteStringsNil => valueSome Signatures signaturesNil
+  | byteStringsCons head tail =>
+    case (cryptoKeyParse head) with
+    | 0 (unit : prod ()) => valueNone Signatures
+    | 1 (key : SecretKey) =>
+      case (cryptoSignatures tail message) with
+      | 0 (unit : prod ()) => valueNone Signatures
+      | 1 (rest : Signatures) => valueSome Signatures (signaturesCons (cryptoSign key message) rest)
+def rec cryptoPublicKeys : ByteStrings -> ValueOption PublicKeys := fun (seeds : ByteStrings) =>
+  match seeds as self in ByteStrings return ValueOption PublicKeys with
+  | byteStringsNil => valueSome PublicKeys publicKeysNil
+  | byteStringsCons head tail =>
+    case (cryptoKeyParse head) with
+    | 0 (unit : prod ()) => valueNone PublicKeys
+    | 1 (key : SecretKey) =>
+      case (cryptoPublicKeys tail) with
+      | 0 (unit : prod ()) => valueNone PublicKeys
+      | 1 (rest : PublicKeys) => valueSome PublicKeys (publicKeysCons (secretKeyPublic key) rest)
+def crypto_aggregate : ByteStrings -> Bytes -> Bytes := fun (seeds : ByteStrings) (message : Bytes) =>
+  case (cryptoSignatures seeds message) with
+  | 0 (unit : prod ()) => b"none"
+  | 1 (signatures : Signatures) => bytesHex (aggregateBytes (cryptoAggregate signatures))
+def crypto_verifyAggregate : ByteStrings -> Bytes -> Bytes -> Bytes := fun (seeds : ByteStrings) (message : Bytes) (raw : Bytes) =>
+  case (cryptoPublicKeys seeds) with
+  | 0 (unit : prod ()) => b"none"
+  | 1 (keys : PublicKeys) =>
+    case (aggregateOfBytes raw) with
+    | 0 (unit : prod ()) => b"none"
+    | 1 (aggregate : Aggregate) => decimal64 (boolNat (cryptoVerifyAggregate keys message aggregate))
+def rec cryptoAuthorities : ByteStrings -> ValueOption Authorities := fun (seeds : ByteStrings) =>
+  match seeds as self in ByteStrings return ValueOption Authorities with
+  | byteStringsNil => valueSome Authorities authoritiesNil
+  | byteStringsCons head tail =>
+    case (cryptoKeyParse head) with
+    | 0 (unit : prod ()) => valueNone Authorities
+    | 1 (key : SecretKey) =>
+      case (cryptoAuthorities tail) with
+      | 0 (unit : prod ()) => valueNone Authorities
+      | 1 (rest : Authorities) => valueSome Authorities (authoritiesCons (authorityMake (secretKeyPublic key) addressZero) rest)
+def cryptoCommittee : ByteStrings -> CommitteeResult := fun (seeds : ByteStrings) =>
+  case (cryptoAuthorities seeds) with
+  | 0 (unit : prod ()) => committeeError (committeeTooSmall 0)
+  | 1 (authorities : Authorities) => committeeCreate epochZero authorities
+def rec cryptoRosterText : Authorities -> Bytes -> Bytes -> Bytes := fun (authorities : Authorities) (separator : Bytes) (acc : Bytes) =>
+  match authorities as self in Authorities return Bytes with
+  | authoritiesNil => acc
+  | authoritiesCons head tail => cryptoRosterText tail b"," (append acc (append separator (authorityIdHex (authorityId head))))
+def crypto_describe : ByteStrings -> Bytes := fun (seeds : ByteStrings) =>
+  match (cryptoCommittee seeds) as self in CommitteeResult return Bytes with
+  | committeeError error => append b"error: " (committeeErrorText error)
+  | committeeOk value =>
+    append (decimal64 (committeeSize value)) (append b":" (append (stakeShow (committeeTotalStake value)) (append b":"
+      (append (stakeShow (committeeQuorum value)) (append b":" (append (stakeShow (committeeValidity value)) (append b":" (cryptoRosterText (committeeAuthorities value) bytesNil bytesNil))))))))
+def crypto_nth : ByteStrings -> Bytes -> Bytes := fun (seeds : ByteStrings) (index : Bytes) =>
+  match (cryptoCommittee seeds) as self in CommitteeResult return Bytes with
+  | committeeError error => append b"error: " (committeeErrorText error)
+  | committeeOk value =>
+    case (hostIntParse index) with
+    | 0 (unit : prod ()) => b"none"
+    | 1 (n : HostInt) => authorityIdHex (authorityId (committeeNthMod value n))
+def crypto_index : ByteStrings -> Bytes -> Bytes := fun (seeds : ByteStrings) (member : Bytes) =>
+  match (cryptoCommittee seeds) as self in CommitteeResult return Bytes with
+  | committeeError error => append b"error: " (committeeErrorText error)
+  | committeeOk value =>
+    case (cryptoKeyParse member) with
+    | 0 (unit : prod ()) => b"none"
+    | 1 (key : SecretKey) => natOptionText (committeeIndexOf value (authorityIdOfPublicKey (secretKeyPublic key)))
+def crypto_stake : ByteStrings -> ByteStrings -> Bytes := fun (seeds : ByteStrings) (members : ByteStrings) =>
+  match (cryptoCommittee seeds) as self in CommitteeResult return Bytes with
+  | committeeError error => append b"error: " (committeeErrorText error)
+  | committeeOk value =>
+    case (cryptoAuthorities members) with
+    | 0 (unit : prod ()) => b"none"
+    | 1 (selected : Authorities) =>
+      let ids : AuthorityIds := listMapInto Authority Authorities AuthorityId AuthorityIds seqAuthorityOps seqAuthorityIdOps authorityId selected in
+      stakeShow (committeeStakeOf value ids)
+def crypto_rosterAddressMismatch : Nat -> Nat := fun (seed : Nat) =>
+  let a : PublicKey := secretKeyPublic (secretKeyDerive seed) in
+  let b : PublicKey := secretKeyPublic (secretKeyDerive (natAdd seed 1)) in
+  let changed : Address := addressValue b"12345678901234567890" in
+  let original : CommitteeResult := committeeCreate epochZero (authoritiesCons (authorityMake a addressZero) (authoritiesCons (authorityMake b addressZero) authoritiesNil)) in
+  let updated : CommitteeResult := committeeCreate epochZero (authoritiesCons (authorityMake a changed) (authoritiesCons (authorityMake b addressZero) authoritiesNil)) in
+  match original as self in CommitteeResult return Nat with
+  | committeeError error => 2
+  | committeeOk first =>
+    match updated as other in CommitteeResult return Nat with
+    | committeeError error => 2
+    | committeeOk second => boolNat (committeeEqual first second)

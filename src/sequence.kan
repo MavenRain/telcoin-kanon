@@ -1,0 +1,91 @@
+-- Shared balanced fuel represents 2^32 steps in 33 immutable nodes.
+-- Length checks occur before this is used; an error stops traversal immediately.
+mu Steps : Type 0 :=
+| stepOne : Steps
+| stepBoth (left : Steps) (right : Steps) : Steps
+def rec stepsBuild : Bytes -> Steps -> Steps := fun (fuel : Bytes) (steps : Steps) =>
+  match fuel as self in Bytes return Steps with
+  | bytesNil => steps
+  | bytesCons head tail => stepsBuild tail (stepBoth steps steps)
+def steps32 : Steps := stepsBuild fuel32 stepOne
+def rec stepsFold : (0 S : Type 0) -> Steps -> (S -> Nat) -> (S -> S) -> S -> S :=
+  fun (0 S : Type 0) (steps : Steps) (stop : S -> Nat) (step : S -> S) (state : S) =>
+    match steps as self in Steps return S with
+    | stepOne =>
+      (case (natEq (stop state) 0) with
+      | 0 (unit : prod ()) => state
+      | 1 (unit : prod ()) => step state)
+    | stepBoth left right =>
+      case (natEq (stop state) 0) with
+      | 0 (unit : prod ()) => state
+      | 1 (unit : prod ()) => stepsFold S right stop step (stepsFold S left stop step state)
+
+-- A typed collection dictionary, with concrete recursive carriers.
+-- Fields: empty, cons, reverse, length, head, tail, write payload, sort, dedup.
+def ListOps : (0 A : Type 0) -> (0 L : Type 0) -> Type 0 :=
+  fun (0 A : Type 0) (0 L : Type 0) =>
+    prod (L, (A -> L -> L), (L -> L), (L -> Nat), (L -> ValueOption A), (L -> L),
+      ((A -> Bytes) -> L -> Bytes), ((A -> A -> Ordering) -> L -> L), ((A -> A -> Ordering) -> L -> L))
+def ListReadState : (0 L : Type 0) -> Type 0 := fun (0 L : Type 0) => sum (BcsError, prod (L, BcsReader, Nat))
+def listReadStop : (0 L : Type 0) -> ListReadState L -> Nat := fun (0 L : Type 0) (state : ListReadState L) =>
+  case state with
+  | 0 (error : BcsError) => 1
+  | 1 (fields : prod (L, BcsReader, Nat)) => boolNat (natEq fields.2 0)
+def listReadStep : (0 A : Type 0) -> (0 L : Type 0) -> Codec A ->
+    (A -> L -> Nat -> Nat -> BcsReader -> CodecResult L) -> ListReadState L -> ListReadState L :=
+  fun (0 A : Type 0) (0 L : Type 0) (codec : Codec A)
+    (admit : A -> L -> Nat -> Nat -> BcsReader -> CodecResult L) (state : ListReadState L) =>
+      case state with
+      | 0 (error : BcsError) => inj 0 of 2 error
+      | 1 (fields : prod (L, BcsReader, Nat)) =>
+        case (codecRead A codec fields.1) with
+        | 0 (error : BcsError) => inj 0 of 2 error
+        | 1 (pair : prod (A, BcsReader)) =>
+          case (admit pair.0 fields.0 (bcsOffset fields.1) fields.2 pair.1) with
+          | 0 (error : BcsError) => inj 0 of 2 error
+          | 1 (updated : prod (L, BcsReader)) => inj 1 of 2 tuple (updated.0, updated.1, natSub fields.2 1)
+def codecListRead : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> Codec A ->
+    (A -> L -> Nat -> Nat -> BcsReader -> CodecResult L) -> BcsReader -> CodecResult L :=
+  fun (0 A : Type 0) (0 L : Type 0) (ops : ListOps A L) (codec : Codec A)
+    (admit : A -> L -> Nat -> Nat -> BcsReader -> CodecResult L) (reader : BcsReader) =>
+      match (bcsReadLength reader) as self in BcsNatResult return CodecResult L with
+      | bcsNatError error => codecError L error
+      | bcsNatOk length next =>
+        let initial : ListReadState L := inj 1 of 2 tuple (ops.0, next, length) in
+        let final : ListReadState L := stepsFold (ListReadState L) steps32 (listReadStop L) (listReadStep A L codec admit) initial in
+        case final with
+        | 0 (error : BcsError) => codecError L error
+        | 1 (fields : prod (L, BcsReader, Nat)) => codecOk L (ops.2 fields.0) fields.1
+def codecListAdmit : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> A -> L -> Nat -> Nat -> BcsReader -> CodecResult L :=
+  fun (0 A : Type 0) (0 L : Type 0) (ops : ListOps A L) (value : A) (acc : L) (offset : Nat) (remaining : Nat) (reader : BcsReader) =>
+    codecOk L (ops.1 value acc) reader
+def codecList : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> Codec A -> Codec L :=
+  fun (0 A : Type 0) (0 L : Type 0) (ops : ListOps A L) (codec : Codec A) =>
+    codecMake L (fun (values : L) => append (bcsEncodeUleb (ops.3 values)) (ops.6 (codecWrite A codec) values))
+      (codecListRead A L ops codec (codecListAdmit A L ops))
+def codecUnorderedList : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> Codec A -> Codec L :=
+  fun (0 A : Type 0) (0 L : Type 0) (ops : ListOps A L) (codec : Codec A) => codecList A L ops codec
+def codecMapAdmit : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> ListOps (prod (K, V)) L ->
+    (K -> K -> Ordering) -> prod (K, V) -> L -> Nat -> Nat -> BcsReader -> CodecResult L :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (ops : ListOps (prod (K, V)) L)
+    (compare : K -> K -> Ordering) (value : prod (K, V)) (acc : L) (offset : Nat) (remaining : Nat) (reader : BcsReader) =>
+      case (ops.4 acc) with
+      | 0 (unit : prod ()) => codecOk L (ops.1 value acc) reader
+      | 1 (previous : prod (K, V)) =>
+        match (compare previous.0 value.0) as self in Ordering return CodecResult L with
+        | orderLess => codecOk L (ops.1 value acc) reader
+        | orderEqual => codecError L (bcsLengthOutOfRange offset remaining)
+        | orderGreater => codecError L (bcsLengthOutOfRange offset remaining)
+def codecSortedMap : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> ListOps (prod (K, V)) L ->
+    Codec K -> Codec V -> (K -> K -> Ordering) -> Codec L :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (ops : ListOps (prod (K, V)) L)
+    (key : Codec K) (value : Codec V) (compare : K -> K -> Ordering) =>
+      let entry : Codec (prod (K, V)) := codecPair K V key value in
+      let sequence : Codec L := codecList (prod (K, V)) L ops entry in
+      let compareEntry : prod (K, V) -> prod (K, V) -> Ordering := fun (a : prod (K, V)) (b : prod (K, V)) => compare a.0 b.0 in
+      codecMake L (fun (values : L) => codecWrite L sequence (ops.7 compareEntry values))
+        (codecListRead (prod (K, V)) L ops entry (codecMapAdmit K V L ops compare))
+def codecBtreeSet : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> Codec A -> (A -> A -> Ordering) -> Codec L :=
+  fun (0 A : Type 0) (0 L : Type 0) (ops : ListOps A L) (codec : Codec A) (compare : A -> A -> Ordering) =>
+    let normalize : L -> L := fun (values : L) => ops.8 compare (ops.7 compare values) in
+    codecIso L L normalize normalize (codecList A L ops codec)

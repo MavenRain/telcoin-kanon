@@ -1,0 +1,42 @@
+
+-- Comparisons and rendering of admitted values.
+def roundEqual : Round -> Round -> Bool := fun (a : Round) (b : Round) => natEq (roundNat a) (roundNat b)
+def roundCompare : Round -> Round -> Ordering := fun (a : Round) (b : Round) => natOrdering (roundNat a) (roundNat b)
+def roundShow : Round -> Bytes := fun (value : Round) => decimal64 (roundNat value)
+def epochEqual : Epoch -> Epoch -> Bool := fun (a : Epoch) (b : Epoch) => natEq (epochNat a) (epochNat b)
+def epochCompare : Epoch -> Epoch -> Ordering := fun (a : Epoch) (b : Epoch) => natOrdering (epochNat a) (epochNat b)
+def epochShow : Epoch -> Bytes := fun (value : Epoch) => decimal64 (epochNat value)
+def workerIdEqual : WorkerId -> WorkerId -> Bool := fun (a : WorkerId) (b : WorkerId) => natEq (workerIdNat a) (workerIdNat b)
+def workerIdCompare : WorkerId -> WorkerId -> Ordering := fun (a : WorkerId) (b : WorkerId) => natOrdering (workerIdNat a) (workerIdNat b)
+def workerIdShow : WorkerId -> Bytes := fun (value : WorkerId) => decimal64 (workerIdNat value)
+def timestampEqual : Timestamp -> Timestamp -> Bool := fun (a : Timestamp) (b : Timestamp) => natEq (timestampNat a) (timestampNat b)
+def timestampCompare : Timestamp -> Timestamp -> Ordering := fun (a : Timestamp) (b : Timestamp) => natOrdering (timestampNat a) (timestampNat b)
+def timestampShow : Timestamp -> Bytes := fun (value : Timestamp) => decimal64 (timestampNat value)
+def stakeEqual : Stake -> Stake -> Bool := fun (a : Stake) (b : Stake) => natEq (stakeNat a) (stakeNat b)
+def stakeCompare : Stake -> Stake -> Ordering := fun (a : Stake) (b : Stake) => natOrdering (stakeNat a) (stakeNat b)
+def stakeShow : Stake -> Bytes := fun (value : Stake) => decimal64 (stakeNat value)
+def durationEqual : Duration -> Duration -> Bool := fun (a : Duration) (b : Duration) => natEq (durationNat a) (durationNat b)
+def durationCompare : Duration -> Duration -> Ordering := fun (a : Duration) (b : Duration) => natOrdering (durationNat a) (durationNat b)
+def durationShow : Duration -> Bytes := fun (value : Duration) => decimal64 (durationNat value)
+def baseFeeEqual : BaseFee -> BaseFee -> Bool := fun (a : BaseFee) (b : BaseFee) => natEq (baseFeeNat a) (baseFeeNat b)
+def baseFeeCompare : BaseFee -> BaseFee -> Ordering := fun (a : BaseFee) (b : BaseFee) => natOrdering (baseFeeNat a) (baseFeeNat b)
+def baseFeeShow : BaseFee -> Bytes := fun (value : BaseFee) => decimal64 (baseFeeNat value)
+def epochZero : Epoch := epochValue 0
+def stakeZero : Stake := stakeValue 0
+def stakeOne : Stake := stakeValue 1
+def durationZero : Duration := durationValue 0
+def timestampZero : Timestamp := timestampValue 0
+def workerIdZero : WorkerId := workerIdValue 0
+def stakeAtLeast : Stake -> Stake -> Bool := fun (a : Stake) (b : Stake) => natEq (boolNat (natLt (stakeNat a) (stakeNat b))) 0
+def leaderRoundEqual : LeaderRound -> LeaderRound -> Bool := fun (a : LeaderRound) (b : LeaderRound) => roundEqual (leaderRoundRound a) (leaderRoundRound b)
+def leaderRoundCompare : LeaderRound -> LeaderRound -> Ordering := fun (a : LeaderRound) (b : LeaderRound) => roundCompare (leaderRoundRound a) (leaderRoundRound b)
+def sequenceEqual : SequenceNumber -> SequenceNumber -> Bool := fun (a : SequenceNumber) (b : SequenceNumber) => natEq (sequenceBits a) (sequenceBits b)
+def sequenceCompare : SequenceNumber -> SequenceNumber -> Ordering := fun (a : SequenceNumber) (b : SequenceNumber) =>
+  let different : Ordering :=
+    case (natEq (sequenceLess a b) 1) with
+    | 0 (unit : prod ()) => orderGreater
+    | 1 (unit : prod ()) => orderLess
+  in
+  case (sequenceEqual a b) with
+  | 0 (unit : prod ()) => different
+  | 1 (unit : prod ()) => orderEqual

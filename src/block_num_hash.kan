@@ -1,0 +1,18 @@
+mu BlockNumHash : Type 0 :=
+| blockNumHashValue (number : Nat) (hash : Hash32) : BlockNumHash
+def blockNumHashMake : Nat -> Hash32 -> BlockNumHash := fun (number : Nat) (hash : Hash32) => blockNumHashValue (wordLow64 number) hash
+def blockNumHashPair : BlockNumHash -> prod (Nat, Hash32) := fun (value : BlockNumHash) =>
+  match value as self in BlockNumHash return prod (Nat, Hash32) with
+  | blockNumHashValue number hash => tuple (number, hash)
+def blockNumHashNumber : BlockNumHash -> Nat := fun (value : BlockNumHash) => (blockNumHashPair value).0
+def blockNumHashHash : BlockNumHash -> Hash32 := fun (value : BlockNumHash) => (blockNumHashPair value).1
+def blockNumHashZero : BlockNumHash := blockNumHashValue 0 hash32Zero
+def blockNumHashCodec : Codec BlockNumHash := codecIso (prod (Nat, Hash32)) BlockNumHash
+  (fun (pair : prod (Nat, Hash32)) => blockNumHashValue pair.0 pair.1) blockNumHashPair (codecPair Nat Hash32 codecU64 hash32Codec)
+def blockNumHashEqual : BlockNumHash -> BlockNumHash -> Bool := fun (a : BlockNumHash) (b : BlockNumHash) =>
+  boolAnd (natEq (blockNumHashNumber a) (blockNumHashNumber b)) (hash32Equal (blockNumHashHash a) (blockNumHashHash b))
+def blockNumHashCompare : BlockNumHash -> BlockNumHash -> Ordering := fun (a : BlockNumHash) (b : BlockNumHash) =>
+  match (wordSignedCompare (blockNumHashNumber a) (blockNumHashNumber b)) as self in Ordering return Ordering with
+  | orderLess => orderLess
+  | orderGreater => orderGreater
+  | orderEqual => hash32Compare (blockNumHashHash a) (blockNumHashHash b)

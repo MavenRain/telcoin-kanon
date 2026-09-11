@@ -1,0 +1,70 @@
+-- No arithmetic axioms or host integer operations. These helpers use Nat.
+def u16Max : Nat := 65535
+def u32Max : Nat := 4294967295
+def u64Max : Nat := 18446744073709551615
+def timestampMax : Nat := 9223372036854775807
+def hostIntMax : Nat := 4611686018427387903
+
+mu DivResult : Type 0 :=
+| divResult (quotient : Nat) (remainder : Nat) : DivResult
+def divQuotient : DivResult -> Nat := fun (result : DivResult) =>
+  match result as self in DivResult return Nat with
+  | divResult quotient remainder => quotient
+def divRemainder : DivResult -> Nat := fun (result : DivResult) =>
+  match result as self in DivResult return Nat with
+  | divResult quotient remainder => remainder
+mu Powers : Type 0 :=
+| powersNil : Powers
+| powersCons (divisor : Nat) (weight : Nat) (tail : Powers) : Powers
+def fuel8 : Bytes := b"00000000"
+def fuel16 : Bytes := append fuel8 fuel8
+def fuel32 : Bytes := append fuel16 fuel16
+def fuel64 : Bytes := append fuel32 fuel32
+def rec powersBuild : Bytes -> Nat -> Nat -> Powers -> Powers :=
+  fun (fuel : Bytes) (divisor : Nat) (weight : Nat) (acc : Powers) =>
+    match fuel as self in Bytes return Powers with
+    | bytesNil => acc
+    | bytesCons head tail => powersBuild tail (natMul divisor 2) (natMul weight 2) (powersCons divisor weight acc)
+def rec divideScan : Powers -> Nat -> Nat -> DivResult :=
+  fun (powers : Powers) (remainder : Nat) (quotient : Nat) =>
+    match powers as self in Powers return DivResult with
+    | powersNil => divResult quotient remainder
+    | powersCons divisor weight tail =>
+      case (natLt remainder divisor) with
+      | 0 (unit : prod ()) => divideScan tail (natSub remainder divisor) (natAdd quotient weight)
+      | 1 (unit : prod ()) => divideScan tail remainder quotient
+-- Internal precondition: numerator <= u64Max and divisor > 0.
+def divide64 : Nat -> Nat -> DivResult := fun (numerator : Nat) (divisor : Nat) =>
+  divideScan (powersBuild fuel64 divisor 1 powersNil) numerator 0
+def quotient64 : Nat -> Nat -> Nat := fun (n : Nat) (d : Nat) => divQuotient (divide64 n d)
+def remainder64 : Nat -> Nat -> Nat := fun (n : Nat) (d : Nat) => divRemainder (divide64 n d)
+def rec decimalParseAcc : Bytes -> Nat -> NatOption := fun (text : Bytes) (acc : Nat) =>
+  match text as self in Bytes return NatOption with
+  | bytesNil => natSome acc
+  | bytesCons head tail =>
+    let invalid : Nat := maxNat (boolNat (natLt head 48)) (boolNat (natLt 57 head)) in
+    let next : Nat := natAdd (natMul acc 10) (natSub head 48) in
+    case (natEq (maxNat invalid (boolNat (natLt u64Max next))) 0) with
+    | 0 (unit : prod ()) => natNone
+    | 1 (unit : prod ()) => decimalParseAcc tail next
+def parseU64 : Bytes -> NatOption := fun (text : Bytes) =>
+  match text as self in Bytes return NatOption with
+  | bytesNil => natNone
+  | bytesCons head tail => decimalParseAcc text 0
+def rec decimalRenderAcc : Bytes -> Nat -> Bytes -> Bytes := fun (fuel : Bytes) (n : Nat) (acc : Bytes) =>
+  match fuel as self in Bytes return Bytes with
+  | bytesNil => acc
+  | bytesCons head tail =>
+    let divided : DivResult := divide64 n 10 in
+    let output : Bytes := bytesCons (natAdd 48 (divRemainder divided)) acc in
+    case (natEq (divQuotient divided) 0) with
+    | 0 (unit : prod ()) => decimalRenderAcc tail (divQuotient divided) output
+    | 1 (unit : prod ()) => output
+def decimal64 : Nat -> Bytes := fun (n : Nat) =>
+  case (natLt u64Max n) with
+  | 0 (unit : prod ()) => decimalRenderAcc b"00000000000000000000" n bytesNil
+  | 1 (unit : prod ()) => b"out-of-range"
+def natOptionText : NatOption -> Bytes := fun (value : NatOption) =>
+  match value as self in NatOption return Bytes with
+  | natNone => b"none"
+  | natSome n => decimal64 n

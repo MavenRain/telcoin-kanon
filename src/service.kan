@@ -1,0 +1,68 @@
+-- Public byte-oriented entry points. Full-width words never cross as host Nats.
+def apiUnsignedError : Bytes := b"error: Expected an unsigned decimal integer at most 18446744073709551615."
+def apiCodecError : BcsError -> Bytes := fun (error : BcsError) => append b"error: " (bcsErrorText error)
+def apiWithSeed : Bytes -> (Nat -> Bytes) -> Bytes := fun (text : Bytes) (next : Nat -> Bytes) =>
+  match (parseU64 text) as self in NatOption return Bytes with
+  | natNone => apiUnsignedError
+  | natSome seed => next seed
+def apiSimulationKey : Bytes -> Bytes := fun (text : Bytes) => apiWithSeed text (fun (seed : Nat) => bytesHex (publicKeyBytes (secretKeyPublic (secretKeyDerive seed))))
+def apiSimulationSign : Bytes -> Bytes -> Bytes := fun (text : Bytes) (message : Bytes) =>
+  apiWithSeed text (fun (seed : Nat) => bytesHex (signatureBytes (cryptoSign (secretKeyDerive seed) message)))
+def apiPrngNext : Bytes -> Bytes := fun (text : Bytes) => apiWithSeed text (fun (seed : Nat) =>
+  let draw : PrngDraw := prngNext (prngState seed) in
+  append (decimal64 (prngDrawValue draw)) (append b":" (decimal64 (prngBits (prngDrawState draw)))))
+def apiPrngSplit : Bytes -> Bytes := fun (text : Bytes) => apiWithSeed text (fun (seed : Nat) =>
+  let split : prod (Prng, Prng) := prngSplit (prngState seed) in
+  append (decimal64 (prngBits split.0)) (append b":" (decimal64 (prngBits split.1))))
+def apiBatchInspect : Bytes -> Bytes := fun (input : Bytes) =>
+  case (codecDecode Batch batchCodec input) with
+  | 0 (error : BcsError) => apiCodecError error
+  | 1 (pair : prod (Batch, BcsReader)) => append (bytesHex (batchPreimage pair.0)) (append b":" (batchDigestHex (batchDigest pair.0)))
+def apiSealedBatchInspect : Bytes -> Bytes := fun (input : Bytes) =>
+  case (codecDecode SealedBatch sealedBatchCodec input) with
+  | 0 (error : BcsError) => apiCodecError error
+  | 1 (pair : prod (SealedBatch, BcsReader)) => append (bytesHex (codecWrite SealedBatch sealedBatchCodec pair.0))
+    (append b":" (append (batchDigestHex (sealedBatchDigest pair.0)) (append b":" (batchDigestHex (batchDigest (sealedBatchBatch pair.0))))))
+def apiHeaderInspect : Bytes -> Bytes := fun (input : Bytes) =>
+  case (codecDecode Header headerCodec input) with
+  | 0 (error : BcsError) => apiCodecError error
+  | 1 (pair : prod (Header, BcsReader)) => append (bytesHex (codecWrite Header headerCodec pair.0)) (append b":" (headerDigestHex (headerDigest pair.0)))
+def apiVoteSign : Bytes -> Bytes -> Bytes := fun (text : Bytes) (input : Bytes) =>
+  apiWithSeed text (fun (seed : Nat) =>
+    case (codecDecode Header headerCodec input) with
+    | 0 (error : BcsError) => apiCodecError error
+    | 1 (pair : prod (Header, BcsReader)) =>
+      let key : SecretKey := secretKeyDerive seed in
+      bytesHex (signatureBytes (voteSignature (voteSign key (authorityIdOfPublicKey (secretKeyPublic key)) pair.0))))
+def rec apiAuthorities : ByteStrings -> ValueOption Authorities := fun (seeds : ByteStrings) =>
+  match seeds as self in ByteStrings return ValueOption Authorities with
+  | byteStringsNil => valueSome Authorities authoritiesNil
+  | byteStringsCons head tail =>
+    match (parseU64 head) as parsed in NatOption return ValueOption Authorities with
+    | natNone => valueNone Authorities
+    | natSome seed =>
+      case (apiAuthorities tail) with
+      | 0 (unit : prod ()) => valueNone Authorities
+      | 1 (rest : Authorities) => valueSome Authorities (authoritiesCons (authorityMake (secretKeyPublic (secretKeyDerive seed)) addressZero) rest)
+def apiWithCommittee : ByteStrings -> (Committee -> Bytes) -> Bytes := fun (seeds : ByteStrings) (next : Committee -> Bytes) =>
+  case (apiAuthorities seeds) with
+  | 0 (unit : prod ()) => apiUnsignedError
+  | 1 (authorities : Authorities) =>
+    match (committeeCreate epochZero authorities) as self in CommitteeResult return Bytes with
+    | committeeError error => append b"error: " (committeeErrorText error)
+    | committeeOk committee => next committee
+def rec apiRosterText : Authorities -> Bytes -> Bytes -> Bytes := fun (authorities : Authorities) (separator : Bytes) (acc : Bytes) =>
+  match authorities as self in Authorities return Bytes with
+  | authoritiesNil => acc
+  | authoritiesCons head tail => apiRosterText tail b"," (append acc (append separator (authorityIdHex (authorityId head))))
+def apiCommitteeInspect : ByteStrings -> Bytes := fun (seeds : ByteStrings) => apiWithCommittee seeds (fun (committee : Committee) =>
+  append (decimal64 (committeeSize committee)) (append b":" (append (stakeShow (committeeQuorum committee))
+    (append b":" (append (stakeShow (committeeValidity committee)) (append b":" (apiRosterText (committeeAuthorities committee) bytesNil bytesNil)))))))
+def apiNormalize : (0 A : Type 0) -> Codec A -> Bytes -> Bytes := fun (0 A : Type 0) (codec : Codec A) (input : Bytes) =>
+  case (codecDecode A codec input) with
+  | 0 (error : BcsError) => apiCodecError error
+  | 1 (pair : prod (A, BcsReader)) => bytesHex (codecWrite A codec pair.0)
+def apiNormalizeListU8 : Bytes -> Bytes := apiNormalize Nats (codecList Nat Nats seqNatOps codecU8)
+def apiNormalizeListU64 : Bytes -> Bytes := apiNormalize Nats (codecList Nat Nats seqNatOps codecU64)
+def apiNormalizeSetU8 : Bytes -> Bytes := apiNormalize Nats (codecBtreeSet Nat Nats seqNatOps codecU8 natOrdering)
+def apiNormalizeMapU8U16 : Bytes -> Bytes := apiNormalize NatPairs (codecSortedMap Nat Nat NatPairs seqNatPairOps codecU8 codecU16 natOrdering)

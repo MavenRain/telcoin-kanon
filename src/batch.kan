@@ -1,0 +1,50 @@
+-- Batch receipt time is local metadata and never enters the wire preimage.
+def BatchFields : Type 0 := prod (ByteStrings, prod (Epoch, prod (Address, prod (BaseFee, WorkerId))))
+mu Batch : Type 0 :=
+| batchValue (fields : BatchFields) (received : ValueOption Timestamp) : Batch
+def batchFields : Batch -> BatchFields := fun (batch : Batch) =>
+  match batch as self in Batch return BatchFields with
+  | batchValue fields received => fields
+def batchReceivedAt : Batch -> ValueOption Timestamp := fun (batch : Batch) =>
+  match batch as self in Batch return ValueOption Timestamp with
+  | batchValue fields received => received
+def batchFromFields : BatchFields -> Batch := fun (fields : BatchFields) => batchValue fields (valueNone Timestamp)
+def batchMake : ByteStrings -> Epoch -> Address -> BaseFee -> WorkerId -> Batch :=
+  fun (transactions : ByteStrings) (epoch : Epoch) (beneficiary : Address) (fee : BaseFee) (worker : WorkerId) =>
+    batchFromFields (tuple (transactions, tuple (epoch, tuple (beneficiary, tuple (fee, worker)))))
+def batchDefault : Batch := batchMake byteStringsNil epochZero addressZero baseFeeMinimum workerIdZero
+def batchTransactions : Batch -> ByteStrings := fun (batch : Batch) => (batchFields batch).0
+def batchEpoch : Batch -> Epoch := fun (batch : Batch) => (batchFields batch).1.0
+def batchBeneficiary : Batch -> Address := fun (batch : Batch) => (batchFields batch).1.1.0
+def batchBaseFee : Batch -> BaseFee := fun (batch : Batch) => (batchFields batch).1.1.1.0
+def batchWorkerId : Batch -> WorkerId := fun (batch : Batch) => (batchFields batch).1.1.1.1
+def batchWithReceivedAt : Batch -> Timestamp -> Batch := fun (batch : Batch) (at : Timestamp) => batchValue (batchFields batch) (valueSome Timestamp at)
+-- Address uses serialize_bytes; a bad width is a refinement failure after reading it.
+def batchAddressCodec : Codec Address := codecRefine Bytes Address addressOfBytes addressBytes codecBytes
+def batchFieldsCodec : Codec BatchFields :=
+  codecPair ByteStrings (prod (Epoch, prod (Address, prod (BaseFee, WorkerId))))
+    (codecList Bytes ByteStrings seqBytesOps codecBytes)
+    (codecPair Epoch (prod (Address, prod (BaseFee, WorkerId))) epochCodec
+      (codecPair Address (prod (BaseFee, WorkerId)) batchAddressCodec
+        (codecPair BaseFee WorkerId baseFeeCodec workerIdCodec)))
+def batchCodec : Codec Batch := codecIso BatchFields Batch batchFromFields batchFields batchFieldsCodec
+def batchPreimage : Batch -> Bytes := codecWrite Batch batchCodec
+def batchDigest : Batch -> BatchDigest := fun (batch : Batch) => batchDigestOfDigest (digestHash (batchPreimage batch))
+def batchMaxGas : Epoch -> Nat := fun (epoch : Epoch) => 30000000
+def batchMaxSize : Epoch -> Nat := fun (epoch : Epoch) => 1000000
+def batchEqual : Batch -> Batch -> Bool := fun (a : Batch) (b : Batch) =>
+  boolAnd (bytesEqual (batchPreimage a) (batchPreimage b))
+    (bytesEqual (codecWrite (ValueOption Timestamp) (codecOption Timestamp timestampCodec) (batchReceivedAt a))
+      (codecWrite (ValueOption Timestamp) (codecOption Timestamp timestampCodec) (batchReceivedAt b)))
+mu SealedBatch : Type 0 :=
+| sealedBatchValue (batch : Batch) (claimed : BatchDigest) : SealedBatch
+def sealedBatchClaim : Batch -> BatchDigest -> SealedBatch := fun (batch : Batch) (claimed : BatchDigest) => sealedBatchValue batch claimed
+def sealedBatchSeal : Batch -> SealedBatch := fun (batch : Batch) => sealedBatchValue batch (batchDigest batch)
+def sealedBatchSplit : SealedBatch -> prod (Batch, BatchDigest) := fun (sealed : SealedBatch) =>
+  match sealed as self in SealedBatch return prod (Batch, BatchDigest) with
+  | sealedBatchValue batch claimed => tuple (batch, claimed)
+def sealedBatchBatch : SealedBatch -> Batch := fun (sealed : SealedBatch) => (sealedBatchSplit sealed).0
+def sealedBatchDigest : SealedBatch -> BatchDigest := fun (sealed : SealedBatch) => (sealedBatchSplit sealed).1
+def sealedBatchCodec : Codec SealedBatch := codecIso (prod (Batch, BatchDigest)) SealedBatch
+  (fun (pair : prod (Batch, BatchDigest)) => sealedBatchClaim pair.0 pair.1) sealedBatchSplit
+  (codecPair Batch BatchDigest batchCodec batchDigestCodec)

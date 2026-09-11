@@ -1,0 +1,22 @@
+-- Full-width numbers enter through decimal bytes, beyond the i32 host ABI.
+mu BcsWriteResult : Type 0 :=
+| bcsWriteInvalid : BcsWriteResult
+| bcsWriteOk (bytes : Bytes) : BcsWriteResult
+def bcsWriteDecimal : (Nat -> Bytes) -> Bytes -> BcsWriteResult :=
+  fun (write : Nat -> Bytes) (text : Bytes) =>
+    match (parseU64 text) as self in NatOption return BcsWriteResult with
+    | natNone => bcsWriteInvalid
+    | natSome value => bcsWriteOk (write value)
+def bcsWriteU8 : Bytes -> BcsWriteResult := fun (text : Bytes) => bcsWriteDecimal bcsEncodeU8 text
+def bcsWriteU16 : Bytes -> BcsWriteResult := fun (text : Bytes) => bcsWriteDecimal bcsEncodeU16 text
+def bcsWriteU32 : Bytes -> BcsWriteResult := fun (text : Bytes) => bcsWriteDecimal bcsEncodeU32 text
+def bcsWriteU64 : Bytes -> BcsWriteResult := fun (text : Bytes) => bcsWriteDecimal bcsEncodeU64 text
+def bcsWriteUleb : Bytes -> BcsWriteResult := fun (text : Bytes) => bcsWriteDecimal bcsEncodeUleb text
+def bcsWriteIsOk : BcsWriteResult -> Nat := fun (result : BcsWriteResult) =>
+  match result as self in BcsWriteResult return Nat with
+  | bcsWriteInvalid => 0
+  | bcsWriteOk bytes => 1
+def bcsWriteBytes : BcsWriteResult -> Bytes := fun (result : BcsWriteResult) =>
+  match result as self in BcsWriteResult return Bytes with
+  | bcsWriteInvalid => bytesNil
+  | bcsWriteOk bytes => bytes

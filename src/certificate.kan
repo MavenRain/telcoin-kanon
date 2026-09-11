@@ -1,0 +1,131 @@
+mu CertificateError : Type 0 :=
+| certificateEmpty : CertificateError
+| certificateWrongHeader : CertificateError
+| certificateUnknownVoter : CertificateError
+| certificateDuplicateVoter : CertificateError
+| certificateBadSignature : CertificateError
+| certificateNotEnoughStake : CertificateError
+| certificateNotGenesis : CertificateError
+def certificateErrorText : CertificateError -> Bytes := fun (error : CertificateError) =>
+  match error as self in CertificateError return Bytes with
+  | certificateEmpty => b"no votes supplied"
+  | certificateWrongHeader => b"vote references a different header"
+  | certificateUnknownVoter => b"voter is not a committee member"
+  | certificateDuplicateVoter => b"duplicate vote from one authority"
+  | certificateBadSignature => b"vote signature does not verify"
+  | certificateNotEnoughStake => b"signers do not reach the quorum threshold"
+  | certificateNotGenesis => b"genesis state on a certificate that is not genesis"
+def CertificateResult : Type 0 := sum (CertificateError, Certificate)
+mu CertificateValidation : Type 0 :=
+| certificateAccepted : CertificateValidation
+| certificateRejected (error : CertificateError) : CertificateValidation
+def certificateValidationText : CertificateValidation -> Bytes := fun (result : CertificateValidation) =>
+  match result as self in CertificateValidation return Bytes with
+  | certificateAccepted => b"ok"
+  | certificateRejected error => certificateErrorText error
+def certificateFields : Certificate -> prod (Header, AuthorityIds, CertificateVerification) := fun (certificate : Certificate) =>
+  match certificate as self in Certificate return prod (Header, AuthorityIds, CertificateVerification) with
+  | certificateValue header signers verification => tuple (header, signers, verification)
+def certificateHeader : Certificate -> Header := fun (certificate : Certificate) => (certificateFields certificate).0
+def certificateSigners : Certificate -> AuthorityIds := fun (certificate : Certificate) => (certificateFields certificate).1
+def certificateVerification : Certificate -> CertificateVerification := fun (certificate : Certificate) => (certificateFields certificate).2
+def certificateDigest : Certificate -> HeaderDigest := fun (certificate : Certificate) => headerDigest (certificateHeader certificate)
+def certificateRound : Certificate -> Round := fun (certificate : Certificate) => headerRound (certificateHeader certificate)
+def certificateEpoch : Certificate -> Epoch := fun (certificate : Certificate) => headerEpoch (certificateHeader certificate)
+def certificateOrigin : Certificate -> AuthorityId := fun (certificate : Certificate) => headerAuthor (certificateHeader certificate)
+def certificateAggregateSignature : Certificate -> ValueOption Aggregate := fun (certificate : Certificate) =>
+  match (certificateVerification certificate) as self in CertificateVerification return ValueOption Aggregate with
+  | certificateGenesisState => valueNone Aggregate
+  | certificateAggregateState aggregate => valueSome Aggregate aggregate
+def certificateIsGenesis : Certificate -> Bool := fun (certificate : Certificate) =>
+  match (certificateVerification certificate) as self in CertificateVerification return Bool with
+  | certificateGenesisState => natEq 0 0
+  | certificateAggregateState aggregate => natEq 0 1
+def certificateEqual : Certificate -> Certificate -> Bool := fun (a : Certificate) (b : Certificate) => headerDigestEqual (certificateDigest a) (certificateDigest b)
+def certificateCompare : Certificate -> Certificate -> Ordering := fun (a : Certificate) (b : Certificate) => headerDigestCompare (certificateDigest a) (certificateDigest b)
+def canonicalSigners : AuthorityIds -> AuthorityIds := fun (signers : AuthorityIds) => seqAuthorityIdUniq authorityIdCompare (seqAuthorityIdSort authorityIdCompare signers)
+def rec signerContains : AuthorityIds -> AuthorityId -> Bool := fun (signers : AuthorityIds) (id : AuthorityId) =>
+  match signers as self in AuthorityIds return Bool with
+  | authorityIdsNil => natEq 0 1
+  | authorityIdsCons head tail =>
+    case (authorityIdEqual head id) with
+    | 0 (unit : prod ()) => signerContains tail id
+    | 1 (unit : prod ()) => natEq 0 0
+def certificateCheckVote : Committee -> Header -> AuthorityIds -> Vote -> CertificateValidation :=
+  fun (committee : Committee) (header : Header) (signers : AuthorityIds) (vote : Vote) =>
+    case (headerDigestEqual (voteHeaderDigest vote) (headerDigest header)) with
+    | 0 (unit : prod ()) => certificateRejected certificateWrongHeader
+    | 1 (unit : prod ()) =>
+      case (committeeAuthority committee (voteAuthor vote)) with
+      | 0 (unit : prod ()) => certificateRejected certificateUnknownVoter
+      | 1 (authority : Authority) =>
+        case (signerContains signers (voteAuthor vote)) with
+        | 1 (unit : prod ()) => certificateRejected certificateDuplicateVoter
+        | 0 (unit : prod ()) =>
+          case (voteVerify (authorityKey authority) vote) with
+          | 0 (unit : prod ()) => certificateRejected certificateBadSignature
+          | 1 (unit : prod ()) => certificateAccepted
+def rec certificateAssembleScan : Votes -> Committee -> Header -> AuthorityIds -> Signatures -> CertificateResult :=
+  fun (votes : Votes) (committee : Committee) (header : Header) (signers : AuthorityIds) (signatures : Signatures) =>
+    match votes as self in Votes return CertificateResult with
+    | votesNil => (
+      case (committeeReachesQuorum committee (committeeStakeOf committee signers)) with
+      | 0 (unit : prod ()) => inj 0 of 2 certificateNotEnoughStake
+      | 1 (unit : prod ()) => inj 1 of 2 (certificateValue header (canonicalSigners signers) (certificateAggregateState (cryptoAggregate signatures))))
+    | votesCons vote tail =>
+      match (certificateCheckVote committee header signers vote) as checked in CertificateValidation return CertificateResult with
+      | certificateRejected error => inj 0 of 2 error
+      | certificateAccepted => certificateAssembleScan tail committee header (authorityIdsCons (voteAuthor vote) signers) (signaturesCons (voteSignature vote) signatures)
+def certificateAssemble : Committee -> Header -> Votes -> CertificateResult := fun (committee : Committee) (header : Header) (votes : Votes) =>
+  match votes as self in Votes return CertificateResult with
+  | votesNil => inj 0 of 2 certificateEmpty
+  | votesCons first tail => certificateAssembleScan votes committee header authorityIdsNil signaturesNil
+def rec certificateGenesisScan : Authorities -> Epoch -> Certificates := fun (authorities : Authorities) (epoch : Epoch) =>
+  match authorities as self in Authorities return Certificates with
+  | authoritiesNil => certificatesNil
+  | authoritiesCons authority tail =>
+    let header : Header := headerMake (authorityId authority) roundGenesis epoch timestampZero batchWorkersNil headerDigestsNil blockNumHashZero in
+    certificatesCons (certificateValue header authorityIdsNil certificateGenesisState) (certificateGenesisScan tail epoch)
+def certificateGenesis : Committee -> Certificates := fun (committee : Committee) => certificateGenesisScan (committeeAuthorities committee) (committeeEpoch committee)
+def rec certificateHasDigest : Certificates -> HeaderDigest -> Bool := fun (certificates : Certificates) (digest : HeaderDigest) =>
+  match certificates as self in Certificates return Bool with
+  | certificatesNil => natEq 0 1
+  | certificatesCons certificate tail =>
+    case (headerDigestEqual (certificateDigest certificate) digest) with
+    | 0 (unit : prod ()) => certificateHasDigest tail digest
+    | 1 (unit : prod ()) => natEq 0 0
+def certificateIsGenesisOf : Committee -> Certificate -> Bool := fun (committee : Committee) (certificate : Certificate) =>
+  certificateHasDigest (certificateGenesis committee) (certificateDigest certificate)
+def CertificateKeysResult : Type 0 := sum (CertificateError, PublicKeys)
+def rec certificateKeysScan : AuthorityIds -> Committee -> PublicKeys -> CertificateKeysResult :=
+  fun (signers : AuthorityIds) (committee : Committee) (keys : PublicKeys) =>
+    match signers as self in AuthorityIds return CertificateKeysResult with
+    | authorityIdsNil => inj 1 of 2 keys
+    | authorityIdsCons id tail =>
+      case (committeeAuthority committee id) with
+      | 0 (unit : prod ()) => inj 0 of 2 certificateUnknownVoter
+      | 1 (authority : Authority) => certificateKeysScan tail committee (publicKeysCons (authorityKey authority) keys)
+def certificateCheck : Committee -> Certificate -> CertificateValidation := fun (committee : Committee) (certificate : Certificate) =>
+  match (certificateVerification certificate) as self in CertificateVerification return CertificateValidation with
+  | certificateGenesisState => (
+    case (certificateIsGenesisOf committee certificate) with
+    | 0 (unit : prod ()) => certificateRejected certificateNotGenesis
+    | 1 (unit : prod ()) => certificateAccepted)
+  | certificateAggregateState aggregate =>
+    case (certificateKeysScan (certificateSigners certificate) committee publicKeysNil) with
+    | 0 (error : CertificateError) => certificateRejected error
+    | 1 (keys : PublicKeys) =>
+      case (committeeReachesQuorum committee (committeeStakeOf committee (certificateSigners certificate))) with
+      | 0 (unit : prod ()) => certificateRejected certificateNotEnoughStake
+      | 1 (unit : prod ()) =>
+        case (cryptoVerifyAggregate keys (voteSigningMessage (certificateDigest certificate)) aggregate) with
+        | 0 (unit : prod ()) => certificateRejected certificateBadSignature
+        | 1 (unit : prod ()) => certificateAccepted
+def certificateClaim : Header -> AuthorityIds -> ValueOption Bytes -> ValueOption Certificate :=
+  fun (header : Header) (signers : AuthorityIds) (aggregate : ValueOption Bytes) =>
+    case aggregate with
+    | 0 (unit : prod ()) => valueSome Certificate (certificateValue header (canonicalSigners signers) certificateGenesisState)
+    | 1 (bytes : Bytes) =>
+      case (aggregateOfBytes bytes) with
+      | 0 (unit : prod ()) => valueNone Certificate
+      | 1 (signature : Aggregate) => valueSome Certificate (certificateValue header (canonicalSigners signers) (certificateAggregateState signature))

@@ -1,0 +1,24 @@
+-- Shared protocol codecs and total composition helpers.
+def boolAnd : Bool -> Bool -> Bool := fun (a : Bool) (b : Bool) => natEq (natMul (boolNat a) (boolNat b)) 1
+def boolOr : Bool -> Bool -> Bool := fun (a : Bool) (b : Bool) => natLt 0 (natAdd (boolNat a) (boolNat b))
+def codecBind : (0 A : Type 0) -> (0 B : Type 0) -> CodecResult A -> (A -> BcsReader -> CodecResult B) -> CodecResult B :=
+  fun (0 A : Type 0) (0 B : Type 0) (result : CodecResult A) (next : A -> BcsReader -> CodecResult B) =>
+    case result with
+    | 0 (error : BcsError) => codecError B error
+    | 1 (value : prod (A, BcsReader)) => next value.0 value.1
+def roundCodec : Codec Round := codecIso Nat Round (fun (n : Nat) => roundValue n) roundNat codecU32
+def epochCodec : Codec Epoch := codecIso Nat Epoch (fun (n : Nat) => epochValue n) epochNat codecU32
+def workerIdCodec : Codec WorkerId := codecIso Nat WorkerId (fun (n : Nat) => workerIdValue n) workerIdNat codecU16
+def baseFeeCodec : Codec BaseFee := codecIso Nat BaseFee (fun (n : Nat) => baseFeeValue n) baseFeeNat codecU64
+def timestampOption : Nat -> ValueOption Timestamp := fun (n : Nat) =>
+  match (timestampOfNat n) as self in TimestampResult return ValueOption Timestamp with
+  | timestampInvalid => valueNone Timestamp
+  | timestampValid value => valueSome Timestamp value
+def timestampCodec : Codec Timestamp := codecRefine Nat Timestamp timestampOption timestampNat codecU64
+def authorityIdRawCodec : Codec AuthorityId := codecRefine Bytes AuthorityId authorityIdOfBytes authorityIdBytes (codecFixedBytes 32)
+def wordSignedCompare : Nat -> Nat -> Ordering := fun (a : Nat) (b : Nat) =>
+  let aHigh : Nat := boolNat (natLt 9223372036854775807 a) in
+  let bHigh : Nat := boolNat (natLt 9223372036854775807 b) in
+  case (natEq aHigh bHigh) with
+  | 0 (unit : prod ()) => natOrdering bHigh aHigh
+  | 1 (unit : prod ()) => natOrdering a b

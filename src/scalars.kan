@@ -1,0 +1,217 @@
+-- Nominal protocol scalars. Construction is checked; the source language has no private declarations.
+
+mu Round : Type 0 :=
+| roundValue (value : Nat) : Round
+mu RoundResult : Type 0 :=
+| roundInvalid : RoundResult
+| roundValid (value : Round) : RoundResult
+def roundNat : Round -> Nat := fun (value : Round) =>
+  match value as self in Round return Nat with
+  | roundValue n => n
+def roundOfNat : Nat -> RoundResult := fun (n : Nat) =>
+  case (natLt u32Max n) with
+  | 0 (unit : prod ()) => roundValid (roundValue n)
+  | 1 (unit : prod ()) => roundInvalid
+def roundParse : Bytes -> RoundResult := fun (text : Bytes) =>
+  match (parseU64 text) as self in NatOption return RoundResult with
+  | natNone => roundInvalid
+  | natSome n => roundOfNat n
+def roundText : RoundResult -> Bytes := fun (result : RoundResult) =>
+  match result as self in RoundResult return Bytes with
+  | roundInvalid => b"none"
+  | roundValid value => decimal64 (roundNat value)
+
+mu Epoch : Type 0 :=
+| epochValue (value : Nat) : Epoch
+mu EpochResult : Type 0 :=
+| epochInvalid : EpochResult
+| epochValid (value : Epoch) : EpochResult
+def epochNat : Epoch -> Nat := fun (value : Epoch) =>
+  match value as self in Epoch return Nat with
+  | epochValue n => n
+def epochOfNat : Nat -> EpochResult := fun (n : Nat) =>
+  case (natLt u32Max n) with
+  | 0 (unit : prod ()) => epochValid (epochValue n)
+  | 1 (unit : prod ()) => epochInvalid
+def epochParse : Bytes -> EpochResult := fun (text : Bytes) =>
+  match (parseU64 text) as self in NatOption return EpochResult with
+  | natNone => epochInvalid
+  | natSome n => epochOfNat n
+def epochText : EpochResult -> Bytes := fun (result : EpochResult) =>
+  match result as self in EpochResult return Bytes with
+  | epochInvalid => b"none"
+  | epochValid value => decimal64 (epochNat value)
+
+mu WorkerId : Type 0 :=
+| workerIdValue (value : Nat) : WorkerId
+mu WorkerIdResult : Type 0 :=
+| workerIdInvalid : WorkerIdResult
+| workerIdValid (value : WorkerId) : WorkerIdResult
+def workerIdNat : WorkerId -> Nat := fun (value : WorkerId) =>
+  match value as self in WorkerId return Nat with
+  | workerIdValue n => n
+def workerIdOfNat : Nat -> WorkerIdResult := fun (n : Nat) =>
+  case (natLt u16Max n) with
+  | 0 (unit : prod ()) => workerIdValid (workerIdValue n)
+  | 1 (unit : prod ()) => workerIdInvalid
+def workerIdParse : Bytes -> WorkerIdResult := fun (text : Bytes) =>
+  match (parseU64 text) as self in NatOption return WorkerIdResult with
+  | natNone => workerIdInvalid
+  | natSome n => workerIdOfNat n
+def workerIdText : WorkerIdResult -> Bytes := fun (result : WorkerIdResult) =>
+  match result as self in WorkerIdResult return Bytes with
+  | workerIdInvalid => b"none"
+  | workerIdValid value => decimal64 (workerIdNat value)
+
+mu Timestamp : Type 0 :=
+| timestampValue (value : Nat) : Timestamp
+mu TimestampResult : Type 0 :=
+| timestampInvalid : TimestampResult
+| timestampValid (value : Timestamp) : TimestampResult
+def timestampNat : Timestamp -> Nat := fun (value : Timestamp) =>
+  match value as self in Timestamp return Nat with
+  | timestampValue n => n
+def timestampOfNat : Nat -> TimestampResult := fun (n : Nat) =>
+  case (natLt timestampMax n) with
+  | 0 (unit : prod ()) => timestampValid (timestampValue n)
+  | 1 (unit : prod ()) => timestampInvalid
+def timestampParse : Bytes -> TimestampResult := fun (text : Bytes) =>
+  match (parseU64 text) as self in NatOption return TimestampResult with
+  | natNone => timestampInvalid
+  | natSome n => timestampOfNat n
+def timestampText : TimestampResult -> Bytes := fun (result : TimestampResult) =>
+  match result as self in TimestampResult return Bytes with
+  | timestampInvalid => b"none"
+  | timestampValid value => decimal64 (timestampNat value)
+
+mu Stake : Type 0 :=
+| stakeValue (value : Nat) : Stake
+mu StakeResult : Type 0 :=
+| stakeInvalid : StakeResult
+| stakeValid (value : Stake) : StakeResult
+def stakeNat : Stake -> Nat := fun (value : Stake) =>
+  match value as self in Stake return Nat with
+  | stakeValue n => n
+def stakeOfNat : Nat -> StakeResult := fun (n : Nat) =>
+  case (natLt hostIntMax n) with
+  | 0 (unit : prod ()) => stakeValid (stakeValue n)
+  | 1 (unit : prod ()) => stakeInvalid
+def stakeParse : Bytes -> StakeResult := fun (text : Bytes) =>
+  match (parseU64 text) as self in NatOption return StakeResult with
+  | natNone => stakeInvalid
+  | natSome n => stakeOfNat n
+def stakeText : StakeResult -> Bytes := fun (result : StakeResult) =>
+  match result as self in StakeResult return Bytes with
+  | stakeInvalid => b"none"
+  | stakeValid value => decimal64 (stakeNat value)
+
+mu Duration : Type 0 :=
+| durationValue (value : Nat) : Duration
+mu DurationResult : Type 0 :=
+| durationInvalid : DurationResult
+| durationValid (value : Duration) : DurationResult
+def durationNat : Duration -> Nat := fun (value : Duration) =>
+  match value as self in Duration return Nat with
+  | durationValue n => n
+def durationOfNat : Nat -> DurationResult := fun (n : Nat) =>
+  case (natLt hostIntMax n) with
+  | 0 (unit : prod ()) => durationValid (durationValue n)
+  | 1 (unit : prod ()) => durationInvalid
+def durationParse : Bytes -> DurationResult := fun (text : Bytes) =>
+  match (parseU64 text) as self in NatOption return DurationResult with
+  | natNone => durationInvalid
+  | natSome n => durationOfNat n
+def durationText : DurationResult -> Bytes := fun (result : DurationResult) =>
+  match result as self in DurationResult return Bytes with
+  | durationInvalid => b"none"
+  | durationValid value => decimal64 (durationNat value)
+
+mu BaseFee : Type 0 :=
+| baseFeeValue (value : Nat) : BaseFee
+mu BaseFeeResult : Type 0 :=
+| baseFeeInvalid : BaseFeeResult
+| baseFeeValid (value : BaseFee) : BaseFeeResult
+def baseFeeNat : BaseFee -> Nat := fun (value : BaseFee) =>
+  match value as self in BaseFee return Nat with
+  | baseFeeValue n => n
+def baseFeeOfNat : Nat -> BaseFeeResult := fun (n : Nat) =>
+  case (natLt u64Max n) with
+  | 0 (unit : prod ()) => baseFeeValid (baseFeeValue n)
+  | 1 (unit : prod ()) => baseFeeInvalid
+def baseFeeParse : Bytes -> BaseFeeResult := fun (text : Bytes) =>
+  match (parseU64 text) as self in NatOption return BaseFeeResult with
+  | natNone => baseFeeInvalid
+  | natSome n => baseFeeOfNat n
+def baseFeeText : BaseFeeResult -> Bytes := fun (result : BaseFeeResult) =>
+  match result as self in BaseFeeResult return Bytes with
+  | baseFeeInvalid => b"none"
+  | baseFeeValid value => decimal64 (baseFeeNat value)
+
+def roundGenesis : Round := roundValue 0
+def roundSucc : Round -> Round := fun (value : Round) => roundValue (minNat u32Max (natAdd (roundNat value) 1))
+def roundPred : Round -> RoundResult := fun (value : Round) =>
+  case (natEq (roundNat value) 0) with
+  | 0 (unit : prod ()) => roundOfNat (natSub (roundNat value) 1)
+  | 1 (unit : prod ()) => roundInvalid
+def roundSub : Round -> Nat -> Round := fun (value : Round) (amount : Nat) => roundValue (natSub (roundNat value) amount)
+def roundParity : Round -> Nat := fun (value : Round) => remainder64 (roundNat value) 2
+def epochSucc : Epoch -> Epoch := fun (value : Epoch) => epochValue (minNat u32Max (natAdd (epochNat value) 1))
+def timestampAdd : Timestamp -> Nat -> Timestamp := fun (value : Timestamp) (seconds : Nat) =>
+  timestampValue (minNat timestampMax (natAdd (timestampNat value) seconds))
+def timestampLater : Timestamp -> Timestamp -> Timestamp := fun (a : Timestamp) (b : Timestamp) =>
+  timestampValue (maxNat (timestampNat a) (timestampNat b))
+def durationHalf : Duration -> Duration := fun (value : Duration) => durationValue (quotient64 (durationNat value) 2)
+def baseFeeMinimum : BaseFee := baseFeeValue 7
+-- Checked results replace the source's host-int overflow for these two sums.
+def stakeAdd : Stake -> Stake -> StakeResult := fun (a : Stake) (b : Stake) => stakeOfNat (natAdd (stakeNat a) (stakeNat b))
+def durationAdd : Duration -> Duration -> DurationResult := fun (a : Duration) (b : Duration) => durationOfNat (natAdd (durationNat a) (durationNat b))
+
+mu LeaderRound : Type 0 :=
+| leaderRoundValue (round : Round) : LeaderRound
+mu LeaderRoundResult : Type 0 :=
+| leaderRoundInvalid : LeaderRoundResult
+| leaderRoundValid (value : LeaderRound) : LeaderRoundResult
+def leaderRoundOfRound : Round -> LeaderRoundResult := fun (value : Round) =>
+  let invalid : Nat := maxNat (boolNat (natLt (roundNat value) 2)) (roundParity value) in
+  case (natEq invalid 0) with
+  | 0 (unit : prod ()) => leaderRoundInvalid
+  | 1 (unit : prod ()) => leaderRoundValid (leaderRoundValue value)
+def leaderRoundRound : LeaderRound -> Round := fun (value : LeaderRound) =>
+  match value as self in LeaderRound return Round with
+  | leaderRoundValue round => round
+def leaderRoundIndex : LeaderRound -> Nat := fun (value : LeaderRound) =>
+  natSub (quotient64 (roundNat (leaderRoundRound value)) 2) 1
+def leaderRoundNext : LeaderRound -> LeaderRoundResult := fun (value : LeaderRound) =>
+  match (roundOfNat (natAdd (roundNat (leaderRoundRound value)) 2)) as self in RoundResult return LeaderRoundResult with
+  | roundInvalid => leaderRoundInvalid
+  | roundValid next => leaderRoundOfRound next
+def leaderRoundPrev : LeaderRound -> LeaderRoundResult := fun (value : LeaderRound) =>
+  leaderRoundOfRound (roundSub (leaderRoundRound value) 2)
+def leaderRoundParse : Bytes -> LeaderRoundResult := fun (text : Bytes) =>
+  match (roundParse text) as self in RoundResult return LeaderRoundResult with
+  | roundInvalid => leaderRoundInvalid
+  | roundValid value => leaderRoundOfRound value
+def leaderRoundText : LeaderRoundResult -> Bytes := fun (result : LeaderRoundResult) =>
+  match result as self in LeaderRoundResult return Bytes with
+  | leaderRoundInvalid => b"none"
+  | leaderRoundValid value => decimal64 (roundNat (leaderRoundRound value))
+mu SequenceNumber : Type 0 :=
+| sequenceNumber (epoch : Epoch) (round : Round) : SequenceNumber
+def sequenceBits : SequenceNumber -> Nat := fun (value : SequenceNumber) =>
+  match value as self in SequenceNumber return Nat with
+  | sequenceNumber epoch round => natAdd (natMul (epochNat epoch) 4294967296) (roundNat round)
+def sequenceEpoch : SequenceNumber -> Epoch := fun (value : SequenceNumber) =>
+  match value as self in SequenceNumber return Epoch with
+  | sequenceNumber epoch round => epoch
+def sequenceRound : SequenceNumber -> Round := fun (value : SequenceNumber) =>
+  match value as self in SequenceNumber return Round with
+  | sequenceNumber epoch round => round
+-- OCaml compares the packed int64 as signed; preserve that ordering.
+def sequenceLess : SequenceNumber -> SequenceNumber -> Nat := fun (a : SequenceNumber) (b : SequenceNumber) =>
+  let av : Nat := sequenceBits a in
+  let bv : Nat := sequenceBits b in
+  let aPositive : Nat := boolNat (natLt av 9223372036854775808) in
+  let bPositive : Nat := boolNat (natLt bv 9223372036854775808) in
+  case (natEq aPositive bPositive) with
+  | 0 (unit : prod ()) => bPositive
+  | 1 (unit : prod ()) => boolNat (natLt av bv)

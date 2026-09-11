@@ -1,0 +1,114 @@
+def protocolError : BcsError -> Bytes := fun (error : BcsError) => append b"error: " (bcsErrorText error)
+def protocol_batch : Bytes -> Bytes := fun (input : Bytes) =>
+  case (codecDecode Batch batchCodec input) with
+  | 0 (error : BcsError) => protocolError error
+  | 1 (pair : prod (Batch, BcsReader)) => append b"ok:" (append (bytesHex (batchPreimage pair.0)) (append b":" (batchDigestHex (batchDigest pair.0))))
+def protocol_sealed : Bytes -> Bytes := fun (input : Bytes) =>
+  case (codecDecode SealedBatch sealedBatchCodec input) with
+  | 0 (error : BcsError) => protocolError error
+  | 1 (pair : prod (SealedBatch, BcsReader)) => append b"ok:" (append (bytesHex (codecWrite SealedBatch sealedBatchCodec pair.0)) (append b":" (batchDigestHex (sealedBatchDigest pair.0))))
+def protocol_skip : Bytes -> Bytes := fun (input : Bytes) =>
+  case (codecDecode Batch batchCodec input) with
+  | 0 (error : BcsError) => protocolError error
+  | 1 (pair : prod (Batch, BcsReader)) =>
+    let updated : Batch := batchWithReceivedAt pair.0 timestampZero in
+    append (decimal64 (boolNat (batchEqual pair.0 updated))) (append b":"
+      (append (decimal64 (boolNat (bytesEqual (batchPreimage pair.0) (batchPreimage updated))))
+        (append b":" (decimal64 (boolNat (batchDigestEqual (batchDigest pair.0) (batchDigest updated)))))))
+def protocol_header : Bytes -> Bytes := fun (input : Bytes) =>
+  case (codecDecode Header headerCodec input) with
+  | 0 (error : BcsError) => protocolError error
+  | 1 (pair : prod (Header, BcsReader)) => append b"ok:" (append (bytesHex (codecWrite Header headerCodec pair.0)) (append b":" (headerDigestHex (headerDigest pair.0))))
+def protocol_block : Bytes -> Bytes := fun (input : Bytes) =>
+  case (codecDecode BlockNumHash blockNumHashCodec input) with
+  | 0 (error : BcsError) => protocolError error
+  | 1 (pair : prod (BlockNumHash, BcsReader)) => append b"ok:" (bytesHex (codecWrite BlockNumHash blockNumHashCodec pair.0))
+def protocolOrderText : Ordering -> Bytes := fun (order : Ordering) =>
+  match order as self in Ordering return Bytes with
+  | orderLess => b"-1"
+  | orderEqual => b"0"
+  | orderGreater => b"1"
+def protocol_blockCompare : Bytes -> Bytes -> Bytes := fun (a : Bytes) (b : Bytes) =>
+  case (codecDecode BlockNumHash blockNumHashCodec a) with
+  | 0 (error : BcsError) => protocolError error
+  | 1 (first : prod (BlockNumHash, BcsReader)) =>
+    case (codecDecode BlockNumHash blockNumHashCodec b) with
+    | 0 (error : BcsError) => protocolError error
+    | 1 (second : prod (BlockNumHash, BcsReader)) => protocolOrderText (blockNumHashCompare first.0 second.0)
+def protocolHeaderCommittee : Bytes -> ByteStrings -> (Header -> Committee -> Bytes) -> Bytes :=
+  fun (input : Bytes) (roster : ByteStrings) (next : Header -> Committee -> Bytes) =>
+    case (codecDecode Header headerCodec input) with
+    | 0 (error : BcsError) => protocolError error
+    | 1 (pair : prod (Header, BcsReader)) =>
+      match (cryptoCommittee roster) as self in CommitteeResult return Bytes with
+      | committeeError error => append b"error: " (committeeErrorText error)
+      | committeeOk committee => next pair.0 committee
+def protocol_validate : Bytes -> ByteStrings -> Bytes := fun (input : Bytes) (roster : ByteStrings) =>
+  protocolHeaderCommittee input roster (fun (header : Header) (committee : Committee) =>
+    match (headerValidate committee header) as self in HeaderValidation return Bytes with
+    | headerValid => b"ok"
+    | headerWrongEpoch => append b"error: " (headerValidationText headerWrongEpoch)
+    | headerAuthorUnknown => append b"error: " (headerValidationText headerAuthorUnknown)
+    | headerEmptyParents => append b"error: " (headerValidationText headerEmptyParents))
+def protocol_vote : Bytes -> Bytes -> Bytes := fun (input : Bytes) (seed : Bytes) =>
+  case (codecDecode Header headerCodec input) with
+  | 0 (error : BcsError) => protocolError error
+  | 1 (pair : prod (Header, BcsReader)) =>
+    case (cryptoKeyParse seed) with
+    | 0 (unit : prod ()) => b"invalid seed"
+    | 1 (key : SecretKey) =>
+      let vote : Vote := voteSign key (authorityIdOfPublicKey (secretKeyPublic key)) pair.0 in
+      append (bytesHex (signatureBytes (voteSignature vote))) (append b":" (bytesHex (voteSigningMessage (voteHeaderDigest vote))))
+def protocolChangedVote : Nat -> Header -> SecretKey -> Vote := fun (mode : Nat) (header : Header) (key : SecretKey) =>
+  let vote : Vote := voteSign key (authorityIdOfPublicKey (secretKeyPublic key)) header in
+  case (natEq mode 1) with
+  | 1 (unit : prod ()) => voteValue headerDigestZero (voteRound vote) (voteEpoch vote) (voteOrigin vote) (voteAuthor vote) (voteSignature vote)
+  | 0 (unit : prod ()) =>
+    case (natEq mode 2) with
+    | 1 (unit : prod ()) => voteValue (voteHeaderDigest vote) (voteRound vote) (voteEpoch vote) (voteOrigin vote) (voteAuthor vote) (cryptoSign (secretKeyDerive 999) (voteSigningMessage (voteHeaderDigest vote)))
+    | 0 (unit : prod ()) =>
+      case (natEq mode 3) with
+      | 0 (unit : prod ()) => vote
+      | 1 (unit : prod ()) => voteValue (voteHeaderDigest vote) roundGenesis epochZero authorityIdZero (voteAuthor vote) (voteSignature vote)
+def rec protocolVotes : ByteStrings -> Header -> Nat -> ValueOption Votes := fun (seeds : ByteStrings) (header : Header) (mode : Nat) =>
+  match seeds as self in ByteStrings return ValueOption Votes with
+  | byteStringsNil => valueSome Votes votesNil
+  | byteStringsCons head tail =>
+    case (cryptoKeyParse head) with
+    | 0 (unit : prod ()) => valueNone Votes
+    | 1 (key : SecretKey) =>
+      case (protocolVotes tail header mode) with
+      | 0 (unit : prod ()) => valueNone Votes
+      | 1 (rest : Votes) => valueSome Votes (votesCons (protocolChangedVote mode header key) rest)
+def protocol_assemble : Bytes -> ByteStrings -> ByteStrings -> Nat -> Bytes := fun (input : Bytes) (roster : ByteStrings) (seeds : ByteStrings) (mode : Nat) =>
+  protocolHeaderCommittee input roster (fun (header : Header) (committee : Committee) =>
+    case (protocolVotes seeds header mode) with
+    | 0 (unit : prod ()) => b"invalid seed"
+    | 1 (votes : Votes) =>
+      case (certificateAssemble committee header votes) with
+      | 0 (error : CertificateError) => append b"error: " (certificateErrorText error)
+      | 1 (certificate : Certificate) =>
+        match (certificateCheck committee certificate) as self in CertificateValidation return Bytes with
+        | certificateRejected error => append b"error: " (certificateErrorText error)
+        | certificateAccepted =>
+          case (certificateAggregateSignature certificate) with
+          | 0 (unit : prod ()) => b"unexpected genesis"
+          | 1 (aggregate : Aggregate) => append b"ok:" (append (headerDigestHex (certificateDigest certificate)) (append b":" (bytesHex (aggregateBytes aggregate)))))
+def protocol_claim : Bytes -> ByteStrings -> ByteStrings -> Bytes -> Nat -> Bytes :=
+  fun (input : Bytes) (roster : ByteStrings) (signers : ByteStrings) (aggregate : Bytes) (genesis : Nat) =>
+    protocolHeaderCommittee input roster (fun (header : Header) (committee : Committee) =>
+      case (cryptoAuthorities signers) with
+      | 0 (unit : prod ()) => b"invalid seed"
+      | 1 (authorities : Authorities) =>
+        let ids : AuthorityIds := listMapInto Authority Authorities AuthorityId AuthorityIds seqAuthorityOps seqAuthorityIdOps authorityId authorities in
+        let bytes : ValueOption Bytes :=
+          case (natEq genesis 1) with
+          | 0 (unit : prod ()) => valueSome Bytes aggregate
+          | 1 (unit : prod ()) => valueNone Bytes
+        in
+        case (certificateClaim header ids bytes) with
+        | 0 (unit : prod ()) => b"error: invalid aggregate"
+        | 1 (certificate : Certificate) =>
+          match (certificateCheck committee certificate) as self in CertificateValidation return Bytes with
+          | certificateAccepted => b"ok"
+          | certificateRejected error => append b"error: " (certificateErrorText error))

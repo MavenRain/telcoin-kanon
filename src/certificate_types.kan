@@ -1,0 +1,5 @@
+mu CertificateVerification : Type 0 :=
+| certificateGenesisState : CertificateVerification
+| certificateAggregateState (aggregate : Aggregate) : CertificateVerification
+mu Certificate : Type 0 :=
+| certificateValue (header : Header) (signers : AuthorityIds) (verification : CertificateVerification) : Certificate

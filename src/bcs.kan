@@ -1,0 +1,224 @@
+-- Pure readers preserve the OCaml error variants, offsets and precedence.
+mu BcsError : Type 0 :=
+| bcsUnexpectedEnd (offset : Nat) (wanted : Nat) : BcsError
+| bcsNonCanonicalUleb (offset : Nat) : BcsError
+| bcsUlebOverflow (offset : Nat) : BcsError
+| bcsInvalidBool (offset : Nat) (byte : Nat) : BcsError
+| bcsInvalidOptionTag (offset : Nat) (tag : Nat) : BcsError
+| bcsUnknownVariant (offset : Nat) (index : Nat) : BcsError
+| bcsLengthOutOfRange (offset : Nat) (length : Nat) : BcsError
+| bcsIntegerOutOfRange (offset : Nat) (width : Nat) (value : Nat) : BcsError
+| bcsTrailingBytes (consumed : Nat) (total : Nat) : BcsError
+
+mu BcsReader : Type 0 :=
+| bcsReader (remaining : Bytes) (offset : Nat) (total : Nat) : BcsReader
+def bcsStart : Bytes -> BcsReader := fun (input : Bytes) => bcsReader input 0 (bytesLength input)
+def bcsOffset : BcsReader -> Nat := fun (reader : BcsReader) =>
+  match reader as self in BcsReader return Nat with
+  | bcsReader remaining offset total => offset
+def bcsTotal : BcsReader -> Nat := fun (reader : BcsReader) =>
+  match reader as self in BcsReader return Nat with
+  | bcsReader remaining offset total => total
+def bcsRemaining : BcsReader -> Bytes := fun (reader : BcsReader) =>
+  match reader as self in BcsReader return Bytes with
+  | bcsReader remaining offset total => remaining
+mu BcsNatResult : Type 0 :=
+| bcsNatError (error : BcsError) : BcsNatResult
+| bcsNatOk (value : Nat) (reader : BcsReader) : BcsNatResult
+mu BcsBytesResult : Type 0 :=
+| bcsBytesError (error : BcsError) : BcsBytesResult
+| bcsBytesOk (value : Bytes) (reader : BcsReader) : BcsBytesResult
+mu BcsOptionResult : Type 0 :=
+| bcsOptionError (error : BcsError) : BcsOptionResult
+| bcsOptionOk (value : NatOption) (reader : BcsReader) : BcsOptionResult
+
+def bcsReadU8 : BcsReader -> BcsNatResult := fun (reader : BcsReader) =>
+  match (bcsRemaining reader) as self in Bytes return BcsNatResult with
+  | bytesNil => bcsNatError (bcsUnexpectedEnd (bcsOffset reader) 1)
+  | bytesCons head tail =>
+    case (natLt head 256) with
+    | 0 (unit : prod ()) => bcsNatError (bcsIntegerOutOfRange (bcsOffset reader) 1 head)
+    | 1 (unit : prod ()) => bcsNatOk head (bcsReader tail (natAdd (bcsOffset reader) 1) (bcsTotal reader))
+def rec bcsReadLEAcc : Bytes -> BcsReader -> Nat -> Nat -> BcsNatResult :=
+  fun (fuel : Bytes) (reader : BcsReader) (power : Nat) (acc : Nat) =>
+    match fuel as self in Bytes return BcsNatResult with
+    | bytesNil => bcsNatOk acc reader
+    | bytesCons head tail =>
+      match (bcsReadU8 reader) as result in BcsNatResult return BcsNatResult with
+      | bcsNatError error => bcsNatError error
+      | bcsNatOk value next => bcsReadLEAcc tail next (natMul power 256) (natAdd acc (natMul power value))
+def bcsReadU16 : BcsReader -> BcsNatResult := fun (reader : BcsReader) => bcsReadLEAcc b"00" reader 1 0
+def bcsReadU32 : BcsReader -> BcsNatResult := fun (reader : BcsReader) => bcsReadLEAcc b"0000" reader 1 0
+def bcsReadRaw : Nat -> BcsReader -> BcsBytesResult := fun (width : Nat) (reader : BcsReader) =>
+  case (natLt (natSub (bcsTotal reader) (bcsOffset reader)) width) with
+  | 0 (unit : prod ()) => bcsBytesOk (take width (bcsRemaining reader))
+      (bcsReader (drop (bcsRemaining reader) width) (natAdd (bcsOffset reader) width) (bcsTotal reader))
+  | 1 (unit : prod ()) => bcsBytesError (bcsUnexpectedEnd (bcsOffset reader) width)
+def bcsReadU64 : BcsReader -> BcsNatResult := fun (reader : BcsReader) =>
+  case (natLt (natSub (bcsTotal reader) (bcsOffset reader)) 8) with
+  | 0 (unit : prod ()) => bcsReadLEAcc fuel8 reader 1 0
+  | 1 (unit : prod ()) => bcsNatError (bcsUnexpectedEnd (bcsOffset reader) 8)
+def rec bcsReadUlebAcc : Bytes -> Nat -> Nat -> Nat -> Nat -> Nat -> Nat -> BcsNatResult :=
+  fun (input : Bytes) (start : Nat) (offset : Nat) (total : Nat) (group : Nat) (power : Nat) (acc : Nat) =>
+    match input as self in Bytes return BcsNatResult with
+    | bytesNil => bcsNatError (bcsUnexpectedEnd offset 1)
+    | bytesCons head tail =>
+      let continued : Nat := choose (natLt head 128) 0 1 in
+      let next : Nat := natAdd acc (natMul power (natSub head (natMul continued 128))) in
+      let ended : BcsNatResult :=
+        case (natEq (natAdd head (choose (natEq group 0) 1 0)) 0) with
+        | 1 (unit : prod ()) => bcsNatError (bcsNonCanonicalUleb start)
+        | 0 (unit : prod ()) =>
+          case (natLt u32Max next) with
+          | 0 (unit : prod ()) => bcsNatOk next (bcsReader tail (natAdd offset 1) total)
+          | 1 (unit : prod ()) => bcsNatError (bcsUlebOverflow start)
+      in
+      let result : BcsNatResult :=
+        case (natEq continued 0) with
+        | 1 (unit : prod ()) => ended
+        | 0 (unit : prod ()) =>
+          case (natEq group 4) with
+          | 0 (unit : prod ()) => bcsReadUlebAcc tail start (natAdd offset 1) total (natAdd group 1) (natMul power 128) next
+          | 1 (unit : prod ()) => bcsNatError (bcsUlebOverflow start)
+      in
+      case (natLt head 256) with
+      | 0 (unit : prod ()) => bcsNatError (bcsIntegerOutOfRange offset 1 head)
+      | 1 (unit : prod ()) => result
+def bcsReadUleb : BcsReader -> BcsNatResult := fun (reader : BcsReader) =>
+  bcsReadUlebAcc (bcsRemaining reader) (bcsOffset reader) (bcsOffset reader) (bcsTotal reader) 0 1 0
+def bcsReadLength : BcsReader -> BcsNatResult := fun (reader : BcsReader) =>
+  match (bcsReadUleb reader) as self in BcsNatResult return BcsNatResult with
+  | bcsNatError error => bcsNatError error
+  | bcsNatOk value next =>
+    case (natLt 2147483647 value) with
+    | 0 (unit : prod ()) => bcsNatOk value next
+    | 1 (unit : prod ()) => bcsNatError (bcsLengthOutOfRange (bcsOffset reader) value)
+def bcsReadBool : BcsReader -> BcsNatResult := fun (reader : BcsReader) =>
+  match (bcsReadU8 reader) as self in BcsNatResult return BcsNatResult with
+  | bcsNatError error => bcsNatError error
+  | bcsNatOk value next =>
+    case (natLt value 2) with
+    | 0 (unit : prod ()) => bcsNatError (bcsInvalidBool (bcsOffset reader) value)
+    | 1 (unit : prod ()) => bcsNatOk value next
+def bcsReadBytes : BcsReader -> BcsBytesResult := fun (reader : BcsReader) =>
+  match (bcsReadLength reader) as self in BcsNatResult return BcsBytesResult with
+  | bcsNatError error => bcsBytesError error
+  | bcsNatOk length next => bcsReadRaw length next
+def bcsReadSizedBytes : Nat -> BcsReader -> BcsBytesResult := fun (width : Nat) (reader : BcsReader) =>
+  match (bcsReadUleb reader) as self in BcsNatResult return BcsBytesResult with
+  | bcsNatError error => bcsBytesError error
+  | bcsNatOk length next =>
+    case (natEq length width) with
+    | 0 (unit : prod ()) => bcsBytesError (bcsLengthOutOfRange (bcsOffset reader) length)
+    | 1 (unit : prod ()) => bcsReadRaw width next
+def bcsReadOption : (BcsReader -> BcsNatResult) -> BcsReader -> BcsOptionResult :=
+  fun (read : BcsReader -> BcsNatResult) (reader : BcsReader) =>
+    match (bcsReadU8 reader) as self in BcsNatResult return BcsOptionResult with
+    | bcsNatError error => bcsOptionError error
+    | bcsNatOk tag next =>
+      let some : BcsOptionResult :=
+        case (natEq tag 1) with
+        | 0 (unit : prod ()) => bcsOptionError (bcsInvalidOptionTag (bcsOffset reader) tag)
+        | 1 (unit : prod ()) =>
+          match (read next) as held in BcsNatResult return BcsOptionResult with
+          | bcsNatError error => bcsOptionError error
+          | bcsNatOk value final => bcsOptionOk (natSome value) final
+      in
+      case (natEq tag 0) with
+      | 0 (unit : prod ()) => some
+      | 1 (unit : prod ()) => bcsOptionOk natNone next
+def bcsFinishNat : BcsNatResult -> BcsNatResult := fun (result : BcsNatResult) =>
+  match result as self in BcsNatResult return BcsNatResult with
+  | bcsNatError error => bcsNatError error
+  | bcsNatOk value reader =>
+    case (natEq (bcsOffset reader) (bcsTotal reader)) with
+    | 0 (unit : prod ()) => bcsNatError (bcsTrailingBytes (bcsOffset reader) (bcsTotal reader))
+    | 1 (unit : prod ()) => bcsNatOk value reader
+def bcsFinishBytes : BcsBytesResult -> BcsBytesResult := fun (result : BcsBytesResult) =>
+  match result as self in BcsBytesResult return BcsBytesResult with
+  | bcsBytesError error => bcsBytesError error
+  | bcsBytesOk value reader =>
+    case (natEq (bcsOffset reader) (bcsTotal reader)) with
+    | 0 (unit : prod ()) => bcsBytesError (bcsTrailingBytes (bcsOffset reader) (bcsTotal reader))
+    | 1 (unit : prod ()) => bcsBytesOk value reader
+def bcsFinishOption : BcsOptionResult -> BcsOptionResult := fun (result : BcsOptionResult) =>
+  match result as self in BcsOptionResult return BcsOptionResult with
+  | bcsOptionError error => bcsOptionError error
+  | bcsOptionOk value reader =>
+    case (natEq (bcsOffset reader) (bcsTotal reader)) with
+    | 0 (unit : prod ()) => bcsOptionError (bcsTrailingBytes (bcsOffset reader) (bcsTotal reader))
+    | 1 (unit : prod ()) => bcsOptionOk value reader
+def bcsDecodeNat : (BcsReader -> BcsNatResult) -> Bytes -> BcsNatResult :=
+  fun (read : BcsReader -> BcsNatResult) (input : Bytes) => bcsFinishNat (read (bcsStart input))
+def bcsDecodeU8 : Bytes -> BcsNatResult := fun (input : Bytes) => bcsDecodeNat bcsReadU8 input
+def bcsDecodeU16 : Bytes -> BcsNatResult := fun (input : Bytes) => bcsDecodeNat bcsReadU16 input
+def bcsDecodeU32 : Bytes -> BcsNatResult := fun (input : Bytes) => bcsDecodeNat bcsReadU32 input
+def bcsDecodeU64 : Bytes -> BcsNatResult := fun (input : Bytes) => bcsDecodeNat bcsReadU64 input
+def bcsDecodeUleb : Bytes -> BcsNatResult := fun (input : Bytes) => bcsDecodeNat bcsReadUleb input
+def bcsDecodeBool : Bytes -> BcsNatResult := fun (input : Bytes) => bcsDecodeNat bcsReadBool input
+def bcsDecodeBytes : Bytes -> BcsBytesResult := fun (input : Bytes) => bcsFinishBytes (bcsReadBytes (bcsStart input))
+def bcsDecodeFixedBytes : Nat -> Bytes -> BcsBytesResult := fun (width : Nat) (input : Bytes) =>
+  bcsFinishBytes (bcsReadRaw width (bcsStart input))
+def bcsDecodeSizedBytes : Nat -> Bytes -> BcsBytesResult := fun (width : Nat) (input : Bytes) =>
+  bcsFinishBytes (bcsReadSizedBytes width (bcsStart input))
+def bcsDecodeOptionU8 : Bytes -> BcsOptionResult := fun (input : Bytes) => bcsFinishOption (bcsReadOption bcsReadU8 (bcsStart input))
+
+-- Writer parity: fixed-width encoders retain the low bytes of a valid u64.
+def rec bcsEncodeLEAcc : Bytes -> Nat -> Bytes -> Bytes := fun (fuel : Bytes) (n : Nat) (acc : Bytes) =>
+  match fuel as self in Bytes return Bytes with
+  | bytesNil => reverse acc
+  | bytesCons head tail =>
+    let divided : DivResult := divide64 n 256 in
+    bcsEncodeLEAcc tail (divQuotient divided) (bytesCons (divRemainder divided) acc)
+def bcsEncodeU8 : Nat -> Bytes := fun (n : Nat) => bcsEncodeLEAcc b"0" n bytesNil
+def bcsEncodeU16 : Nat -> Bytes := fun (n : Nat) => bcsEncodeLEAcc b"00" n bytesNil
+def bcsEncodeU32 : Nat -> Bytes := fun (n : Nat) => bcsEncodeLEAcc b"0000" n bytesNil
+def bcsEncodeU64 : Nat -> Bytes := fun (n : Nat) => bcsEncodeLEAcc fuel8 n bytesNil
+def rec bcsEncodeUlebAcc : Bytes -> Nat -> Bytes -> Bytes := fun (fuel : Bytes) (n : Nat) (acc : Bytes) =>
+  match fuel as self in Bytes return Bytes with
+  | bytesNil => reverse acc
+  | bytesCons head tail =>
+    let divided : DivResult := divide64 n 128 in
+    case (natEq (divQuotient divided) 0) with
+    | 0 (unit : prod ()) => bcsEncodeUlebAcc tail (divQuotient divided) (bytesCons (natAdd 128 (divRemainder divided)) acc)
+    | 1 (unit : prod ()) => reverse (bytesCons (divRemainder divided) acc)
+-- Ten groups suffice for every u64. The decoder independently enforces u32.
+def bcsEncodeUleb : Nat -> Bytes := fun (n : Nat) => bcsEncodeUlebAcc b"0000000000" n bytesNil
+def bcsEncodeBytes : Bytes -> Bytes := fun (input : Bytes) => append (bcsEncodeUleb (bytesLength input)) input
+def bcsEncodeOption : (Nat -> Bytes) -> NatOption -> Bytes := fun (write : Nat -> Bytes) (value : NatOption) =>
+  match value as self in NatOption return Bytes with
+  | natNone => b"\x00"
+  | natSome n => bytesCons 1 (write n)
+
+-- Error text is kept byte-compatible with the OCaml codec.
+def bcsHexDigit : Nat -> Nat := fun (n : Nat) => choose (natLt n 10) (natAdd n 48) (natAdd n 87)
+def bcsHexByte : Nat -> Bytes := fun (n : Nat) =>
+  let divided : DivResult := divide64 n 16 in
+  bytesCons (bcsHexDigit (divQuotient divided)) (bytesCons (bcsHexDigit (divRemainder divided)) bytesNil)
+def bcsErrorText : BcsError -> Bytes := fun (error : BcsError) =>
+  match error as self in BcsError return Bytes with
+  | bcsUnexpectedEnd offset wanted => append b"unexpected end of input at offset " (append (decimal64 offset) (append b" (wanted " (append (decimal64 wanted) b" bytes)")))
+  | bcsNonCanonicalUleb offset => append b"non-canonical ULEB128 at offset " (decimal64 offset)
+  | bcsUlebOverflow offset => append b"ULEB128 value exceeds 32 bits at offset " (decimal64 offset)
+  | bcsInvalidBool offset byte => append b"invalid bool byte 0x" (append (bcsHexByte byte) (append b" at offset " (decimal64 offset)))
+  | bcsInvalidOptionTag offset tag => append b"invalid option tag 0x" (append (bcsHexByte tag) (append b" at offset " (decimal64 offset)))
+  | bcsUnknownVariant offset index => append b"unknown enum variant " (append (decimal64 index) (append b" at offset " (decimal64 offset)))
+  | bcsLengthOutOfRange offset length => append b"length " (append (decimal64 length) (append b" out of range at offset " (decimal64 offset)))
+  | bcsIntegerOutOfRange offset width value => append b"value " (append (decimal64 value) (append b" does not fit in " (append (decimal64 width) (append b" bytes at offset " (decimal64 offset)))))
+  | bcsTrailingBytes consumed total => append b"trailing bytes: consumed " (append (decimal64 consumed) (append b" of " (decimal64 total)))
+def bcsNatText : BcsNatResult -> Bytes := fun (result : BcsNatResult) =>
+  match result as self in BcsNatResult return Bytes with
+  | bcsNatError error => append b"error: " (bcsErrorText error)
+  | bcsNatOk value reader => decimal64 value
+def bcsBytesText : BcsBytesResult -> Bytes := fun (result : BcsBytesResult) =>
+  match result as self in BcsBytesResult return Bytes with
+  | bcsBytesError error => append b"error: " (bcsErrorText error)
+  | bcsBytesOk value reader => value
+def bcsBytesIsOk : BcsBytesResult -> Nat := fun (result : BcsBytesResult) =>
+  match result as self in BcsBytesResult return Nat with
+  | bcsBytesError error => 0
+  | bcsBytesOk value reader => 1
+def bcsOptionText : BcsOptionResult -> Bytes := fun (result : BcsOptionResult) =>
+  match result as self in BcsOptionResult return Bytes with
+  | bcsOptionError error => append b"error: " (bcsErrorText error)
+  | bcsOptionOk value reader => natOptionText value

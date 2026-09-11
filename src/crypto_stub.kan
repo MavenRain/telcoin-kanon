@@ -1,0 +1,86 @@
+-- Deliberately forgeable simulation signatures, matching tn_crypto_stub.
+-- These definitions must never be selected for a production validator.
+def cryptoProfile : Bytes := b"simulation-stub:blake2s256"
+def digestHash : Bytes -> Digest := fun (input : Bytes) => digestValue (blake2s256 input)
+def publicKeyBytes : PublicKey -> Bytes := fun (value : PublicKey) =>
+  match value as self in PublicKey return Bytes with
+  | publicKeyValue bytes => bytes
+def publicKeyOfBytes : Bytes -> ValueOption PublicKey := fun (bytes : Bytes) =>
+  case (digestOfBytes bytes) with
+  | 0 (unit : prod ()) => valueNone PublicKey
+  | 1 (value : Digest) => valueSome PublicKey (publicKeyValue bytes)
+def publicKeyEqual : PublicKey -> PublicKey -> Bool := fun (a : PublicKey) (b : PublicKey) => bytesEqual (publicKeyBytes a) (publicKeyBytes b)
+def publicKeyCompare : PublicKey -> PublicKey -> Ordering := fun (a : PublicKey) (b : PublicKey) => bytesOrdering (publicKeyBytes a) (publicKeyBytes b)
+def secretKeyDerive : Nat -> SecretKey := fun (seed : Nat) =>
+  secretKeyValue seed (publicKeyValue (blake2s256 (append b"tn-stub-secret:" (bcsEncodeU64 seed))))
+def secretKeyPublic : SecretKey -> PublicKey := fun (secret : SecretKey) =>
+  match secret as self in SecretKey return PublicKey with
+  | secretKeyValue seed public => public
+def signatureSigner : Signature -> PublicKey := fun (signature : Signature) =>
+  match signature as self in Signature return PublicKey with
+  | signatureValue signer message => signer
+def signatureMessage : Signature -> Digest := fun (signature : Signature) =>
+  match signature as self in Signature return Digest with
+  | signatureValue signer message => message
+def signatureBytes : Signature -> Bytes := fun (signature : Signature) =>
+  append (publicKeyBytes (signatureSigner signature)) (bytesCons 0 (digestBytes (signatureMessage signature)))
+def signatureOfBytes : Bytes -> ValueOption Signature := fun (bytes : Bytes) =>
+  case (natEq (natMul (boolNat (natEq (bytesLength bytes) 65)) (bytesValid bytes)) 1) with
+  | 0 (unit : prod ()) => valueNone Signature
+  | 1 (unit : prod ()) => valueSome Signature (signatureValue (publicKeyValue (take 32 bytes)) (digestValue (drop bytes 33)))
+def signatureEqual : Signature -> Signature -> Bool := fun (a : Signature) (b : Signature) =>
+  natEq (natMul (boolNat (publicKeyEqual (signatureSigner a) (signatureSigner b)))
+    (boolNat (digestEqual (signatureMessage a) (signatureMessage b)))) 1
+def signatureCompare : Signature -> Signature -> Ordering := fun (a : Signature) (b : Signature) => publicKeyCompare (signatureSigner a) (signatureSigner b)
+def cryptoSign : SecretKey -> Bytes -> Signature := fun (key : SecretKey) (message : Bytes) =>
+  signatureValue (secretKeyPublic key) (digestHash message)
+def cryptoVerify : PublicKey -> Bytes -> Signature -> Bool := fun (key : PublicKey) (message : Bytes) (signature : Signature) =>
+  natEq (natMul (boolNat (publicKeyEqual key (signatureSigner signature))) (boolNat (digestEqual (digestHash message) (signatureMessage signature)))) 1
+def Aggregate : Type 0 := Signatures
+def cryptoAggregate : Signatures -> Aggregate := fun (signatures : Signatures) => signatures
+def aggregateBytes : Aggregate -> Bytes := fun (signatures : Aggregate) => seqSignatureWrite signatureBytes (seqSignatureSort signatureCompare signatures)
+def aggregateOfBytes : Bytes -> ValueOption Aggregate := fun (bytes : Bytes) =>
+  let length : Nat := bytesLength bytes in
+  case (natEq (natMul (boolNat (natEq (remainder64 length 65) 0)) (bytesValid bytes)) 1) with
+  | 0 (unit : prod ()) => valueNone Aggregate
+  | 1 (unit : prod ()) =>
+    let wire : Bytes := append (bcsEncodeUleb (quotient64 length 65)) bytes in
+    let element : Codec Signature := codecRefine Bytes Signature signatureOfBytes signatureBytes (codecFixedBytes 65) in
+    case (codecDecode Signatures (codecList Signature Signatures seqSignatureOps element) wire) with
+    | 0 (error : BcsError) => valueNone Aggregate
+    | 1 (pair : prod (Signatures, BcsReader)) => valueSome Aggregate pair.0
+def aggregateEqual : Aggregate -> Aggregate -> Bool := fun (a : Aggregate) (b : Aggregate) => bytesEqual (aggregateBytes a) (aggregateBytes b)
+def rec signatureExists : Signatures -> PublicKey -> Digest -> Nat := fun (signatures : Signatures) (key : PublicKey) (message : Digest) =>
+  match signatures as self in Signatures return Nat with
+  | signaturesNil => 0
+  | signaturesCons head tail =>
+    let matches : Nat := natMul (boolNat (publicKeyEqual key (signatureSigner head))) (boolNat (digestEqual message (signatureMessage head))) in
+    case (natEq matches 1) with
+    | 0 (unit : prod ()) => signatureExists tail key message
+    | 1 (unit : prod ()) => 1
+def rec aggregateKeysCheck : PublicKeys -> Digest -> Signatures -> Nat := fun (keys : PublicKeys) (message : Digest) (signatures : Signatures) =>
+  match keys as self in PublicKeys return Nat with
+  | publicKeysNil => 1
+  | publicKeysCons head tail =>
+    case (natEq (signatureExists signatures head message) 1) with
+    | 0 (unit : prod ()) => 0
+    | 1 (unit : prod ()) => aggregateKeysCheck tail message signatures
+def cryptoVerifyAggregate : PublicKeys -> Bytes -> Aggregate -> Bool := fun (keys : PublicKeys) (message : Bytes) (signatures : Aggregate) =>
+  case (natEq (seqPublicKeyLength keys) (seqSignatureLength signatures)) with
+  | 0 (unit : prod ()) => natEq 0 1
+  | 1 (unit : prod ()) => natEq (aggregateKeysCheck keys (digestHash message) signatures) 1
+
+def authorityIdOfPublicKey : PublicKey -> AuthorityId := fun (key : PublicKey) => authorityIdValue (blake2s256 (publicKeyBytes key))
+def authorityMake : PublicKey -> Address -> Authority := fun (key : PublicKey) (address : Address) => authorityValue (authorityIdOfPublicKey key) key address
+def authorityId : Authority -> AuthorityId := fun (authority : Authority) =>
+  match authority as self in Authority return AuthorityId with
+  | authorityValue id key address => id
+def authorityKey : Authority -> PublicKey := fun (authority : Authority) =>
+  match authority as self in Authority return PublicKey with
+  | authorityValue id key address => key
+def authorityAddress : Authority -> Address := fun (authority : Authority) =>
+  match authority as self in Authority return Address with
+  | authorityValue id key address => address
+def authorityVotingPower : Authority -> Stake := fun (authority : Authority) => stakeOne
+def authorityEqual : Authority -> Authority -> Bool := fun (a : Authority) (b : Authority) => authorityIdEqual (authorityId a) (authorityId b)
+def authorityCompare : Authority -> Authority -> Ordering := fun (a : Authority) (b : Authority) => authorityIdCompare (authorityId a) (authorityId b)

@@ -1,0 +1,14 @@
+{
+  "name": "telcoin-kanon",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT OR Apache-2.0",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test --test-concurrency=1 test/foundation.test.mjs test/composite.test.mjs test/std.test.mjs test/blake2s.test.mjs test/crypto.test.mjs test/protocol.test.mjs test/cli.test.mjs",
+    "inventory": "node scripts/inventory.mjs",
+    "collections:check": "node scripts/collections.mjs --check",
+    "roadmap": "node scripts/roadmap.mjs"
+  }
+}
