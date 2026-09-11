@@ -1,0 +1,47 @@
+mu ConsensusBlockNumber : Type 0 :=
+| consensusBlockNumber (value : Nat) : ConsensusBlockNumber
+def consensusBlockNumberNat : ConsensusBlockNumber -> Nat := fun (number : ConsensusBlockNumber) =>
+  match number as self in ConsensusBlockNumber return Nat with
+  | consensusBlockNumber value => value
+def consensusBlockNumberOfNat : Nat -> ValueOption ConsensusBlockNumber := fun (value : Nat) =>
+  case (natLt hostIntMax value) with
+  | 1 (unit : prod ()) => valueNone ConsensusBlockNumber
+  | 0 (unit : prod ()) => valueSome ConsensusBlockNumber (consensusBlockNumber value)
+def consensusBlockNumberGenesis : ConsensusBlockNumber := consensusBlockNumber 0
+def consensusBlockNumberSucc : ConsensusBlockNumber -> ConsensusBlockNumber := fun (number : ConsensusBlockNumber) =>
+  consensusBlockNumber (minNat hostIntMax (natAdd (consensusBlockNumberNat number) 1))
+def consensusBlockNumberEqual : ConsensusBlockNumber -> ConsensusBlockNumber -> Bool := fun (a : ConsensusBlockNumber) (b : ConsensusBlockNumber) => natEq (consensusBlockNumberNat a) (consensusBlockNumberNat b)
+def consensusBlockNumberCompare : ConsensusBlockNumber -> ConsensusBlockNumber -> Ordering := fun (a : ConsensusBlockNumber) (b : ConsensusBlockNumber) => natOrdering (consensusBlockNumberNat a) (consensusBlockNumberNat b)
+def consensusBlockNumberText : ConsensusBlockNumber -> Bytes := fun (number : ConsensusBlockNumber) => decimal64 (consensusBlockNumberNat number)
+def consensusBlockNumberCodec : Codec ConsensusBlockNumber := codecRefine Nat ConsensusBlockNumber consensusBlockNumberOfNat consensusBlockNumberNat codecU64
+mu ConsensusBlock : Type 0 :=
+| consensusBlock (parent : OutputDigest) (subdag : SubDag) (number : ConsensusBlockNumber) (extra : Hash32) (digest : OutputDigest) : ConsensusBlock
+def consensusBlockFields : ConsensusBlock -> prod (OutputDigest, SubDag, ConsensusBlockNumber, Hash32, OutputDigest) := fun (block : ConsensusBlock) =>
+  match block as self in ConsensusBlock return prod (OutputDigest, SubDag, ConsensusBlockNumber, Hash32, OutputDigest) with
+  | consensusBlock parent subdag number extra digest => tuple (parent, subdag, number, extra, digest)
+def consensusBlockParent : ConsensusBlock -> OutputDigest := fun (block : ConsensusBlock) => (consensusBlockFields block).0
+def consensusBlockSubDag : ConsensusBlock -> SubDag := fun (block : ConsensusBlock) => (consensusBlockFields block).1
+def consensusBlockNumberOf : ConsensusBlock -> ConsensusBlockNumber := fun (block : ConsensusBlock) => (consensusBlockFields block).2
+def consensusBlockExtra : ConsensusBlock -> Hash32 := fun (block : ConsensusBlock) => (consensusBlockFields block).3
+def consensusBlockDigest : ConsensusBlock -> OutputDigest := fun (block : ConsensusBlock) => (consensusBlockFields block).4
+-- The source hashes a zero extra field even when decoding a nonzero wire value.
+def consensusBlockPreimageBytes : OutputDigest -> SubDag -> ConsensusBlockNumber -> Bytes := fun (parent : OutputDigest) (subdag : SubDag) (number : ConsensusBlockNumber) =>
+  append (outputDigestBytes parent) (append (subDagDigestBytes (subDagDigest subdag)) (append (bcsEncodeU64 (consensusBlockNumberNat number)) (hash32Bytes hash32Zero)))
+def consensusBlockPreimage : ConsensusBlock -> Bytes := fun (block : ConsensusBlock) => consensusBlockPreimageBytes (consensusBlockParent block) (consensusBlockSubDag block) (consensusBlockNumberOf block)
+def consensusBlockDigestOf : OutputDigest -> SubDag -> ConsensusBlockNumber -> OutputDigest := fun (parent : OutputDigest) (subdag : SubDag) (number : ConsensusBlockNumber) =>
+  outputDigestOfDigest (digestHash (consensusBlockPreimageBytes parent subdag number))
+def consensusBlockDefaultHeader : Header := headerMake authorityIdZero roundGenesis epochZero timestampZero batchWorkersNil headerDigestsNil blockNumHashZero
+def consensusBlockDefaultSubDag : SubDag := subDagOfPersisted (tuple (consensusBlockDefaultHeader, headersNil)) (reputationScores authorityScoresNil (natEq 0 1)) timestampZero subDagDefaultRandomness
+-- Pinned simulation-profile genesis, checked against the OCaml derivation in execution.test.mjs.
+-- A stored constant avoids repeatedly normalizing the complete hash during erasure.
+def consensusBlockGenesisParent : OutputDigest := outputDigestValue b"\x9d\xfc\xa1\x74\xbd\xdc\x9a\x0f\x0d\xb2\x66\x2d\x85\xbe\x94\xf9\x00\xdc\x54\x15\xc1\x86\x67\x8d\x2a\xb3\xc7\x82\x80\xa8\xa9\x05"
+def consensusBlockOfPersisted : OutputDigest -> SubDag -> ConsensusBlockNumber -> Hash32 -> ConsensusBlock := fun (parent : OutputDigest) (subdag : SubDag) (number : ConsensusBlockNumber) (extra : Hash32) =>
+  consensusBlock parent subdag number extra (consensusBlockDigestOf parent subdag number)
+def consensusBlockCreate : OutputDigest -> SubDag -> ConsensusBlockNumber -> ConsensusBlock := fun (parent : OutputDigest) (subdag : SubDag) (number : ConsensusBlockNumber) => consensusBlockOfPersisted parent subdag number hash32Zero
+def ConsensusBlockWire : Type 0 := prod (prod (OutputDigest, SubDag, ConsensusBlockNumber), Hash32)
+def consensusBlockCodec : Codec ConsensusBlock := codecIso ConsensusBlockWire ConsensusBlock
+  (fun (wire : ConsensusBlockWire) => consensusBlockOfPersisted wire.0.0 wire.0.1 wire.0.2 wire.1)
+  (fun (block : ConsensusBlock) => tuple (tuple (consensusBlockParent block, consensusBlockSubDag block, consensusBlockNumberOf block), consensusBlockExtra block))
+  (codecPair (prod (OutputDigest, SubDag, ConsensusBlockNumber)) Hash32 (codecTriple OutputDigest SubDag ConsensusBlockNumber outputDigestCodec subDagCodec consensusBlockNumberCodec) hash32Codec)
+def consensusBlockEqual : ConsensusBlock -> ConsensusBlock -> Bool := fun (a : ConsensusBlock) (b : ConsensusBlock) => outputDigestEqual (consensusBlockDigest a) (consensusBlockDigest b)
+def consensusBlockCompare : ConsensusBlock -> ConsensusBlock -> Ordering := fun (a : ConsensusBlock) (b : ConsensusBlock) => outputDigestCompare (consensusBlockDigest a) (consensusBlockDigest b)

@@ -1,0 +1,29 @@
+mu NodeEvent : Type 0 :=
+| nodeOurDigest (batch : BatchDigest) (worker : WorkerId) : NodeEvent
+| nodeVoteRequest (sender : AuthorityId) (header : Header) (parents : Certificates) : NodeEvent
+| nodeVoteReceived (vote : Vote) : NodeEvent
+| nodeCertificateReceived (certificate : Certificate) : NodeEvent
+| nodeTimerFired (kind : ProposerTimer) (generation : Nat) : NodeEvent
+mu NodeCommand : Type 0 :=
+| nodeBroadcastHeader (header : Header) : NodeCommand
+| nodeSendVote (recipient : AuthorityId) (vote : Vote) : NodeCommand
+| nodeSendMissingParents (recipient : AuthorityId) (digests : HeaderDigests) : NodeCommand
+| nodeBroadcastCertificate (certificate : Certificate) : NodeCommand
+| nodeArmTimer (kind : ProposerTimer) (generation : Nat) (delay : Duration) : NodeCommand
+| nodeEmitCommitted (value : SubDag) : NodeCommand
+mu NodeError : Type 0 :=
+| nodeCertificateEquivocation (round : Round) (author : AuthorityId) : NodeError
+| nodeMissingParent (digest : HeaderDigest) : NodeError
+| nodeMissingParentRound (round : Round) : NodeError
+def NodeIdentity : Type 0 := prod (AuthorityId, SecretKey, Committee)
+def NodeVotes : Type 0 := ValueOption (prod (Header, VoteAggregator))
+def NodeData : Type 0 := prod (Proposer, Voter, Bullshark, NodeVotes, ParentAggregators)
+mu ConsensusNode : Type 0 :=
+| consensusNode (identity : NodeIdentity) (data : NodeData) : ConsensusNode
+def nodeIdentity : ConsensusNode -> NodeIdentity := fun (node : ConsensusNode) =>
+  match node as self in ConsensusNode return NodeIdentity with
+  | consensusNode identity data => identity
+def nodeData : ConsensusNode -> NodeData := fun (node : ConsensusNode) =>
+  match node as self in ConsensusNode return NodeData with
+  | consensusNode identity data => data
+def NodeSnapshot : Type 0 := prod (Certificates, ValueOption Header, VoterEntries)

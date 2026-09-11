@@ -1,0 +1,37 @@
+def simTestAgreementText : SimAgreement -> Bytes := fun (agreement : SimAgreement) =>
+  match agreement as self in SimAgreement return Bytes with
+  | simAgree common => append b"agree:" (decimal64 common)
+  | simDiverge left right index => append b"diverge:" (append (authorityIdHex left) (append b":" (append (authorityIdHex right) (append b":" (decimal64 index)))))
+def simTestLogText : Simulator -> Authority -> Bytes := fun (state : Simulator) (authority : Authority) =>
+  let id : AuthorityId := authorityId authority in
+  let tip : Bytes := case (simExecutionTip state id) with | 0 (unit : prod ()) => b"none" | 1 (block : ConsensusBlock) => outputDigestHex (consensusBlockDigest block) in
+  append (authorityIdHex id) (append b":" (append (bytesHex (codecWrite SubDags (codecList SubDag SubDags seqSubDagOps subDagCodec) (simCommitted state id)))
+    (append b":" (append (decimal64 (simCommitCount state id)) (append b":" (append
+      (consensusJoin ConsensusBlock ConsensusBlocks seqConsensusBlockOps (fun (block : ConsensusBlock) => outputDigestHex (consensusBlockDigest block)) b"," (simExecuted state id)) (append b":" tip)))))))
+def simTestText : Simulator -> Bytes := fun (state : Simulator) =>
+  let error : Bytes := case (simError state) with | 0 (unit : prod ()) => b"none"
+    | 1 (entry : prod (AuthorityId, NodeError)) => append (authorityIdHex entry.0) (append b":" (nodeTestErrorText entry.1)) in
+  append (decimal64 (simClock state)) (append b"/" (append (decimal64 (simSteps state)) (append b"/" (append error
+    (append b"/" (append (simTestAgreementText (simAgreement state)) (append b"/" (append
+      (bytesHex (codecWrite Batches (codecList Batch Batches seqBatchOps batchCodec) (simBatchBodies state)))
+      (append b"/" (consensusJoin Authority Authorities seqAuthorityOps (simTestLogText state) b";" (committeeAuthorities (simCommittee state)))))))))))
+  )
+def simTestKey : ByteStrings -> AuthorityId -> SecretKey := fun (roster : ByteStrings) (id : AuthorityId) =>
+  listFoldLeft Bytes ByteStrings SecretKey seqBytesOps (fun (acc : SecretKey) (text : Bytes) =>
+    case (cryptoKeyParse text) with | 0 (unit : prod ()) => acc
+    | 1 (key : SecretKey) => case (authorityIdEqual id (authorityIdOfPublicKey (secretKeyPublic key))) with
+      | 0 (unit : prod ()) => acc | 1 (unit : prod ()) => key) (secretKeyDerive 0) roster
+def sim_test : ByteStrings -> Bytes -> Nat -> Nat -> Nat -> Nat -> Nat -> ByteStrings -> Nat -> Nat -> Nat -> Nat -> Bytes :=
+  fun (roster : ByteStrings) (seedRaw : Bytes) (horizon : Nat) (maxSteps : Nat) (lo : Nat) (hi : Nat) (drops : Nat) (crashes : ByteStrings) (count : Nat) (period : Nat) (window : Nat) (depth : Nat) =>
+    match (cryptoCommittee roster) as self in CommitteeResult return Bytes with
+    | committeeError error => b"error:committee"
+    | committeeOk committee =>
+      let crashed : AuthorityIds := listFoldLeft Bytes ByteStrings AuthorityIds seqBytesOps (fun (acc : AuthorityIds) (text : Bytes) =>
+        case (cryptoKeyParse text) with | 0 (unit : prod ()) => acc | 1 (key : SecretKey) => authorityIdsCons (authorityIdOfPublicKey (secretKeyPublic key)) acc) authorityIdsNil crashes in
+      let batches : ValueOption SimBatchPlan := case (natEq count 0) with | 1 (unit : prod ()) => valueNone SimBatchPlan
+        | 0 (unit : prod ()) => valueSome SimBatchPlan (simBatchPlan (natSub count 1) (durationValue period) workerIdZero epochZero baseFeeMinimum
+          (fun (id : AuthorityId) (index : Nat) => byteStringsCons (append b"tx:" (append (authorityIdBytes id) (decimal64 index))) byteStringsNil)) in
+      case (codecDecode Nat codecU64 seedRaw) with | 0 (error : BcsError) => bcsErrorText error
+      | 1 (seed : prod (Nat, BcsReader)) =>
+        simTestText (simRun (simCreate committee (simTestKey roster) proposerDefaultConfig window depth
+          (simConfig (durationValue lo) (durationValue hi) (durationValue horizon) maxSteps seed.0 crashed drops batches)))

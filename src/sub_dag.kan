@@ -1,0 +1,56 @@
+mu SubDag : Type 0 :=
+| subDagValue (headers : Nonempty Header Headers) (scores : ReputationScores) (stored : Timestamp) (randomness : Hash32) (digest : SubDagDigest) : SubDag
+def subDagFields : SubDag -> prod (Nonempty Header Headers, ReputationScores, Timestamp, Hash32, SubDagDigest) := fun (value : SubDag) =>
+  match value as self in SubDag return prod (Nonempty Header Headers, ReputationScores, Timestamp, Hash32, SubDagDigest) with
+  | subDagValue headers scores stored randomness digest => tuple (headers, scores, stored, randomness, digest)
+def subDagHeaders : SubDag -> Nonempty Header Headers := fun (value : SubDag) => (subDagFields value).0
+def subDagScores : SubDag -> ReputationScores := fun (value : SubDag) => (subDagFields value).1
+def subDagStoredTimestamp : SubDag -> Timestamp := fun (value : SubDag) => (subDagFields value).2
+def subDagRandomness : SubDag -> Hash32 := fun (value : SubDag) => (subDagFields value).3
+def subDagDigest : SubDag -> SubDagDigest := fun (value : SubDag) => (subDagFields value).4
+def subDagLeader : SubDag -> Header := fun (value : SubDag) => nonemptyFinal Header Headers seqHeaderOps (subDagHeaders value)
+def subDagLeaderRound : SubDag -> Round := fun (value : SubDag) => headerRound (subDagLeader value)
+def subDagLeaderAuthor : SubDag -> AuthorityId := fun (value : SubDag) => headerAuthor (subDagLeader value)
+def subDagLeaderEpoch : SubDag -> Epoch := fun (value : SubDag) => headerEpoch (subDagLeader value)
+def subDagSequenceNumber : SubDag -> SequenceNumber := fun (value : SubDag) => sequenceNumber (subDagLeaderEpoch value) (subDagLeaderRound value)
+def subDagCommitTimestamp : SubDag -> Timestamp := fun (value : SubDag) =>
+  case (timestampEqual (subDagStoredTimestamp value) timestampZero) with
+  | 0 (unit : prod ()) => subDagStoredTimestamp value
+  | 1 (unit : prod ()) => headerCreatedAt (subDagLeader value)
+def subDagDefaultSignature : Bytes := b"\xc0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+-- Keccak-256 of the 48-byte default aggregate signature. Differential creation tests verify this constant.
+def subDagDefaultRandomness : Hash32 := hash32Value b"\x08\x62\x46\x52\x85\x9a\x6e\x98\xff\xc1\x60\x8e\x2a\xf0\x14\x7c\xa4\xe8\x6e\x1c\xe2\x76\x72\xd8\xd3\xf3\xc9\xd4\xff\xd6\xef\x7e"
+def subDagPayloadDigests : SubDag -> BatchDigests := fun (value : SubDag) =>
+  seqBatchDigestReverse (listFoldLeft Header Headers BatchDigests seqHeaderOps
+    (fun (acc : BatchDigests) (header : Header) => listFoldLeft (prod (BatchDigest, WorkerId)) BatchWorkers BatchDigests seqBatchWorkerOps
+      (fun (acc : BatchDigests) (entry : prod (BatchDigest, WorkerId)) => batchDigestsCons entry.0 acc) acc (headerPayload header))
+    batchDigestsNil (nonemptyToList Header Headers seqHeaderOps (subDagHeaders value)))
+def subDagPreimageBytes : Nonempty Header Headers -> ReputationScores -> Timestamp -> Hash32 -> Bytes :=
+  fun (headers : Nonempty Header Headers) (scores : ReputationScores) (stored : Timestamp) (randomness : Hash32) =>
+    append (seqHeaderWrite (fun (header : Header) => headerDigestBytes (headerDigest header)) (nonemptyToList Header Headers seqHeaderOps headers))
+      (append (codecWrite ReputationScores reputationCodec scores) (append (bcsEncodeU64 (timestampNat stored)) (hash32Bytes randomness)))
+def subDagPreimage : SubDag -> Bytes := fun (value : SubDag) => subDagPreimageBytes (subDagHeaders value) (subDagScores value) (subDagStoredTimestamp value) (subDagRandomness value)
+def subDagOfPersisted : Nonempty Header Headers -> ReputationScores -> Timestamp -> Hash32 -> SubDag :=
+  fun (headers : Nonempty Header Headers) (scores : ReputationScores) (stored : Timestamp) (randomness : Hash32) =>
+    subDagValue headers scores stored randomness (subDagDigestOfDigest (digestHash (subDagPreimageBytes headers scores stored randomness)))
+def subDagCreate : Nonempty Certificate Certificates -> ReputationScores -> ValueOption SubDag -> SubDag :=
+  fun (sequence : Nonempty Certificate Certificates) (scores : ReputationScores) (previous : ValueOption SubDag) =>
+    let leader : Certificate := nonemptyFinal Certificate Certificates seqCertificateOps sequence in
+    let previousTime : Nat := case previous with
+      | 0 (unit : prod ()) => 0
+      | 1 (value : SubDag) => timestampNat (subDagStoredTimestamp value) in
+    let signature : Bytes := case (certificateAggregateSignature leader) with
+      | 0 (unit : prod ()) => subDagDefaultSignature
+      | 1 (aggregate : Aggregate) => aggregateBytes aggregate in
+    subDagOfPersisted (nonemptyMap Certificate Certificates Header Headers seqCertificateOps seqHeaderOps certificateHeader sequence)
+      scores (timestampValue (maxNat previousTime (timestampNat (headerCreatedAt (certificateHeader leader))))) (hash32OfKeccak (keccakDigest signature))
+def subDagSequenceCodec : Codec (Nonempty Header Headers) := codecRefine Headers (Nonempty Header Headers)
+  (nonemptyOfList Header Headers seqHeaderOps) (nonemptyToList Header Headers seqHeaderOps) (codecList Header Headers seqHeaderOps headerCodec)
+def SubDagWire : Type 0 := prod (prod (Nonempty Header Headers, ReputationScores, Timestamp), Hash32)
+def subDagCodec : Codec SubDag := codecIso SubDagWire SubDag
+  (fun (wire : SubDagWire) => subDagOfPersisted wire.0.0 wire.0.1 wire.0.2 wire.1)
+  (fun (value : SubDag) => tuple (tuple (subDagHeaders value, subDagScores value, subDagStoredTimestamp value), subDagRandomness value))
+  (codecPair (prod (Nonempty Header Headers, ReputationScores, Timestamp)) Hash32
+    (codecTriple (Nonempty Header Headers) ReputationScores Timestamp subDagSequenceCodec reputationCodec timestampCodec) hash32Codec)
+def subDagEqual : SubDag -> SubDag -> Bool := fun (a : SubDag) (b : SubDag) => subDagDigestEqual (subDagDigest a) (subDagDigest b)
+def subDagCompare : SubDag -> SubDag -> Ordering := fun (a : SubDag) (b : SubDag) => subDagDigestCompare (subDagDigest a) (subDagDigest b)

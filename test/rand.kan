@@ -1,0 +1,35 @@
+def randTextAppend : Bytes -> Bytes -> Bytes := fun (old : Bytes) (value : Bytes) =>
+  case (natEq (bytesLength old) 0) with
+  | 0 (unit : prod ()) => append old (append b"," value)
+  | 1 (unit : prod ()) => value
+def rec randStreamLoop : Bytes -> StdRng -> Bytes -> Bytes := fun (fuel : Bytes) (rng : StdRng) (text : Bytes) =>
+  match fuel as self in Bytes return Bytes with
+  | bytesNil => text
+  | bytesCons head tail =>
+    let draw : prod (Nat, StdRng) := stdRngNext64 rng in
+    randStreamLoop tail draw.1 (randTextAppend text (decimal64 draw.0))
+def rand_stream : Bytes -> Bytes -> Bytes := fun (seed : Bytes) (fuel : Bytes) => randStreamLoop fuel (stdRngOfBytes seed) bytesNil
+def rand_range : Bytes -> ByteStrings -> Bytes := fun (seed : Bytes) (bounds : ByteStrings) =>
+  let result : prod (StdRng, Bytes) := listFoldLeft Bytes ByteStrings (prod (StdRng, Bytes)) seqBytesOps
+    (fun (state : prod (StdRng, Bytes)) (bound : Bytes) =>
+      case (hostIntParse bound) with
+      | 0 (unit : prod ()) => tuple (state.0, randTextAppend state.1 b"invalid")
+      | 1 (number : HostInt) =>
+        case (stdRngRangeInclusive state.0 number) with
+        | 0 (error : StdRngError) => tuple (state.0, randTextAppend state.1 b"negative")
+        | 1 (draw : prod (Nat, StdRng)) => tuple (draw.1, randTextAppend state.1 (decimal64 draw.0)))
+    (tuple (stdRngOfBytes seed, bytesNil)) bounds in result.1
+def rand_choose : Bytes -> Bytes -> Bytes -> Bytes := fun (seed : Bytes) (raw : Bytes) (amount : Bytes) =>
+  case (codecDecode Nats (codecList Nat Nats seqNatOps codecU64) raw) with
+  | 0 (error : BcsError) => bcsErrorText error
+  | 1 (decoded : prod (Nats, BcsReader)) =>
+    case (hostIntParse amount) with
+    | 0 (unit : prod ()) => b"invalid"
+    | 1 (count : HostInt) =>
+      let selected : prod (Nats, StdRng) := randChooseMultipleHost Nat Nats seqNatOps (stdRngOfBytes seed) count decoded.0 in
+      let text : Bytes := listFoldLeft Nat Nats Bytes seqNatOps (fun (acc : Bytes) (value : Nat) => randTextAppend acc (decimal64 value)) bytesNil selected.0 in
+      let next : prod (Nat, StdRng) := stdRngNext64 selected.1 in append text (append b":" (decimal64 next.0))
+def rand_leader : Bytes -> Bytes := fun (round : Bytes) =>
+  match (parseU64 round) as self in NatOption return Bytes with
+  | natNone => b"invalid"
+  | natSome number => let draw : prod (Nat, StdRng) := stdRngNext64 (stdRngOfLeaderRound number) in decimal64 draw.0

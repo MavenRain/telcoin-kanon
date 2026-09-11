@@ -1,0 +1,136 @@
+def proposerRound : Proposer -> Round := fun (state : Proposer) => (proposerData state).0
+def proposerPendingDigests : Proposer -> BatchWorkers := fun (state : Proposer) => (proposerData state).3
+def proposerLastProposed : Proposer -> ValueOption Header := fun (state : Proposer) => (proposerData state).5
+def proposerProposedRounds : Proposer -> Nats := fun (state : Proposer) =>
+  listMapInto Header Headers Nat Nats seqHeaderOps seqNatOps (fun (header : Header) => roundNat (headerRound header)) (proposerData state).4
+def proposerUpdateSchedule : Proposer -> LeaderSchedule -> Proposer := fun (state : Proposer) (schedule : LeaderSchedule) =>
+  let s : ProposerSettings := proposerSettings state in proposerValue (tuple (s.0, s.1, s.2, schedule)) (proposerData state)
+def proposerLeads : Proposer -> Round -> Bool := fun (state : Proposer) (round : Round) =>
+  match (leaderRoundOfRound round) as self in LeaderRoundResult return Bool with
+  | leaderRoundInvalid => natEq 0 1
+  | leaderRoundValid lr => authorityIdEqual (authorityId (leaderScheduleLeader (proposerSettings state).3 lr)) (proposerSettings state).2
+def proposerMaxDelayAfter : Proposer -> Round -> Duration := fun (state : Proposer) (round : Round) =>
+  let delay : Duration := (proposerSettings state).0.1 in
+  case (proposerLeads state (roundSucc round)) with
+  | 0 (unit : prod ()) => delay
+  | 1 (unit : prod ()) => durationValue (quotient64 (durationNat delay) 2)
+def proposerMinDelayAfter : Proposer -> Round -> Duration := fun (state : Proposer) (round : Round) =>
+  case (proposerLeads state (roundSucc round)) with
+  | 0 (unit : prod ()) => (proposerSettings state).0.0
+  | 1 (unit : prod ()) => durationValue 0
+def proposerEnoughVotes : Proposer -> Bool := fun (state : Proposer) =>
+  case (proposerLeads state (roundSucc (proposerRound state))) with
+  | 1 (unit : prod ()) => natEq 0 0
+  | 0 (unit : prod ()) =>
+    case (proposerData state).6 with
+    | 0 (unit : prod ()) => natEq 0 0
+    | 1 (leader : Certificate) =>
+      let committee : Committee := (proposerSettings state).1 in
+      let votes : prod (Nat, Nat) := listFoldLeft Certificate Certificates (prod (Nat, Nat)) seqCertificateOps
+        (fun (acc : prod (Nat, Nat)) (certificate : Certificate) =>
+          let stake : Nat := stakeNat (committeeStakeOf committee (authorityIdsCons (certificateOrigin certificate) authorityIdsNil)) in
+          case (headerNamesParent (certificateHeader certificate) (certificateDigest leader)) with
+          | 0 (unit : prod ()) => tuple (acc.0, natAdd acc.1 stake)
+          | 1 (unit : prod ()) => tuple (natAdd acc.0 stake, acc.1)) (tuple (0, 0)) (proposerData state).2 in
+      boolOr (committeeReachesValidity committee (stakeValue votes.0)) (committeeReachesQuorum committee (stakeValue votes.1))
+def proposerReady : Proposer -> Proposer := fun (state : Proposer) =>
+  let d : ProposerData := proposerData state in
+  let leaderAndGate : prod (ValueOption Certificate, Bool) := case (natEq (remainder64 (roundNat d.0) 2) 0) with
+    | 0 (unit : prod ()) => tuple (d.6, proposerEnoughVotes state)
+    | 1 (unit : prod ()) =>
+      match (leaderRoundOfRound d.0) as self in LeaderRoundResult return prod (ValueOption Certificate, Bool) with
+      | leaderRoundInvalid => tuple (valueNone Certificate, natEq 0 0)
+      | leaderRoundValid lr =>
+        let leader : AuthorityId := authorityId (leaderScheduleLeader (proposerSettings state).3 lr) in
+        let found : ValueOption Certificate := listFind Certificate Certificates seqCertificateOps (fun (certificate : Certificate) => authorityIdEqual leader (certificateOrigin certificate)) d.2 in
+        tuple (found, optionIsSome Certificate found) in
+  proposerValue (proposerSettings state) (tuple (d.0, d.1, d.2, d.3, d.4, d.5, leaderAndGate.0, leaderAndGate.1, d.8, d.9))
+def proposerPropose : Proposer -> Timestamp -> prod (Proposer, ProposerActions) := fun (state : Proposer) (now : Timestamp) =>
+  let s : ProposerSettings := proposerSettings state in
+  let d : ProposerData := proposerData state in
+  let next : Round := roundSucc d.0 in
+  let generation : Nat := natAdd d.1 1 in
+  let arm : ProposerActions := proposerActionsCons (proposerArmTimer proposerMinDelay generation (proposerMinDelayAfter state next))
+    (proposerActionsCons (proposerArmTimer proposerMaxDelay generation (proposerMaxDelayAfter state next)) proposerActionsNil) in
+  let repeat : ValueOption Header := case d.5 with
+    | 0 (unit : prod ()) => valueNone Header
+    | 1 (header : Header) =>
+      case (roundEqual (headerRound header) next) with
+      | 0 (unit : prod ()) => valueNone Header
+      | 1 (unit : prod ()) => valueSome Header header in
+  let output : prod (Header, BatchWorkers, Headers) := case repeat with
+    | 1 (header : Header) => tuple (header, d.3, d.4)
+    | 0 (unit : prod ()) =>
+      let split : prod (BatchWorkers, BatchWorkers) := listSplitAt (prod (BatchDigest, WorkerId)) BatchWorkers seqBatchWorkerOps s.0.3 d.3 in
+      let timestamp : Nat := listFoldLeft Certificate Certificates Nat seqCertificateOps
+        (fun (acc : Nat) (certificate : Certificate) => maxNat acc (timestampNat (headerCreatedAt (certificateHeader certificate)))) (timestampNat now) d.2 in
+      let parents : HeaderDigests := listMapInto Certificate Certificates HeaderDigest HeaderDigests seqCertificateOps seqHeaderDigestOps certificateDigest d.2 in
+      let header : Header := headerMake s.2 next (committeeEpoch s.1) (timestampValue timestamp) split.0 parents blockNumHashZero in
+      let proposed : Headers := seqHeaderSort (fun (a : Header) (b : Header) => roundCompare (headerRound a) (headerRound b))
+        (headersCons header (listFilter Header Headers seqHeaderOps (fun (old : Header) => natEq (boolNat (roundEqual (headerRound old) next)) 0) d.4)) in
+      tuple (header, split.1, proposed) in
+  tuple (proposerValue s (tuple (next, generation, certificatesNil, output.1, output.2, valueSome Header output.0, d.6, natEq 0 1, natEq 0 1, natEq 0 1)),
+    proposerActionsCons (proposerBroadcastHeader output.0) arm)
+def proposerTryPropose : Proposer -> Timestamp -> prod (Proposer, ProposerActions) := fun (state : Proposer) (now : Timestamp) =>
+  let d : ProposerData := proposerData state in
+  let enoughParents : Bool := optionIsSome Certificate (seqCertificateHead d.2) in
+  let full : Bool := natLt (proposerSettings state).0.2 (natAdd (seqBatchWorkerLength d.3) 1) in
+  case (boolAnd enoughParents (boolOr d.9 (boolAnd d.7 (boolOr full d.8)))) with
+  | 0 (unit : prod ()) => tuple (state, proposerActionsNil)
+  | 1 (unit : prod ()) => proposerPropose state now
+def proposerApplyParents : Proposer -> Certificates -> Round -> prod (Proposer, ProposerActions) := fun (state : Proposer) (parents : Certificates) (round : Round) =>
+  let d : ProposerData := proposerData state in
+  let s : ProposerSettings := proposerSettings state in
+  let merged : prod (Proposer, ProposerActions) := match (roundCompare round d.0) as self in Ordering return prod (Proposer, ProposerActions) with
+    | orderLess => tuple (state, proposerActionsNil)
+    | orderEqual =>
+      let minElapsed : Bool := boolOr d.8 (natEq (durationNat (proposerMinDelayAfter state d.0)) 0) in
+      tuple (proposerValue s (tuple (d.0, d.1, listAppend Certificate Certificates seqCertificateOps d.2 parents, d.3, d.4, d.5, d.6, d.7, minElapsed, d.9)), proposerActionsNil)
+    | orderGreater =>
+      let generation : Nat := natAdd d.1 1 in
+      let next : Proposer := proposerValue s (tuple (round, generation, parents, d.3, d.4, d.5, d.6, d.7, natEq 0 0, d.9)) in
+      tuple (next, proposerActionsCons (proposerArmTimer proposerMaxDelay generation (proposerMaxDelayAfter next round)) proposerActionsNil) in
+  tuple (proposerReady merged.0, merged.1)
+def proposerApplyCommitted : Proposer -> Nats -> Proposer := fun (state : Proposer) (committed : Nats) =>
+  let d : ProposerData := proposerData state in
+  let horizon : Nat := listFoldLeft Nat Nats Nat seqNatOps maxNat 0 committed in
+  let queues : prod (BatchWorkers, Headers) := listFoldLeft Header Headers (prod (BatchWorkers, Headers)) seqHeaderOps
+    (fun (acc : prod (BatchWorkers, Headers)) (header : Header) =>
+      case (optionIsSome Nat (listFind Nat Nats seqNatOps (natEq (roundNat (headerRound header))) committed)) with
+      | 1 (unit : prod ()) => acc
+      | 0 (unit : prod ()) =>
+        case (natLt horizon (roundNat (headerRound header))) with
+        | 1 (unit : prod ()) => tuple (acc.0, headersCons header acc.1)
+        | 0 (unit : prod ()) => tuple (listAppend (prod (BatchDigest, WorkerId)) BatchWorkers seqBatchWorkerOps acc.0 (headerPayload header), acc.1))
+    (tuple (batchWorkersNil, headersNil)) d.4 in
+  proposerValue (proposerSettings state) (tuple (d.0, d.1, d.2, listAppend (prod (BatchDigest, WorkerId)) BatchWorkers seqBatchWorkerOps queues.0 d.3,
+    seqHeaderReverse queues.1, d.5, d.6, d.7, d.8, d.9))
+def proposerStep : Proposer -> Timestamp -> ProposerInput -> prod (Proposer, ProposerActions) := fun (state : Proposer) (now : Timestamp) (input : ProposerInput) =>
+  let s : ProposerSettings := proposerSettings state in
+  let d : ProposerData := proposerData state in
+  match input as self in ProposerInput return prod (Proposer, ProposerActions) with
+  | proposerOurDigest batch worker =>
+    let next : Proposer := proposerValue s (tuple (d.0, d.1, d.2, listAppend (prod (BatchDigest, WorkerId)) BatchWorkers seqBatchWorkerOps d.3 (batchWorkersCons (tuple (batch, worker)) batchWorkersNil), d.4, d.5, d.6, d.7, d.8, d.9)) in
+    let result : prod (Proposer, ProposerActions) := proposerTryPropose next now in tuple (result.0, proposerActionsCons proposerAckDigest result.1)
+  | proposerParents certificates round =>
+    let merged : prod (Proposer, ProposerActions) := proposerApplyParents state certificates round in
+    let result : prod (Proposer, ProposerActions) := proposerTryPropose merged.0 now in tuple (result.0, listAppend ProposerAction ProposerActions seqProposerActionOps merged.1 result.1)
+  | proposerCommittedHeaders committed => proposerTryPropose (proposerApplyCommitted state committed) now
+  | proposerTimerFired kind generation =>
+    case (natEq generation d.1) with
+    | 0 (unit : prod ()) => tuple (state, proposerActionsNil)
+    | 1 (unit : prod ()) =>
+      let flags : prod (Bool, Bool) := match kind as self in ProposerTimer return prod (Bool, Bool) with
+        | proposerMinDelay => tuple (natEq 0 0, d.9)
+        | proposerMaxDelay => tuple (d.8, natEq 0 0) in
+      proposerTryPropose (proposerValue s (tuple (d.0, d.1, d.2, d.3, d.4, d.5, d.6, d.7, flags.0, flags.1))) now
+def proposerCreate : ProposerConfig -> Committee -> AuthorityId -> LeaderSchedule -> Certificates -> Timestamp -> prod (Proposer, ProposerActions) :=
+  fun (config : ProposerConfig) (committee : Committee) (authority : AuthorityId) (schedule : LeaderSchedule) (genesis : Certificates) (now : Timestamp) =>
+    proposerTryPropose (proposerValue (tuple (config, committee, authority, schedule))
+      (tuple (roundGenesis, 0, genesis, batchWorkersNil, headersNil, valueNone Header, valueNone Certificate, natEq 0 0, natEq 0 0, natEq 0 0))) now
+def proposerRecover : ProposerConfig -> Committee -> AuthorityId -> LeaderSchedule -> Certificates -> Timestamp -> Round -> ValueOption Header -> prod (Proposer, ProposerActions) :=
+  fun (config : ProposerConfig) (committee : Committee) (authority : AuthorityId) (schedule : LeaderSchedule) (genesis : Certificates) (now : Timestamp) (round : Round) (last : ValueOption Header) =>
+    case (boolAnd (roundEqual round roundGenesis) (natEq (boolNat (optionIsSome Header last)) 0)) with
+    | 1 (unit : prod ()) => proposerCreate config committee authority schedule genesis now
+    | 0 (unit : prod ()) => tuple (proposerValue (tuple (config, committee, authority, schedule))
+        (tuple (round, 0, certificatesNil, batchWorkersNil, headersNil, last, valueNone Certificate, natEq 0 0, natEq 0 0, natEq 0 0)), proposerActionsNil)

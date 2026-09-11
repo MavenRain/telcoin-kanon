@@ -1,0 +1,43 @@
+mu ReputationScores : Type 0 :=
+| reputationScores (bindings : AuthorityScores) (final : Bool) : ReputationScores
+def reputationBindings : ReputationScores -> AuthorityScores := fun (scores : ReputationScores) =>
+  match scores as self in ReputationScores return AuthorityScores with
+  | reputationScores bindings final => bindings
+def reputationIsFinal : ReputationScores -> Bool := fun (scores : ReputationScores) =>
+  match scores as self in ReputationScores return Bool with
+  | reputationScores bindings final => final
+def reputationWithFinal : Bool -> ReputationScores -> ReputationScores := fun (final : Bool) (scores : ReputationScores) => reputationScores (reputationBindings scores) final
+def reputationOfPersisted : AuthorityScores -> Bool -> ReputationScores := fun (bindings : AuthorityScores) (final : Bool) =>
+  reputationScores (listFoldLeft (prod (AuthorityId, Nat)) AuthorityScores AuthorityScores seqAuthorityScoreOps
+    (fun (acc : AuthorityScores) (entry : prod (AuthorityId, Nat)) => mapAdd AuthorityId Nat AuthorityScores seqAuthorityScoreOps authorityIdCompare entry.0 entry.1 acc)
+    authorityScoresNil bindings) final
+def reputationFresh : Committee -> ReputationScores := fun (committee : Committee) =>
+  reputationScores (listMapInto Authority Authorities (prod (AuthorityId, Nat)) AuthorityScores seqAuthorityOps seqAuthorityScoreOps
+    (fun (authority : Authority) => tuple (authorityId authority, 0)) (committeeAuthorities committee)) (natEq 0 1)
+def reputationGet : ReputationScores -> AuthorityId -> Nat := fun (scores : ReputationScores) (id : AuthorityId) =>
+  case (mapLookup AuthorityId Nat AuthorityScores seqAuthorityScoreOps authorityIdEqual id (reputationBindings scores)) with
+  | 0 (unit : prod ()) => 0
+  | 1 (value : Nat) => value
+def reputationBump : ReputationScores -> AuthorityId -> ReputationScores := fun (scores : ReputationScores) (id : AuthorityId) =>
+  case (mapLookup AuthorityId Nat AuthorityScores seqAuthorityScoreOps authorityIdEqual id (reputationBindings scores)) with
+  | 0 (unit : prod ()) => scores
+  | 1 (value : Nat) => reputationScores (mapAdd AuthorityId Nat AuthorityScores seqAuthorityScoreOps authorityIdCompare id (natAdd value 1) (reputationBindings scores)) (reputationIsFinal scores)
+def reputationByScoreDesc : ReputationScores -> AuthorityScores := fun (scores : ReputationScores) =>
+  seqAuthorityScoreSort (fun (a : prod (AuthorityId, Nat)) (b : prod (AuthorityId, Nat)) =>
+    match (natOrdering b.1 a.1) as self in Ordering return Ordering with
+    | orderLess => orderLess
+    | orderGreater => orderGreater
+    | orderEqual => authorityIdCompare b.0 a.0) (reputationBindings scores)
+def reputationTotalAuthorities : ReputationScores -> Nat := fun (scores : ReputationScores) => seqAuthorityScoreLength (reputationBindings scores)
+def reputationAllZero : ReputationScores -> Bool := fun (scores : ReputationScores) =>
+  listAll (prod (AuthorityId, Nat)) AuthorityScores seqAuthorityScoreOps (fun (entry : prod (AuthorityId, Nat)) => natEq entry.1 0) (reputationBindings scores)
+def reputationWireCodec : Codec (prod (AuthorityScores, Bool)) :=
+  codecPair AuthorityScores Bool (codecSortedMap AuthorityId Nat AuthorityScores seqAuthorityScoreOps authorityIdRawCodec codecU64 authorityIdCompare) codecBool
+def reputationInject : prod (AuthorityScores, Bool) -> ValueOption ReputationScores := fun (wire : prod (AuthorityScores, Bool)) =>
+  case (listAll (prod (AuthorityId, Nat)) AuthorityScores seqAuthorityScoreOps (fun (entry : prod (AuthorityId, Nat)) => natLt entry.1 4611686018427387904) wire.0) with
+  | 0 (unit : prod ()) => valueNone ReputationScores
+  | 1 (unit : prod ()) => valueSome ReputationScores (reputationScores wire.0 wire.1)
+def reputationCodec : Codec ReputationScores := codecRefine (prod (AuthorityScores, Bool)) ReputationScores reputationInject
+  (fun (scores : ReputationScores) => tuple (reputationBindings scores, reputationIsFinal scores)) reputationWireCodec
+def reputationEqual : ReputationScores -> ReputationScores -> Bool := fun (a : ReputationScores) (b : ReputationScores) =>
+  bytesEqual (codecWrite ReputationScores reputationCodec a) (codecWrite ReputationScores reputationCodec b)

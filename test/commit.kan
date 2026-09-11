@@ -1,0 +1,102 @@
+def commitScoreText : ReputationScores -> Bytes := fun (scores : ReputationScores) =>
+  append (bytesHex (codecWrite ReputationScores reputationCodec scores)) (append b":" (append (decimal64 (reputationTotalAuthorities scores))
+    (append b":" (append (decimal64 (boolNat (reputationAllZero scores))) (append b":"
+      (consensusJoin (prod (AuthorityId, Nat)) AuthorityScores seqAuthorityScoreOps (fun (entry : prod (AuthorityId, Nat)) => append (authorityIdHex entry.0) (append b"=" (decimal64 entry.1))) b"," (reputationByScoreDesc scores)))))))
+def commit_scores : Bytes -> ByteStrings -> Bytes := fun (raw : Bytes) (bumps : ByteStrings) =>
+  case (codecDecode ReputationScores reputationCodec raw) with
+  | 0 (error : BcsError) => append b"error:" (bcsErrorText error)
+  | 1 (decoded : prod (ReputationScores, BcsReader)) =>
+    commitScoreText (listFoldLeft Bytes ByteStrings ReputationScores seqBytesOps (fun (scores : ReputationScores) (seed : Bytes) =>
+      case (cryptoKeyParse seed) with
+      | 0 (unit : prod ()) => scores
+      | 1 (key : SecretKey) => reputationBump scores (authorityIdOfPublicKey (secretKeyPublic key))) decoded.0 bumps)
+def commit_schedule : ByteStrings -> Bytes -> Nat -> Bytes -> Bytes := fun (roster : ByteStrings) (raw : Bytes) (percent : Nat) (roundsRaw : Bytes) =>
+  match (cryptoCommittee roster) as self in CommitteeResult return Bytes with
+  | committeeError error => b"bad committee"
+  | committeeOk committee =>
+    case (codecDecode ReputationScores reputationCodec raw) with
+    | 0 (error : BcsError) => append b"error:" (bcsErrorText error)
+    | 1 (decoded : prod (ReputationScores, BcsReader)) =>
+      case (codecDecode Nats (codecList Nat Nats seqNatOps codecU32) roundsRaw) with
+      | 0 (error : BcsError) => append b"error:" (bcsErrorText error)
+      | 1 (rounds : prod (Nats, BcsReader)) =>
+        let base : LeaderSchedule := leaderScheduleCreate committee (leaderThreshold percent) in
+        let changed : ValueOption LeaderSchedule := leaderNoteFinalScores base (leaderRoundValue (roundValue 2)) decoded.0 in
+        let schedule : LeaderSchedule := case changed with
+          | 0 (unit : prod ()) => base
+          | 1 (value : LeaderSchedule) => value in
+        append (decimal64 (boolNat (optionIsSome LeaderSchedule changed))) (append b"/" (append (cryptoRosterText (leaderGoodNodes schedule) bytesNil bytesNil)
+          (append b"/" (append (consensusJoin AuthorityId AuthorityIds seqAuthorityIdOps authorityIdHex b"," (leaderBadNodes schedule))
+            (append b"/" (consensusJoin Nat Nats seqNatOps (fun (round : Nat) =>
+              match (leaderRoundOfRound (roundValue round)) as self in LeaderRoundResult return Bytes with
+              | leaderRoundInvalid => b"invalid"
+              | leaderRoundValid lr => authorityIdHex (authorityId (leaderScheduleLeader schedule lr))) b"," rounds.0))))))
+def commitSubDagText : SubDag -> Bytes := fun (value : SubDag) =>
+  append (bytesHex (codecWrite SubDag subDagCodec value)) (append b":" (append (bytesHex (subDagPreimage value))
+    (append b":" (append (subDagDigestHex (subDagDigest value)) (append b":" (append (decimal64 (sequenceBits (subDagSequenceNumber value)))
+      (append b":" (append (timestampShow (subDagStoredTimestamp value)) (append b":" (append (timestampShow (subDagCommitTimestamp value))
+        (append b":" (consensusJoin BatchDigest BatchDigests seqBatchDigestOps batchDigestHex b"," (subDagPayloadDigests value)))))))))))))
+def commit_subdag : Bytes -> Bytes := fun (raw : Bytes) =>
+  case (codecDecode SubDag subDagCodec raw) with
+  | 0 (error : BcsError) => append b"error:" (bcsErrorText error)
+  | 1 (decoded : prod (SubDag, BcsReader)) => commitSubDagText decoded.0
+def commit_create : Bytes -> Bytes -> Bytes -> Nat -> Bytes := fun (raw : Bytes) (scoreRaw : Bytes) (previous : Bytes) (signed : Nat) =>
+  case (codecDecode Headers (codecList Header Headers seqHeaderOps headerCodec) raw) with
+  | 0 (error : BcsError) => b"bad headers"
+  | 1 (headers : prod (Headers, BcsReader)) =>
+    case (nonemptyOfList Header Headers seqHeaderOps headers.0) with
+    | 0 (unit : prod ()) => b"empty fixture"
+    | 1 (sequence : Nonempty Header Headers) =>
+      case (codecDecode ReputationScores reputationCodec scoreRaw) with
+      | 0 (error : BcsError) => b"bad scores"
+      | 1 (scores : prod (ReputationScores, BcsReader)) =>
+        match (parseU64 previous) as self in NatOption return Bytes with
+        | natNone => b"bad timestamp"
+        | natSome seconds =>
+          let prior : SubDag := subDagOfPersisted sequence scores.0 (timestampValue seconds) hash32Zero in
+          let aggregate : CertificateVerification := case (natEq signed 1) with
+            | 0 (unit : prod ()) => certificateGenesisState
+            | 1 (unit : prod ()) => certificateAggregateState (signaturesCons (cryptoSign (secretKeyDerive 1) b"commit") (signaturesCons (cryptoSign (secretKeyDerive 2) b"commit") signaturesNil)) in
+          let signers : AuthorityIds := case (natEq signed 1) with
+            | 0 (unit : prod ()) => authorityIdsNil
+            | 1 (unit : prod ()) => authorityIdsCons (authorityIdOfPublicKey (secretKeyPublic (secretKeyDerive 1))) (authorityIdsCons (authorityIdOfPublicKey (secretKeyPublic (secretKeyDerive 2))) authorityIdsNil) in
+          let certificates : Nonempty Certificate Certificates := nonemptyMap Header Headers Certificate Certificates seqHeaderOps seqCertificateOps
+            (fun (header : Header) => certificateValue header (seqAuthorityIdUniq authorityIdCompare signers) aggregate) sequence in
+          commitSubDagText (subDagCreate certificates scores.0 (valueSome SubDag prior))
+def commitOutcomeText : BullsharkOutcome -> Bytes := fun (outcome : BullsharkOutcome) =>
+  match outcome as self in BullsharkOutcome return Bytes with
+  | bullsharkNoCommit reason => append b"no commit: " (bullsharkNoCommitText reason)
+  | bullsharkCommitted values => append b"committed leader rounds [" (append
+      (consensusJoin SubDag SubDags seqSubDagOps (fun (value : SubDag) => roundShow (subDagLeaderRound value)) b", " (nonemptyToList SubDag SubDags seqSubDagOps values)) b"]")
+def commit_bullshark : ByteStrings -> Bytes -> Nat -> Nat -> Nat -> Bytes :=
+  fun (roster : ByteStrings) (raw : Bytes) (window : Nat) (depth : Nat) (recover : Nat) =>
+    match (cryptoCommittee roster) as self in CommitteeResult return Bytes with
+    | committeeError error => b"bad committee"
+    | committeeOk committee =>
+      case (codecDecode Headers (codecList Header Headers seqHeaderOps headerCodec) raw) with
+      | 0 (error : BcsError) => bcsErrorText error
+      | 1 (decoded : prod (Headers, BcsReader)) =>
+        let initial : Bullshark := bullsharkCreate committee (leaderScheduleCreate committee leaderThresholdDefault) window depth in
+        let result : prod (Bullshark, CommittedLog, Certificates, Bytes) := listFoldLeft Header Headers (prod (Bullshark, CommittedLog, Certificates, Bytes)) seqHeaderOps
+          (fun (acc : prod (Bullshark, CommittedLog, Certificates, Bytes)) (header : Header) =>
+            let certificate : Certificate := certificateValue header authorityIdsNil certificateGenesisState in
+            case (bullsharkProcessCertificate acc.0 certificate) with
+            | 0 (error : DagError) => tuple (acc.0, acc.1, acc.2, append acc.3 (append b";error:" (dagErrorText error)))
+            | 1 (processed : prod (Bullshark, BullsharkOutcome)) =>
+              let values : SubDags := match processed.1 as self in BullsharkOutcome return SubDags with
+                | bullsharkNoCommit reason => subDagsNil
+                | bullsharkCommitted values => nonemptyToList SubDag SubDags seqSubDagOps values in
+              let log : CommittedLog := listFoldLeft SubDag SubDags CommittedLog seqSubDagOps committedLogAppend acc.1 values in
+              let stored : Certificates := certificatesCons certificate acc.2 in
+              let restored : prod (Bullshark, Bytes) := case (natEq recover 1) with
+                | 0 (unit : prod ()) => tuple (processed.0, bytesNil)
+                | 1 (unit : prod ()) =>
+                  case (bullsharkOfStore committee (leaderScheduleFromStore committee leaderThresholdDefault log) window depth stored log) with
+                  | 0 (error : DagError) => tuple (processed.0, append b"recovery-error:" (dagErrorText error))
+                  | 1 (state : Bullshark) => tuple (state, bytesNil) in
+              let next : Bullshark := restored.0 in
+              let output : Bytes := append (commitOutcomeText processed.1) (append b"/" (append (roundShow (dagCommittedRound (bullsharkDag next)))
+                (append b"/" (append (roundShow (dagGcRound (bullsharkDag next))) (append b"/" (append (roundShow (bullsharkMaxInsertedRound next))
+                  (append b"/" (consensusJoin SubDag SubDags seqSubDagOps (fun (value : SubDag) => bytesHex (codecWrite SubDag subDagCodec value)) b"," values)))))))) in
+              tuple (next, log, stored, append acc.3 (append b";" (append restored.1 output)))) (tuple (initial, committedLogEmpty, certificatesNil, bytesNil)) decoded.0 in
+        drop result.3 1

@@ -1,0 +1,35 @@
+def u256TestOption : ValueOption U256 -> Bytes := fun (value : ValueOption U256) => case value with
+  | 0 (unit : prod ()) => b"none" | 1 (word : U256) => u256Hex word
+def u256_test_op : Nat -> Bytes -> Bytes -> Bytes -> Bytes := fun (op : Nat) (aRaw : Bytes) (bRaw : Bytes) (nRaw : Bytes) =>
+  case (u256OfHex aRaw) with | 0 (unit : prod ()) => b"error:bad word"
+  | 1 (a : U256) => case (u256OfHex bRaw) with | 0 (unit : prod ()) => b"error:bad word"
+    | 1 (b : U256) => case (u256OfHex nRaw) with | 0 (unit : prod ()) => b"error:bad word"
+      | 1 (n : U256) =>
+        case (natEq op 0) with | 1 (unit : prod ()) => u256Hex (u256Add a b)
+        | 0 (unit : prod ()) => case (natEq op 1) with | 1 (unit : prod ()) => u256Hex (u256Sub a b)
+        | 0 (unit : prod ()) => case (natEq op 2) with | 1 (unit : prod ()) => u256TestOption (u256CheckedAdd a b)
+        | 0 (unit : prod ()) => case (natEq op 3) with | 1 (unit : prod ()) => u256TestOption (u256CheckedSub a b)
+        | 0 (unit : prod ()) => case (natEq op 4) with | 1 (unit : prod ()) => u256Hex (u256Mul a b)
+        | 0 (unit : prod ()) => case (natEq op 5) with | 1 (unit : prod ()) => u256TestOption (u256Div a b)
+        | 0 (unit : prod ()) => case (natEq op 6) with | 1 (unit : prod ()) => u256TestOption (u256Rem a b)
+        | 0 (unit : prod ()) => case (natEq op 7) with | 1 (unit : prod ()) => u256TestOption (u256AddMod a b n)
+        | 0 (unit : prod ()) => case (natEq op 8) with | 1 (unit : prod ()) => u256TestOption (u256MulMod a b n)
+        | 0 (unit : prod ()) => case (natEq op 9) with | 1 (unit : prod ()) => u256Hex (u256Pow a b)
+        | 0 (unit : prod ()) => case (natEq op 10) with | 1 (unit : prod ()) => u256Hex (u256And a b)
+        | 0 (unit : prod ()) => case (natEq op 11) with | 1 (unit : prod ()) => u256Hex (u256Or a b)
+        | 0 (unit : prod ()) => case (natEq op 12) with | 1 (unit : prod ()) => u256Hex (u256Xor a b)
+        | 0 (unit : prod ()) => case (natEq op 13) with | 1 (unit : prod ()) => u256Hex (u256Not a)
+        | 0 (unit : prod ()) => case (natEq op 14) with | 1 (unit : prod ()) => u256Hex (u256Shl a b)
+        | 0 (unit : prod ()) => u256Hex (u256Shr a b)
+def u256_test_int : Bytes -> Bytes := fun (raw : Bytes) => case (hostIntParse raw) with
+  | 0 (unit : prod ()) => b"error:bad int"
+  | 1 (value : HostInt) => append (u256TestOption (u256OfHostInt value)) (append b":" (append (u256Hex (u256OfByte value)) (append b":" (u256Hex (u256TwoPow value)))))
+def u256_test_word : Bytes -> Bytes := fun (raw : Bytes) => case (u256OfHex raw) with
+  | 0 (unit : prod ()) => b"none"
+  | 1 (value : U256) =>
+    let number : Bytes := case (u256ToHostNat value) with | 0 (unit : prod ()) => b"none" | 1 (n : Nat) => decimal64 n in
+    let isZero : Bytes := case (u256IsZero value) with | 0 (unit : prod ()) => b"false" | 1 (unit : prod ()) => b"true" in
+    append (u256Hex value) (append b":" (append number (append b":" isZero)))
+def u256_test_bytes : Bytes -> Bytes := fun (raw : Bytes) => u256TestOption (u256OfBeBytes raw)
+def u256_test_bits : Bytes -> Bytes := fun (raw : Bytes) =>
+  case (codecDecode Nat codecU64 raw) with | 0 (unit : BcsError) => b"error:bad bits" | 1 (decoded : prod (Nat, BcsReader)) => u256Hex (u256OfU64Bits decoded.0)

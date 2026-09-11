@@ -1,0 +1,104 @@
+mu LeaderThreshold : Type 0 :=
+| leaderThreshold (percent : Nat) : LeaderThreshold
+def leaderThresholdOfPercent : Nat -> ValueOption LeaderThreshold := fun (percent : Nat) =>
+  case (natLt percent 34) with
+  | 0 (unit : prod ()) => valueNone LeaderThreshold
+  | 1 (unit : prod ()) => valueSome LeaderThreshold (leaderThreshold percent)
+def leaderThresholdPercent : LeaderThreshold -> Nat := fun (threshold : LeaderThreshold) =>
+  match threshold as self in LeaderThreshold return Nat with
+  | leaderThreshold percent => percent
+def leaderThresholdDefault : LeaderThreshold := leaderThreshold 33
+mu LeaderTable : Type 0 :=
+| leaderNoSwaps : LeaderTable
+| leaderSwaps (good : Nonempty Authority Authorities) (bad : AuthorityIds) : LeaderTable
+mu LeaderSchedule : Type 0 :=
+| leaderSchedule (committee : Committee) (threshold : LeaderThreshold) (table : LeaderTable) : LeaderSchedule
+def leaderScheduleFields : LeaderSchedule -> prod (Committee, LeaderThreshold, LeaderTable) := fun (schedule : LeaderSchedule) =>
+  match schedule as self in LeaderSchedule return prod (Committee, LeaderThreshold, LeaderTable) with
+  | leaderSchedule committee threshold table => tuple (committee, threshold, table)
+def leaderScheduleCreate : Committee -> LeaderThreshold -> LeaderSchedule := fun (committee : Committee) (threshold : LeaderThreshold) => leaderSchedule committee threshold leaderNoSwaps
+def rec integerSqrtScan : Powers -> Nat -> Nat -> Nat := fun (bits : Powers) (value : Nat) (root : Nat) =>
+  match bits as self in Powers return Nat with
+  | powersNil => root
+  | powersCons bit weight tail =>
+    let candidate : Nat := natAdd root bit in
+    integerSqrtScan tail value (choose (natLt value (natMul candidate candidate)) root candidate)
+def integerSqrt : Nat -> Nat := fun (value : Nat) => integerSqrtScan bitPowers64 value 0
+def leaderScoreAtMost : AuthorityScores -> Nat -> AuthorityScores := fun (entries : AuthorityScores) (ceiling : Nat) =>
+  listFilter (prod (AuthorityId, Nat)) AuthorityScores seqAuthorityScoreOps (fun (entry : prod (AuthorityId, Nat)) => natEq (boolNat (natLt ceiling entry.1)) 0) entries
+def leaderScoreAtLeast : AuthorityScores -> Nat -> AuthorityScores := fun (entries : AuthorityScores) (floor : Nat) =>
+  listFilter (prod (AuthorityId, Nat)) AuthorityScores seqAuthorityScoreOps (fun (entry : prod (AuthorityId, Nat)) => natEq (boolNat (natLt entry.1 floor)) 0) entries
+def leaderBadCeiling : AuthorityScores -> Nat -> Nat -> Nat -> Nat := fun (entries : AuthorityScores) (cap : Nat) (std : Nat) (initial : Nat) =>
+  stepsFold Nat steps64
+    (fun (ceiling : Nat) => boolNat (boolOr (natEq ceiling 0) (natLt (seqAuthorityScoreLength (leaderScoreAtMost entries ceiling)) (natAdd cap 1))))
+    (fun (ceiling : Nat) => natSub ceiling std) initial
+def leaderGoodFloor : AuthorityScores -> Nat -> Nat -> Nat -> Nat -> Nat := fun (entries : AuthorityScores) (cap : Nat) (std : Nat) (minimum : Nat) (initial : Nat) =>
+  stepsFold Nat steps64
+    (fun (floor : Nat) => boolNat (boolOr (natEq floor minimum) (natLt cap (natAdd (seqAuthorityScoreLength (leaderScoreAtLeast entries floor)) 1))))
+    (fun (floor : Nat) => maxNat (natSub floor std) minimum) initial
+def leaderTableSelected : Committee -> AuthorityScores -> AuthorityScores -> LeaderTable := fun (committee : Committee) (goodScores : AuthorityScores) (badScores : AuthorityScores) =>
+  let bad : AuthorityIds := seqAuthorityIdUniq authorityIdCompare (seqAuthorityIdSort authorityIdCompare (listMapInto (prod (AuthorityId, Nat)) AuthorityScores AuthorityId AuthorityIds seqAuthorityScoreOps seqAuthorityIdOps
+    (fun (entry : prod (AuthorityId, Nat)) => entry.0) badScores)) in
+  let good : Authorities := seqAuthorityReverse (listFoldLeft (prod (AuthorityId, Nat)) AuthorityScores Authorities seqAuthorityScoreOps
+    (fun (acc : Authorities) (entry : prod (AuthorityId, Nat)) =>
+      case (committeeAuthority committee entry.0) with
+      | 0 (unit : prod ()) => acc
+      | 1 (authority : Authority) => authoritiesCons authority acc) authoritiesNil goodScores) in
+  case (natEq (seqAuthorityIdLength bad) 0) with
+  | 1 (unit : prod ()) => leaderNoSwaps
+  | 0 (unit : prod ()) =>
+    case (nonemptyOfList Authority Authorities seqAuthorityOps good) with
+    | 0 (unit : prod ()) => leaderNoSwaps
+    | 1 (nodes : Nonempty Authority Authorities) => leaderSwaps nodes bad
+def leaderBuildTable : Committee -> LeaderThreshold -> ReputationScores -> LeaderTable :=
+  fun (committee : Committee) (threshold : LeaderThreshold) (scores : ReputationScores) =>
+    let entries : AuthorityScores := reputationByScoreDesc scores in
+    case (seqAuthorityScoreHead entries) with
+    | 0 (unit : prod ()) => leaderNoSwaps
+    | 1 (first : prod (AuthorityId, Nat)) =>
+      let n : Nat := seqAuthorityScoreLength entries in
+      let cap : Nat := maxNat 1 (quotient64 (natMul n (leaderThresholdPercent threshold)) 100) in
+      let lowest : Nat := listFoldLeft (prod (AuthorityId, Nat)) AuthorityScores Nat seqAuthorityScoreOps (fun (acc : Nat) (entry : prod (AuthorityId, Nat)) => entry.1) 0 entries in
+      let total : Nat := listFoldLeft (prod (AuthorityId, Nat)) AuthorityScores Nat seqAuthorityScoreOps (fun (acc : Nat) (entry : prod (AuthorityId, Nat)) => natAdd acc entry.1) 0 entries in
+      let mean : Nat := quotient64 total n in
+      let variance : Nat := quotient64 (listFoldLeft (prod (AuthorityId, Nat)) AuthorityScores Nat seqAuthorityScoreOps
+        (fun (acc : Nat) (entry : prod (AuthorityId, Nat)) =>
+          let distance : Nat := natSub (maxNat entry.1 mean) (minNat entry.1 mean) in natAdd acc (natMul distance distance)) 0 entries) n in
+      let std : Nat := integerSqrt variance in
+      let initialBad : Nat := natSub first.1 (natMul 2 std) in
+      case (boolOr (natEq std 0) (natLt initialBad lowest)) with
+      | 1 (unit : prod ()) => leaderNoSwaps
+      | 0 (unit : prod ()) =>
+        let badCeiling : Nat := leaderBadCeiling entries cap std initialBad in
+        let goodFloor : Nat := leaderGoodFloor entries cap std (natAdd badCeiling 1) (maxNat (natSub first.1 std) (natAdd badCeiling 1)) in
+        leaderTableSelected committee (leaderScoreAtLeast entries goodFloor) (leaderScoreAtMost (seqAuthorityScoreReverse entries) badCeiling)
+def leaderPick : Nonempty Authority Authorities -> LeaderRound -> Authority := fun (good : Nonempty Authority Authorities) (round : LeaderRound) =>
+  let draw : prod (Nat, StdRng) := stdRngRange (stdRngOfLeaderRound (roundNat (leaderRoundRound round))) (natSub (nonemptyLength Authority Authorities seqAuthorityOps good) 1) in
+  case (authorityNth (nonemptyToList Authority Authorities seqAuthorityOps good) draw.0) with
+  | 0 (unit : prod ()) => good.0
+  | 1 (authority : Authority) => authority
+def leaderScheduleLeader : LeaderSchedule -> LeaderRound -> Authority := fun (schedule : LeaderSchedule) (round : LeaderRound) =>
+  let fields : prod (Committee, LeaderThreshold, LeaderTable) := leaderScheduleFields schedule in
+  let base : Authority := committeeNthMod fields.0 (hostIntPositive (leaderRoundIndex round)) in
+  match fields.2 as self in LeaderTable return Authority with
+  | leaderNoSwaps => base
+  | leaderSwaps good bad =>
+    case (optionIsSome AuthorityId (listFind AuthorityId AuthorityIds seqAuthorityIdOps (authorityIdEqual (authorityId base)) bad)) with
+    | 0 (unit : prod ()) => base
+    | 1 (unit : prod ()) => leaderPick good round
+def leaderScheduleCertificate : LeaderSchedule -> Dag -> LeaderRound -> prod (Authority, ValueOption Certificate) := fun (schedule : LeaderSchedule) (dag : Dag) (round : LeaderRound) =>
+  let authority : Authority := leaderScheduleLeader schedule round in tuple (authority, dagGet dag (leaderRoundRound round) (authorityId authority))
+def leaderNoteFinalScores : LeaderSchedule -> LeaderRound -> ReputationScores -> ValueOption LeaderSchedule := fun (schedule : LeaderSchedule) (activation : LeaderRound) (scores : ReputationScores) =>
+  case (reputationIsFinal scores) with
+  | 0 (unit : prod ()) => valueNone LeaderSchedule
+  | 1 (unit : prod ()) =>
+    let fields : prod (Committee, LeaderThreshold, LeaderTable) := leaderScheduleFields schedule in
+    valueSome LeaderSchedule (leaderSchedule fields.0 fields.1 (leaderBuildTable fields.0 fields.1 scores))
+def leaderGoodNodes : LeaderSchedule -> Authorities := fun (schedule : LeaderSchedule) =>
+  match (leaderScheduleFields schedule).2 as self in LeaderTable return Authorities with
+  | leaderNoSwaps => authoritiesNil
+  | leaderSwaps good bad => nonemptyToList Authority Authorities seqAuthorityOps good
+def leaderBadNodes : LeaderSchedule -> AuthorityIds := fun (schedule : LeaderSchedule) =>
+  match (leaderScheduleFields schedule).2 as self in LeaderTable return AuthorityIds with
+  | leaderNoSwaps => authorityIdsNil
+  | leaderSwaps good bad => bad

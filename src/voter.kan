@@ -1,0 +1,108 @@
+-- Latest vote per header author, including the source's restart carve-out.
+def VoterRecord : Type 0 := prod (Round, HeaderDigest)
+mu Voter : Type 0 :=
+| voterValue (committee : Committee) (key : SecretKey) (selfId : AuthorityId) (genesis : Certificates) (votes : VoterEntries) : Voter
+def voterFields : Voter -> prod (Committee, SecretKey, AuthorityId, Certificates, VoterEntries) := fun (voter : Voter) =>
+  match voter as self in Voter return prod (Committee, SecretKey, AuthorityId, Certificates, VoterEntries) with
+  | voterValue committee key selfId genesis votes => tuple (committee, key, selfId, genesis, votes)
+def voterCreate : Committee -> SecretKey -> AuthorityId -> Certificates -> Voter :=
+  fun (committee : Committee) (key : SecretKey) (selfId : AuthorityId) (genesis : Certificates) => voterValue committee key selfId genesis voterEntriesNil
+def voterSnapshot : Voter -> VoterEntries := fun (voter : Voter) => (voterFields voter).4
+def voterRecover : Committee -> SecretKey -> AuthorityId -> Certificates -> VoterEntries -> Voter :=
+  fun (committee : Committee) (key : SecretKey) (selfId : AuthorityId) (genesis : Certificates) (entries : VoterEntries) =>
+    let votes : VoterEntries := listFoldLeft (prod (AuthorityId, VoterRecord)) VoterEntries VoterEntries seqVoterEntryOps
+      (fun (acc : VoterEntries) (entry : prod (AuthorityId, VoterRecord)) => mapAdd AuthorityId VoterRecord VoterEntries seqVoterEntryOps authorityIdCompare entry.0 entry.1 acc)
+      voterEntriesNil entries in voterValue committee key selfId genesis votes
+def voterHasVoted : Voter -> AuthorityId -> Round -> Bool := fun (voter : Voter) (author : AuthorityId) (round : Round) =>
+  case (mapLookup AuthorityId VoterRecord VoterEntries seqVoterEntryOps authorityIdEqual author (voterSnapshot voter)) with
+  | 0 (unit : prod ()) => natEq 0 1
+  | 1 (record : VoterRecord) => natEq (boolNat (natLt (roundNat record.0) (roundNat round))) 0
+mu VoterRejectReason : Type 0 :=
+| voterHeaderInvalid (error : HeaderValidation) : VoterRejectReason
+| voterRoundZero : VoterRejectReason
+| voterInvalidParentRound : VoterRejectReason
+| voterInquorateParents : VoterRejectReason
+| voterNonMonotoneTimestamp : VoterRejectReason
+| voterFutureTimestamp : VoterRejectReason
+| voterAlreadyVotedHigher : VoterRejectReason
+| voterEquivocatingHeader : VoterRejectReason
+mu VoterDecision : Type 0 :=
+| voterVoteFresh (vote : Vote) : VoterDecision
+| voterVoteRecast (vote : Vote) : VoterDecision
+| voterNeedParents (parents : HeaderDigests) : VoterDecision
+| voterReject (reason : VoterRejectReason) : VoterDecision
+def voterResolve : Voter -> Dag -> HeaderDigest -> ValueOption Certificate := fun (voter : Voter) (dag : Dag) (digest : HeaderDigest) =>
+  case (listFind Certificate Certificates seqCertificateOps (fun (certificate : Certificate) => headerDigestEqual digest (certificateDigest certificate)) (voterFields voter).3) with
+  | 0 (unit : prod ()) => dagGetByDigest dag digest
+  | 1 (certificate : Certificate) => valueSome Certificate certificate
+def voterCheckVoteOnce : Voter -> Dag -> Header -> ValueOption VoterDecision := fun (voter : Voter) (dag : Dag) (header : Header) =>
+  case (mapLookup AuthorityId VoterRecord VoterEntries seqVoterEntryOps authorityIdEqual (headerAuthor header) (voterSnapshot voter)) with
+  | 0 (unit : prod ()) => valueNone VoterDecision
+  | 1 (record : VoterRecord) =>
+    case (natLt (roundNat (headerRound header)) (roundNat record.0)) with
+    | 1 (unit : prod ()) => valueSome VoterDecision (voterReject voterAlreadyVotedHigher)
+    | 0 (unit : prod ()) =>
+      case (natLt (roundNat record.0) (roundNat (headerRound header))) with
+      | 1 (unit : prod ()) => valueNone VoterDecision
+      | 0 (unit : prod ()) =>
+        case (headerDigestEqual (headerDigest header) record.1) with
+        | 1 (unit : prod ()) => valueSome VoterDecision (voterVoteRecast (voteSign (voterFields voter).1 (voterFields voter).2 header))
+        | 0 (unit : prod ()) =>
+          case (optionIsSome Certificate (dagGet dag (headerRound header) (headerAuthor header))) with
+          | 0 (unit : prod ()) => valueNone VoterDecision
+          | 1 (unit : prod ()) => valueSome VoterDecision (voterReject voterEquivocatingHeader)
+def voterCheckParents : Voter -> Dag -> Header -> ValueOption VoterDecision := fun (voter : Voter) (dag : Dag) (header : Header) =>
+  let resolved : prod (Certificates, HeaderDigests) := listFoldLeft HeaderDigest HeaderDigests (prod (Certificates, HeaderDigests)) seqHeaderDigestOps
+    (fun (acc : prod (Certificates, HeaderDigests)) (digest : HeaderDigest) =>
+      case (voterResolve voter dag digest) with
+      | 0 (unit : prod ()) => tuple (acc.0, headerDigestsCons digest acc.1)
+      | 1 (certificate : Certificate) => tuple (certificatesCons certificate acc.0, acc.1))
+    (tuple (certificatesNil, headerDigestsNil)) (headerParents header) in
+  case (natEq (seqHeaderDigestLength resolved.1) 0) with
+  | 0 (unit : prod ()) => valueSome VoterDecision (voterNeedParents (seqHeaderDigestReverse resolved.1))
+  | 1 (unit : prod ()) =>
+    let layered : Bool := boolAnd (natLt 0 (roundNat (headerRound header)))
+      (listAll Certificate Certificates seqCertificateOps (fun (certificate : Certificate) => roundEqual (certificateRound certificate) (roundSub (headerRound header) 1)) resolved.0) in
+    case layered with
+    | 0 (unit : prod ()) => valueSome VoterDecision (voterReject voterInvalidParentRound)
+    | 1 (unit : prod ()) =>
+      let origins : AuthorityIds := listMapInto Certificate Certificates AuthorityId AuthorityIds seqCertificateOps seqAuthorityIdOps certificateOrigin resolved.0 in
+      case (committeeReachesQuorum (voterFields voter).0 (committeeStakeOf (voterFields voter).0 origins)) with
+      | 0 (unit : prod ()) => valueSome VoterDecision (voterReject voterInquorateParents)
+      | 1 (unit : prod ()) =>
+        let parentMax : Timestamp := listFoldLeft Certificate Certificates Timestamp seqCertificateOps
+          (fun (acc : Timestamp) (certificate : Certificate) => timestampLater acc (headerCreatedAt (certificateHeader certificate))) timestampZero resolved.0 in
+        case (natLt (timestampNat (headerCreatedAt header)) (timestampNat parentMax)) with
+        | 0 (unit : prod ()) => valueNone VoterDecision
+        | 1 (unit : prod ()) => valueSome VoterDecision (voterReject voterNonMonotoneTimestamp)
+def voterAfterHeaderGate : Voter -> Dag -> Timestamp -> Header -> ValueOption VoterDecision :=
+  fun (voter : Voter) (dag : Dag) (now : Timestamp) (header : Header) =>
+    case (natEq (roundNat (headerRound header)) 0) with
+    | 1 (unit : prod ()) => valueSome VoterDecision (voterReject voterRoundZero)
+    | 0 (unit : prod ()) =>
+      case (voterCheckVoteOnce voter dag header) with
+      | 1 (decision : VoterDecision) => valueSome VoterDecision decision
+      | 0 (unit : prod ()) =>
+        case (voterCheckParents voter dag header) with
+        | 1 (decision : VoterDecision) => valueSome VoterDecision decision
+        | 0 (unit : prod ()) =>
+          case (natLt (timestampNat (timestampAdd now 1)) (timestampNat (headerCreatedAt header))) with
+          | 0 (unit : prod ()) => valueNone VoterDecision
+          | 1 (unit : prod ()) => valueSome VoterDecision (voterReject voterFutureTimestamp)
+def voterGate : Voter -> Dag -> Timestamp -> Header -> ValueOption VoterDecision :=
+  fun (voter : Voter) (dag : Dag) (now : Timestamp) (header : Header) =>
+    let checked : HeaderValidation := headerValidate (voterFields voter).0 header in
+    match checked as self in HeaderValidation return ValueOption VoterDecision with
+    | headerValid => voterAfterHeaderGate voter dag now header
+    | headerWrongEpoch => valueSome VoterDecision (voterReject (voterHeaderInvalid checked))
+    | headerAuthorUnknown => valueSome VoterDecision (voterReject (voterHeaderInvalid checked))
+    | headerEmptyParents => valueSome VoterDecision (voterReject (voterHeaderInvalid checked))
+def voterVote : Voter -> Dag -> Timestamp -> Header -> prod (Voter, VoterDecision) :=
+  fun (voter : Voter) (dag : Dag) (now : Timestamp) (header : Header) =>
+    case (voterGate voter dag now header) with
+    | 1 (decision : VoterDecision) => tuple (voter, decision)
+    | 0 (unit : prod ()) =>
+      let f : prod (Committee, SecretKey, AuthorityId, Certificates, VoterEntries) := voterFields voter in
+      let votes : VoterEntries := mapAdd AuthorityId VoterRecord VoterEntries seqVoterEntryOps authorityIdCompare
+        (headerAuthor header) (tuple (headerRound header, headerDigest header)) f.4 in
+      tuple (voterValue f.0 f.1 f.2 f.3 votes, voterVoteFresh (voteSign f.1 f.2 header))

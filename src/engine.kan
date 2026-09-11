@@ -1,0 +1,12 @@
+def Nothing : Type 0 := sum ()
+def nothingAbsurd : (0 A : Type 0) -> Nothing -> A := fun (0 A : Type 0) (impossible : Nothing) => absurd impossible
+-- A typed dictionary is the Kanon counterpart of the OCaml ENGINE signature.
+def Engine : (0 S : Type 0) -> (0 C : Type 0) -> (0 O : Type 0) -> (0 B : Type 0) -> (0 L : Type 0) -> (0 H : Type 0) -> (0 E : Type 0) -> Type 0 :=
+  fun (0 S : Type 0) (0 C : Type 0) (0 O : Type 0) (0 B : Type 0) (0 L : Type 0) (0 H : Type 0) (0 E : Type 0) =>
+    prod ((C -> S), (S -> O -> sum (E, prod (S, L))), (S -> ValueOption B), (S -> H), (E -> Bytes))
+def noopEngineCreate : CodecUnit -> ConsensusChain := fun (unit : CodecUnit) => consensusChainGenesis
+def noopEngineExecute : ConsensusChain -> SubDag -> sum (Nothing, prod (ConsensusChain, ConsensusBlocks)) := fun (chain : ConsensusChain) (subdag : SubDag) =>
+  let appended : prod (ConsensusChain, ConsensusBlock) := consensusChainAppend chain subdag in
+  inj 1 of 2 (tuple (appended.0, consensusBlocksCons appended.1 consensusBlocksNil))
+def noopEngine : Engine ConsensusChain CodecUnit SubDag ConsensusBlock ConsensusBlocks ConsensusBlockNumber Nothing :=
+  tuple (noopEngineCreate, noopEngineExecute, consensusChainTip, consensusChainNumber, nothingAbsurd Bytes)

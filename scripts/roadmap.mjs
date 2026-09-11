@@ -8,7 +8,11 @@ const coverage = {
   'lib/std/prng.ml': 'Ported: full-width SplitMix64, split and signed inclusive ranges, src/prng.kan; OCaml differential tests',
   'lib/codec/bcs.ml': 'Ported: primitive and composite codecs, refinement, enums, list/map/set canonicality, src/bcs.kan, src/codec.kan, src/sequence.kan; OCaml differential tests',
   'lib/crypto_stub/tn_crypto.ml': 'Ported simulation profile: BLAKE2s, keys, signatures and aggregates, src/crypto_stub.kan; OCaml differential tests',
-  'lib/hash32/hash32.ml': 'Partial: checked bytes, zero, equality, ordering and hex, src/fixed.kan; Keccak conversion awaits Keccak type',
+  'lib/hash32/hash32.ml': 'Ported: checked bytes, zero, equality, ordering, hex and nominal Keccak conversion, src/fixed.kan and src/keccak.kan',
+  'lib/keccak/tn_keccak.ml': 'Ported: legacy Keccak-256, checked stored bytes, equality and hex, src/keccak.kan; Digestif differential tests',
+  'lib/rand/chacha12.ml': 'Ported: ChaCha12 blocks, counter and buffered stream, src/chacha12.kan; OCaml differential tests',
+  'lib/rand/std_rng.ml': 'Ported: leader seeds and inclusive u32/u64 sampling with exact draw advancement, src/chacha12.kan; OCaml differential tests',
+  'lib/rand/rand_seq.ml': 'Ported: reservoir sampling with typed collections, src/rand_seq.kan; OCaml differential tests',
   'lib/types/round.ml': 'Partial: scalar operations; Map/Set pending, src/scalars.kan',
   'lib/types/leader_round.ml': 'Ported with explicit exhaustion correction, src/scalars.kan and src/scalar_ops.kan',
   'lib/types/units.ml': 'Ported value operations with explicit overflow corrections, unsigned decimal transport and checked Address, src/scalars.kan, src/scalar_ops.kan, src/fixed.kan',
@@ -22,6 +26,27 @@ const coverage = {
   'lib/vertex/header.ml': 'Ported: canonical fields, codec, digest and validation, src/header.kan; golden and OCaml differential tests',
   'lib/vertex/vote.ml': 'Ported: signing, claims and verification, src/vote.kan; OCaml differential tests',
   'lib/vertex/certificate.ml': 'Ported: assembly, claims, genesis membership and aggregate verification, src/certificate.kan; OCaml differential tests',
+  'lib/consensus/dag.ml': 'Ported: insertion, ancestry, equivocation, watermarks, GC and recovery, src/dag.kan; OCaml differential traces',
+  'lib/consensus/vote_aggregator.ml': 'Ported: vote collection, rejection order and certificate formation, src/aggregators.kan; OCaml differential tests',
+  'lib/consensus/parent_aggregator.ml': 'Ported: quorum release, duplicate origins and drained deltas, src/aggregators.kan; OCaml differential tests',
+  'lib/consensus/voter.ml': 'Ported: vote-once records, recasts, parent validation, clock drift and recovery, src/voter.kan; OCaml differential traces',
+  'lib/consensus/reputation_scores.ml': 'Ported: closed score maps, ordering, persisted codec and final markers, src/reputation_scores.kan; OCaml differential tests',
+  'lib/consensus/leader_schedule.ml': 'Ported for reachable score ranges: replacement tables, elections and recovery, src/leader_schedule.kan and src/committed_log.kan; OCaml differential tests',
+  'lib/consensus/sub_dag.ml': 'Ported: commit ordering, timestamps, signature randomness, preimages and persisted codec, src/sub_dag.kan; OCaml differential tests',
+  'lib/consensus/committed_log.ml': 'Ported: append, watermarks, latest final scores and schedule recovery, src/committed_log.kan; recovery traces against OCaml',
+  'lib/consensus/bullshark.ml': 'Ported: linked leaders, ordering, scoring, commits, schedule retries and recovery, src/bullshark.kan; OCaml differential traces',
+  'lib/consensus/proposer.ml': 'Ported for nonnegative configurations: timers, readiness, batch queues, requeue and restart, src/proposer.kan; OCaml differential traces',
+  'lib/consensus/node.ml': 'Ported: composition and frontier recovery, src/node.kan; five composed-node differential groups against OCaml',
+  'lib/execution/consensus_block.ml': 'Ported: height, block codec, preimages and genesis anchor, src/consensus_block.kan; OCaml differential tests',
+  'lib/execution/consensus_chain.ml': 'Ported: genesis, resume and append, src/consensus_chain.kan; OCaml differential tests',
+  'lib/execution/consensus_store.ml': 'Ported reference store: body resolution, append validation, epochs, retries, forks and replay gaps, src/consensus_record.kan and src/consensus_store.kan; OCaml differential tests',
+  'lib/execution/replay.ml': 'Ported with maximum-height termination correction: gap collection and projections, src/replay.kan; ordinary-range OCaml differential tests',
+  'lib/execution/engine.ml': 'Ported: typed engine dictionary and no-op execution, src/engine.kan; OCaml differential tests',
+  'lib/execution/nothing.ml': 'Ported: uninhabited error and eliminator, src/engine.kan',
+  'lib/sim/sim.ml': 'Ported for nonnegative limits: event ordering, loss, crashes, batch injection, agreement and execution, src/sim.kan; 19 seeded OCaml transcripts',
+  'lib/state/u256.ml': 'Ported: full 256-bit arithmetic, wide modular operations, bitwise logic, shifts and constructors, src/u256.kan; 454 OCaml rows and BigInt checks',
+  ...Object.fromEntries(['nonce', 'bytecode', 'delegation', 'storage', 'account', 'genesis_account', 'world_state', 'transfer', 'address_word']
+    .map(name => [`lib/state/${name}.ml`, 'Ported: canonical account state and transitions, src/state_types.kan and src/state.kan; 42 OCaml differential rows'])),
 };
 const text = `# Port roadmap and source map
 
@@ -37,9 +62,9 @@ not a claim of complete module parity.
 | --- | --- | --- |
 | 0 | Pin the chunk-44 source and compiler, compile reusable Wasm, port scalar/primitive-codec core, compare exact outputs and failures with OCaml, provide a working CLI. | Implemented; see VALIDATION.md. |
 | 1 | Complete tn_std, tn_codec and tn_types. Add general codecs, scalars, SplitMix64, digests, authorities, committees, batches and anchors. Match vectors and constructor rejections. | Value and codec behavior tested. General Round/Authority Map/Set APIs remain. |
-| 2 | Port tn_vertex and tn_consensus pure state machines, plus deterministic tn_sim and the CLI. Compare complete seeded output transcripts. | Vertex values, validation and simulation crypto tested. Consensus DAG, reducers, scheduling and simulator are next. |
-| 3 | Timing, consensus recovery and tn_execution. Compare durable-before-action transitions, restart transcripts and consensus-chain hashes. | Planned |
-| 4 | tn_state and EVM ALU/interpreter, then environment, access/refund, storage, calls, creation and transaction execution. Preserve full U256 arithmetic, gas, rollback and fork-specific outcomes. | Planned |
+| 2 | Port tn_vertex and tn_consensus pure state machines, plus deterministic tn_sim and the CLI. Compare complete seeded output transcripts. | Consensus, node composition, seeded simulator and public simulator CLI tested within the configuration bounds recorded below. |
+| 3 | Timing, consensus recovery and tn_execution. Compare durable-before-action transitions, restart transcripts and consensus-chain hashes. | Pure execution, replay, reference store and consensus recovery tested. Durable shells remain. |
+| 4 | tn_state and EVM ALU/interpreter, then environment, access/refund, storage, calls, creation and transaction execution. Preserve full U256 arithmetic, gas, rollback and fork-specific outcomes. | U256 and account state tested. EVM remains. |
 | 5 | RLP, Keccak, trie/state roots, transaction envelopes, signatures and source-supported precompiles. Reuse existing golden fixtures; compare acceptance, output, gas and errors separately. | Planned |
 | 6 | Batch validation, executed blocks, engine, driver, registry and epoch transitions. Compare complete committed/executed output and checkpoint consistency. | Planned |
 | 7 | Durable file framing, logs, locks and checkpoints. Audit the host's fsync, atomic replacement, locking and recovery guarantees before porting the IO shell. Test interrupted writes and restart behavior. | Planned |
@@ -68,8 +93,8 @@ missing from that source is a separate extension.
 
 Kanon's primitives have add/subtract/multiply/compare but no division or bitwise
 operations. Bounded division, wrapping words, SplitMix64 and BLAKE2s are ordinary
-Kanon code. Production BLAKE3/BLS and U256 still need performance and
-representation work. Simulation signatures are forgeable and cannot
+Kanon code. U256 arithmetic is implemented and tested. Production BLAKE3/BLS still
+need implementation and performance work. Simulation signatures are forgeable and cannot
 authenticate a real node.
 
 Kanon does not currently provide OCaml .mli-style constructor hiding. Review
@@ -79,15 +104,14 @@ invariants or establish a cross-module security boundary.
 
 General Nonempty and BCS combinators use erased type parameters and typed
 collection dictionaries. The compiler cannot construct parameterized recursive
-families. scripts/collections.mjs generates 15 concrete carriers from one
+families. scripts/collections.mjs generates concrete carriers from one
 template. Zero-byte codec units use a nominal nullary type to avoid a backend
 trap with polymorphic empty-product payloads. Generated insertion sort is
 quadratic; production-size collection performance remains unvalidated.
 
-The next acceptance target is the source simulator: port the DAG, leader
-schedule, vote/parent aggregation, voter/proposer, Bullshark, sub-DAG and node
-reducers, then compare complete seeded event/output transcripts. No consensus
-agreement or liveness claim follows from vertex validation alone.
+The next acceptance target is the EVM and execution driver. Simulator comparisons
+establish parity on tested seeded transcripts; they are not a proof of consensus
+safety or liveness for every possible schedule.
 
 ## Library inventory
 

@@ -8,5 +8,6 @@
   "stakeText", "durationParse", "durationText", "baseFeeParse", "baseFeeText", "leaderRoundParse", "leaderRoundText",
   "seqBytesEmpty", "seqBytesCons", "cryptoProfile", "blake2s256", "apiSimulationKey", "apiSimulationSign",
   "apiPrngNext", "apiPrngSplit", "apiBatchInspect", "apiSealedBatchInspect", "apiHeaderInspect", "apiVoteSign",
-  "apiCommitteeInspect", "apiNormalizeListU8", "apiNormalizeListU64", "apiNormalizeSetU8", "apiNormalizeMapU8U16"
+  "apiCommitteeInspect", "apiNormalizeListU8", "apiNormalizeListU64", "apiNormalizeSetU8", "apiNormalizeMapU8U16",
+  "apiSimulatorRun", "simulatorReportText", "simulatorReportExit"
 ]

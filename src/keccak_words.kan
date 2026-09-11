@@ -1,0 +1,12 @@
+def wordRotate64 : Nat -> Nat -> Nat -> Nat := fun (value : Nat) (lowPower : Nat) (highPower : Nat) =>
+  let split : DivResult := divide64 value lowPower in
+  natAdd (divQuotient split) (natMul (divRemainder split) highPower)
+def wordAnd64 : Nat -> Nat -> Nat := fun (a : Nat) (b : Nat) =>
+  quotient64 (natSub (natAdd a b) (wordXor64 a b)) 2
+def rec keccakReadWordAcc : Bytes -> Bytes -> Nat -> Nat -> prod (Nat, Bytes) :=
+  fun (fuel : Bytes) (input : Bytes) (power : Nat) (acc : Nat) =>
+    match fuel as self in Bytes return prod (Nat, Bytes) with
+    | bytesNil => tuple (acc, input)
+    | bytesCons head tail =>
+      keccakReadWordAcc tail (bytesTail input) (natMul power 256) (natAdd acc (natMul power (bytesHead input)))
+def keccakReadWord : Bytes -> prod (Nat, Bytes) := fun (input : Bytes) => keccakReadWordAcc fuel8 input 1 0

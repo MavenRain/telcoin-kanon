@@ -1,0 +1,76 @@
+def stateBoolText : Bool -> Bytes := fun (value : Bool) => case value with | 0 (unit : prod ()) => b"false" | 1 (unit : prod ()) => b"true"
+def stateNonceCodec : Codec Nonce := codecRefine Nat Nonce nonceOfNat nonceNat codecU64
+def stateAddressCodec : Codec Address := codecRefine Bytes Address addressOfBytes addressBytes (codecFixedBytes 20)
+def stateSlotsCodec : Codec StorageSlots := codecList (prod (U256, U256)) StorageSlots seqStorageSlotOps (codecPair U256 U256 u256Codec u256Codec)
+def StateAccountFields : Type 0 := prod (Nonce, prod (U256, prod (Bytes, StorageSlots)))
+def stateFieldsCodec : Codec StateAccountFields := codecPair Nonce (prod (U256, prod (Bytes, StorageSlots))) stateNonceCodec
+  (codecPair U256 (prod (Bytes, StorageSlots)) u256Codec (codecPair Bytes StorageSlots codecBytes stateSlotsCodec))
+def stateAccountFields : Account -> StateAccountFields := fun (account : Account) => tuple (account.0, tuple (account.1, tuple (accountCode account, account.2)))
+def stateAccountFromFields : StateAccountFields -> Account := fun (fields : StateAccountFields) =>
+  genesisAccountToAccount (genesisAccountMake fields.0 fields.1.0 (valueSome Bytes fields.1.1.0) fields.1.1.1)
+def stateAccountCodec : Codec Account := codecIso StateAccountFields Account stateAccountFromFields stateAccountFields stateFieldsCodec
+def stateGenesisCodec : Codec GenesisAccount := codecIso StateAccountFields GenesisAccount
+  (fun (fields : StateAccountFields) => genesisAccountMake fields.0 fields.1.0 (valueSome Bytes fields.1.1.0) fields.1.1.1)
+  (fun (entry : GenesisAccount) => stateAccountFields (genesisAccountToAccount entry)) stateFieldsCodec
+def stateClassText : CodeClass -> Bytes := fun (classified : CodeClass) => match classified as self in CodeClass return Bytes with
+  | codeCodeless => b"codeless" | codeContract => b"contract"
+  | codeDelegated delegation => append b"delegated:" (addressHex (delegationTarget delegation))
+  | codeUndecodable error => append b"undecodable:" (delegationDecodeErrorText error)
+def stateAccountWire : Account -> Bytes := fun (account : Account) => bytesHex (codecWrite Account stateAccountCodec account)
+def stateAccountText : Account -> Bytes := fun (account : Account) =>
+  append (stateAccountWire account) (append b":" (append (stateBoolText (accountIsEmpty account)) (append b":" (append
+    (stateBoolText (accountIsAbsent account)) (append b":" (append (stateBoolText (accountIsOccupied account))
+      (append b":" (append (keccakHex (accountCodeHash account)) (append b":" (stateClassText (accountCodeClass account)))))))))))
+def state_code : Bytes -> Bytes := fun (code : Bytes) =>
+  let deployed : Bytes := case (bytecodeValidateDeployment code) with | 1 (unit : prod ()) => b"ok"
+    | 0 (error : DeploymentError) => match error as self in DeploymentError return Bytes with
+      | deploymentReservedPrefix => b"reserved" | deploymentTooLarge n => append b"large:" (decimal64 n) in
+  append (stateClassText (delegationClassify code)) (append b"/" (append (stateBoolText (delegationIsContractCode code))
+    (append b"/" (append deployed (append b"/" (keccakHex (bytecodeHash (bytecodeValue code))))))))
+def stateActionOption : Account -> ValueOption Account -> prod (Account, Bytes) := fun (account : Account) (result : ValueOption Account) => case result with
+  | 0 (unit : prod ()) => tuple (account, b"none") | 1 (next : Account) => tuple (next, b"ok")
+def stateActionDecoded : (0 A : Type 0) -> Codec A -> Bytes -> Account -> (A -> prod (Account, Bytes)) -> prod (Account, Bytes) :=
+  fun (0 A : Type 0) (codec : Codec A) (raw : Bytes) (account : Account) (step : A -> prod (Account, Bytes)) =>
+    case (codecDecode A codec raw) with | 0 (error : BcsError) => tuple (account, append b"error:" (bcsErrorText error)) | 1 (decoded : prod (A, BcsReader)) => step decoded.0
+def stateAccountAction : Account -> prod (Bytes, Nat) -> prod (Account, Bytes) := fun (account : Account) (action : prod (Bytes, Nat)) =>
+  case (natEq action.1 0) with | 1 (unit : prod ()) => stateActionDecoded (prod (U256, U256)) (codecPair U256 U256 u256Codec u256Codec) action.0 account
+    (fun (slot : prod (U256, U256)) => tuple (accountSetSlot account slot.0 slot.1, b"ok"))
+  | 0 (unit : prod ()) => case (natEq action.1 1) with | 1 (unit : prod ()) => stateActionDecoded U256 u256Codec action.0 account (fun (amount : U256) => stateActionOption account (accountCredit account amount))
+  | 0 (unit : prod ()) => case (natEq action.1 2) with | 1 (unit : prod ()) => stateActionDecoded U256 u256Codec action.0 account (fun (amount : U256) => stateActionOption account (accountDebit account amount))
+  | 0 (unit : prod ()) => case (natEq action.1 3) with | 1 (unit : prod ()) => tuple (accountIncrementNonce account, b"ok")
+  | 0 (unit : prod ()) => case (natEq action.1 4) with | 1 (unit : prod ()) => stateActionOption account (accountIncrementNonceChecked account)
+  | 0 (unit : prod ()) => case (natEq action.1 5) with | 1 (unit : prod ()) => stateActionDecoded Bytes codecBytes action.0 account (fun (code : Bytes) => tuple (accountWithCode account code, b"ok"))
+  | 0 (unit : prod ()) => case (natEq action.1 6) with | 1 (unit : prod ()) => stateActionDecoded Address stateAddressCodec action.0 account (fun (target : Address) => tuple (accountDelegate account target, b"ok"))
+  | 0 (unit : prod ()) => stateActionDecoded StorageSlots stateSlotsCodec action.0 account (fun (slots : StorageSlots) =>
+    let storage : Storage := listFoldLeft (prod (U256, U256)) StorageSlots Storage seqStorageSlotOps (fun (acc : Storage) (slot : prod (U256, U256)) => storageSet acc slot.0 slot.1) storageEmpty slots in
+    tuple (accountWithStorage account storage, b"ok"))
+def state_account : Bytes -> Bytes -> Bytes := fun (raw : Bytes) (actionsRaw : Bytes) => executionWith Account stateAccountCodec raw (fun (initial : Account) =>
+  executionWith ByteNatPairs (codecList (prod (Bytes, Nat)) ByteNatPairs seqByteNatPairOps (codecPair Bytes Nat codecBytes codecU8)) actionsRaw (fun (actions : ByteNatPairs) =>
+    let result : prod (Account, Bytes) := listFoldLeft (prod (Bytes, Nat)) ByteNatPairs (prod (Account, Bytes)) seqByteNatPairOps
+      (fun (acc : prod (Account, Bytes)) (action : prod (Bytes, Nat)) => let next : prod (Account, Bytes) := stateAccountAction acc.0 action in
+        tuple (next.0, append acc.1 (append b";" (append next.1 (append b":" (append (stateBoolText (accountEqual acc.0 next.0)) (append b":" (stateAccountText next.0))))))))
+      (tuple (initial, stateAccountText initial)) actions in result.1))
+def stateWorldText : WorldState -> Bytes := fun (state : WorldState) => consensusJoin (prod (Address, Account)) WorldAccounts seqWorldAccountOps
+  (fun (entry : prod (Address, Account)) => append (addressHex entry.0) (append b":" (stateAccountWire entry.1))) b"," (worldStateAccounts state)
+def StateTransferFields : Type 0 := prod (Address, prod (Address, prod (U256, Nonce)))
+def stateTransferFieldsCodec : Codec StateTransferFields := codecPair Address (prod (Address, prod (U256, Nonce))) stateAddressCodec
+  (codecPair Address (prod (U256, Nonce)) stateAddressCodec (codecPair U256 Nonce u256Codec stateNonceCodec))
+def stateTransferCodec : Codec Transfer := codecIso StateTransferFields Transfer
+  (fun (fields : StateTransferFields) => transferMake fields.0 fields.1.0 fields.1.1.0 fields.1.1.1)
+  (fun (transfer : Transfer) => tuple (transfer.0, tuple (transfer.1, tuple (transfer.2, transfer.3)))) stateTransferFieldsCodec
+def stateWorldStep : prod (WorldState, Bytes) -> Transfer -> prod (WorldState, Bytes) := fun (acc : prod (WorldState, Bytes)) (transfer : Transfer) =>
+    let result : sum (TransferError, WorldState) := transferApply acc.0 transfer in
+    let next : prod (WorldState, Bytes) := case result with | 0 (error : TransferError) => tuple (acc.0, append b"error:" (transferErrorText error)) | 1 (state : WorldState) => tuple (state, b"ok") in
+    tuple (next.0, append acc.1 (append b";" (append next.1 (append b"|" (append (stateBoolText (worldStateEqual acc.0 next.0)) (append b"|" (stateWorldText next.0)))))))
+def state_world : Bytes -> Bytes -> Bytes := fun (raw : Bytes) (transfersRaw : Bytes) =>
+  executionWith GenesisEntries (codecList (prod (Address, GenesisAccount)) GenesisEntries seqGenesisEntryOps (codecPair Address GenesisAccount stateAddressCodec stateGenesisCodec)) raw (fun (entries : GenesisEntries) =>
+    case (worldStateOfGenesisAlloc entries) with | 0 (error : GenesisAllocError) => append b"error:" (genesisAllocErrorText error)
+    | 1 (initial : WorldState) =>
+      executionWith Transfers (codecList Transfer Transfers seqTransferOps stateTransferCodec) transfersRaw (fun (transfers : Transfers) =>
+          let result : prod (WorldState, Bytes) := listFoldLeft Transfer Transfers (prod (WorldState, Bytes)) seqTransferOps stateWorldStep (tuple (initial, append b"trace:" (stateWorldText initial))) transfers in result.1))
+def state_address : Bytes -> Bytes := fun (raw : Bytes) => case (u256OfHex raw) with | 0 (unit : prod ()) => b"error:bad word"
+  | 1 (word : U256) => let address : Address := addressOfWord word in append (addressHex address) (append b":" (u256Hex (addressToWord address)))
+def state_nonce : Bytes -> Bytes := fun (raw : Bytes) => case (hostIntParse raw) with | 0 (unit : prod ()) => b"error:bad int"
+  | 1 (value : HostInt) => case (nonceOfHostInt value) with | 0 (unit : prod ()) => b"none"
+    | 1 (nonce : Nonce) => let checked : Bytes := case (nonceSuccChecked nonce) with | 0 (unit : prod ()) => b"none" | 1 (next : Nonce) => nonceText next in
+      append (nonceText nonce) (append b":" (append (nonceText (nonceSucc nonce)) (append b":" checked)))

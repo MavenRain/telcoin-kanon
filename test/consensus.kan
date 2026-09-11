@@ -1,0 +1,152 @@
+def consensusCertificates : Bytes -> CodecResult Certificates := fun (input : Bytes) =>
+  codecBind Headers Certificates (codecDecode Headers (codecList Header Headers seqHeaderOps headerCodec) input)
+    (fun (headers : Headers) (reader : BcsReader) => codecOk Certificates
+      (listMapInto Header Headers Certificate Certificates seqHeaderOps seqCertificateOps
+        (fun (header : Header) => certificateValue header authorityIdsNil certificateGenesisState) headers) reader)
+def consensusCertificateText : Certificate -> Bytes := fun (certificate : Certificate) =>
+  append (roundShow (certificateRound certificate)) (append b":" (append (authorityIdHex (certificateOrigin certificate)) (append b":" (headerDigestHex (certificateDigest certificate)))))
+def consensusJoin : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> (A -> Bytes) -> Bytes -> L -> Bytes :=
+  fun (0 A : Type 0) (0 L : Type 0) (ops : ListOps A L) (render : A -> Bytes) (separator : Bytes) (values : L) =>
+    let result : prod (Bytes, Bytes) := listFoldLeft A L (prod (Bytes, Bytes)) ops
+      (fun (state : prod (Bytes, Bytes)) (value : A) => tuple (append state.0 (append state.1 (render value)), separator))
+      (tuple (bytesNil, bytesNil)) values in result.0
+def consensusCertsText : Certificates -> Bytes := consensusJoin Certificate Certificates seqCertificateOps consensusCertificateText b","
+def consensusDagText : Dag -> Bytes := fun (dag : Dag) =>
+  append (roundShow (dagCommittedRound dag)) (append b"/" (append (roundShow (dagGcRound dag)) (append b"/"
+    (append (consensusJoin Nat Nats seqNatOps decimal64 b"," (dagRounds dag)) (append b"/" (consensusCertsText (dagAllCertificates dag)))))))
+def consensusCertAt : Certificates -> Nat -> ValueOption Certificate := fun (certificates : Certificates) (index : Nat) =>
+  let result : prod (Nat, ValueOption Certificate) := listFoldLeft Certificate Certificates (prod (Nat, ValueOption Certificate)) seqCertificateOps
+    (fun (state : prod (Nat, ValueOption Certificate)) (certificate : Certificate) =>
+      tuple (natAdd state.0 1, case (natEq state.0 index) with
+      | 0 (unit : prod ()) => state.1
+      | 1 (unit : prod ()) => valueSome Certificate certificate)) (tuple (0, valueNone Certificate)) certificates in result.1
+def consensusDagStep : Certificates -> prod (Dag, Bytes, Bytes) -> prod (Nat, Nat) -> prod (Dag, Bytes, Bytes) :=
+  fun (certificates : Certificates) (state : prod (Dag, Bytes, Bytes)) (command : prod (Nat, Nat)) =>
+    case (consensusCertAt certificates command.1) with
+    | 0 (unit : prod ()) => tuple (state.0, b"bad index", state.2)
+    | 1 (certificate : Certificate) =>
+      let result : DagInsertResult :=
+        case (natEq command.0 0) with
+        | 1 (unit : prod ()) => dagTryInsert state.0 certificate
+        | 0 (unit : prod ()) =>
+          case (natEq command.0 1) with
+          | 1 (unit : prod ()) => dagInsertRecovered state.0 certificate
+          | 0 (unit : prod ()) =>
+            case (natEq command.0 2) with
+            | 1 (unit : prod ()) => inj 1 of 2 (tuple (dagUpdate state.0 certificate, natEq 0 1))
+            | 0 (unit : prod ()) =>
+              case (natEq command.0 3) with
+              | 1 (unit : prod ()) => inj 1 of 2 (tuple (state.0, optionIsSome Certificate (dagGet state.0 (certificateRound certificate) (certificateOrigin certificate))))
+              | 0 (unit : prod ()) => inj 1 of 2 (tuple (state.0, dagContainsDigest state.0 (certificateDigest certificate)))
+      in
+      let next : prod (Dag, Bytes) :=
+        case result with
+        | 0 (error : DagError) => tuple (state.0, append b"error:" (dagErrorText error))
+        | 1 (pair : prod (Dag, Bool)) => tuple (pair.0, append b"ok:" (decimal64 (boolNat pair.1)))
+      in
+      tuple (next.0, append state.1 (append state.2 (append next.1 (append b"|" (consensusDagText next.0)))), b";")
+def consensus_dag : Nat -> Bytes -> Bytes -> Bytes := fun (depth : Nat) (input : Bytes) (commands : Bytes) =>
+  case (consensusCertificates input) with
+  | 0 (error : BcsError) => apiCodecError error
+  | 1 (certificates : prod (Certificates, BcsReader)) =>
+    case (codecDecode NatPairs (codecList (prod (Nat, Nat)) NatPairs seqNatPairOps (codecPair Nat Nat codecU8 codecU32)) commands) with
+    | 0 (error : BcsError) => apiCodecError error
+    | 1 (actions : prod (NatPairs, BcsReader)) =>
+      let state : prod (Dag, Bytes, Bytes) := listFoldLeft (prod (Nat, Nat)) NatPairs (prod (Dag, Bytes, Bytes)) seqNatPairOps
+        (consensusDagStep certificates.0) (tuple (dagCreate depth, bytesNil, bytesNil)) actions.0 in state.1
+def consensus_recover : Nat -> Nat -> Bytes -> Bytes := fun (depth : Nat) (committed : Nat) (input : Bytes) =>
+  case (consensusCertificates input) with
+  | 0 (error : BcsError) => apiCodecError error
+  | 1 (certificates : prod (Certificates, BcsReader)) =>
+    case (dagRecover depth (roundValue committed) authorityRoundsNil certificates.0) with
+    | 0 (error : DagError) => append b"error:" (dagErrorText error)
+    | 1 (dag : Dag) => consensusDagText dag
+def consensusVotesStep : Committee -> Header -> prod (VoteAggregator, Bytes, Bytes) -> prod (Nat, Nat) -> prod (VoteAggregator, Bytes, Bytes) :=
+  fun (committee : Committee) (header : Header) (state : prod (VoteAggregator, Bytes, Bytes)) (command : prod (Nat, Nat)) =>
+    let vote : Vote := protocolChangedVote command.1 header (secretKeyDerive command.0) in
+    let result : prod (VoteAggregator, VoteAggregation) := voteAggregatorAdd state.0 committee header vote in
+    let output : Bytes :=
+      case result.1 with
+      | 0 (error : CertificateError) => append b"error:" (certificateErrorText error)
+      | 1 (certificate : ValueOption Certificate) =>
+        case certificate with
+        | 0 (unit : prod ()) => b"none"
+        | 1 (value : Certificate) => append b"some:" (headerDigestHex (certificateDigest value))
+    in
+    let voters : Bytes := consensusJoin AuthorityId AuthorityIds seqAuthorityIdOps authorityIdHex b"," (voteAggregatorVoters result.0) in
+    tuple (result.0, append state.1 (append state.2 (append output (append b"|" voters))), b";")
+def consensus_votes : ByteStrings -> Bytes -> Bytes -> Bytes := fun (roster : ByteStrings) (input : Bytes) (commands : Bytes) =>
+  protocolHeaderCommittee input roster (fun (header : Header) (committee : Committee) =>
+    case (codecDecode NatPairs (codecList (prod (Nat, Nat)) NatPairs seqNatPairOps (codecPair Nat Nat codecU64 codecU8)) commands) with
+    | 0 (error : BcsError) => apiCodecError error
+    | 1 (actions : prod (NatPairs, BcsReader)) =>
+      let state : prod (VoteAggregator, Bytes, Bytes) := listFoldLeft (prod (Nat, Nat)) NatPairs (prod (VoteAggregator, Bytes, Bytes)) seqNatPairOps
+        (consensusVotesStep committee header) (tuple (voteAggregatorEmpty, bytesNil, bytesNil)) actions.0 in state.1)
+def consensusParentStep : Committee -> prod (ParentAggregator, Bytes, Bytes) -> Certificate -> prod (ParentAggregator, Bytes, Bytes) :=
+  fun (committee : Committee) (state : prod (ParentAggregator, Bytes, Bytes)) (certificate : Certificate) =>
+    let result : prod (ParentAggregator, ParentRelease) := parentAggregatorAdd state.0 committee certificate in
+    let output : Bytes :=
+      case result.1 with
+      | 0 (unit : prod ()) => b"none"
+      | 1 (release : Nonempty Certificate Certificates) => append b"some:" (consensusCertsText (nonemptyToList Certificate Certificates seqCertificateOps release))
+    in
+    let output : Bytes := append output (append b"|" (append (decimal64 (boolNat (parentAggregatorReachedQuorum result.0 committee)))
+      (append b"|" (consensusCertsText (parentAggregatorPending result.0))))) in
+    tuple (result.0, append state.1 (append state.2 output), b";")
+def consensus_parents : ByteStrings -> Bytes -> Bytes := fun (roster : ByteStrings) (input : Bytes) =>
+  apiWithCommittee roster (fun (committee : Committee) =>
+    case (consensusCertificates input) with
+    | 0 (error : BcsError) => apiCodecError error
+    | 1 (certificates : prod (Certificates, BcsReader)) =>
+      let state : prod (ParentAggregator, Bytes, Bytes) := listFoldLeft Certificate Certificates (prod (ParentAggregator, Bytes, Bytes)) seqCertificateOps
+        (consensusParentStep committee) (tuple (parentAggregatorEmpty, bytesNil, bytesNil)) certificates.0 in state.1)
+def consensusVoterReason : VoterRejectReason -> Bytes := fun (reason : VoterRejectReason) =>
+  match reason as self in VoterRejectReason return Bytes with
+  | voterHeaderInvalid error => append b"header:" (headerValidationText error)
+  | voterRoundZero => b"round_zero"
+  | voterInvalidParentRound => b"parent_round"
+  | voterInquorateParents => b"parent_quorum"
+  | voterNonMonotoneTimestamp => b"parent_time"
+  | voterFutureTimestamp => b"future_time"
+  | voterAlreadyVotedHigher => b"voted_higher"
+  | voterEquivocatingHeader => b"equivocation"
+def consensusVoterDecision : VoterDecision -> Bytes := fun (decision : VoterDecision) =>
+  match decision as self in VoterDecision return Bytes with
+  | voterVoteFresh vote => append b"vote:" (bytesHex (signatureBytes (voteSignature vote)))
+  | voterVoteRecast vote => append b"recast:" (bytesHex (signatureBytes (voteSignature vote)))
+  | voterNeedParents parents => append b"need:" (consensusJoin HeaderDigest HeaderDigests seqHeaderDigestOps headerDigestHex b"," parents)
+  | voterReject reason => append b"reject:" (consensusVoterReason reason)
+def consensusVoterSnapshot : Voter -> Bytes := fun (voter : Voter) =>
+  consensusJoin (prod (AuthorityId, VoterRecord)) VoterEntries seqVoterEntryOps
+    (fun (entry : prod (AuthorityId, VoterRecord)) => append (authorityIdHex entry.0)
+      (append b":" (append (roundShow entry.1.0) (append b":" (headerDigestHex entry.1.1))))) b"," (voterSnapshot voter)
+def consensusVoterStep : Dag -> Timestamp -> Nat -> prod (Voter, Bytes, Bytes) -> Header -> prod (Voter, Bytes, Bytes) :=
+  fun (dag : Dag) (now : Timestamp) (recover : Nat) (state : prod (Voter, Bytes, Bytes)) (header : Header) =>
+    let result : prod (Voter, VoterDecision) := voterVote state.0 dag now header in
+    let output : Bytes := append (consensusVoterDecision result.1) (append b"|" (append (decimal64 (boolNat (voterHasVoted result.0 (headerAuthor header) (headerRound header))))
+      (append b"|" (consensusVoterSnapshot result.0)))) in
+    let next : Voter :=
+      case (natEq recover 1) with
+      | 0 (unit : prod ()) => result.0
+      | 1 (unit : prod ()) =>
+        let f : prod (Committee, SecretKey, AuthorityId, Certificates, VoterEntries) := voterFields result.0 in voterRecover f.0 f.1 f.2 f.3 f.4
+    in tuple (next, append state.1 (append state.2 output), b";")
+def consensus_voter : ByteStrings -> Bytes -> Bytes -> Bytes -> Nat -> Bytes :=
+  fun (roster : ByteStrings) (stored : Bytes) (requests : Bytes) (clock : Bytes) (recover : Nat) =>
+    apiWithCommittee roster (fun (committee : Committee) =>
+      case (consensusCertificates stored) with
+      | 0 (error : BcsError) => apiCodecError error
+      | 1 (certificates : prod (Certificates, BcsReader)) =>
+        case (dagRecover 10 roundGenesis authorityRoundsNil certificates.0) with
+        | 0 (error : DagError) => append b"error:" (dagErrorText error)
+        | 1 (dag : Dag) =>
+          case (codecDecode Headers (codecList Header Headers seqHeaderOps headerCodec) requests) with
+          | 0 (error : BcsError) => apiCodecError error
+          | 1 (headers : prod (Headers, BcsReader)) =>
+            match (timestampParse clock) as parsed in TimestampResult return Bytes with
+            | timestampInvalid => b"error:bad time"
+            | timestampValid now =>
+              let key : SecretKey := secretKeyDerive 1 in
+              let initial : Voter := voterCreate committee key (authorityIdOfPublicKey (secretKeyPublic key)) (certificateGenesis committee) in
+              let final : prod (Voter, Bytes, Bytes) := listFoldLeft Header Headers (prod (Voter, Bytes, Bytes)) seqHeaderOps
+                (consensusVoterStep dag now recover) (tuple (initial, bytesNil, bytesNil)) headers.0 in final.1)

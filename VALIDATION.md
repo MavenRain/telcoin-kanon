@@ -1,6 +1,7 @@
 # Validation
 
-Date: 2026-09-10.
+Foundation audit: 2026-09-10. The audit and artifact hash below describe the
+initial foundation revision. Subsequent work is recorded at the end of this file.
 
 Source: telcoin-ocaml `6b8bafe5ef1bb14376cddea5be6f4222c5720dfe`.
 All 494 selected files and the compiler executable remain hash-matched to
@@ -83,3 +84,64 @@ Rebuilt and reran the six public CLI test groups from the new location;
 all passed, captured in `.kanon-exec/run-B1xPz5`. The previous 49-group
 combined run remains the full-suite evidence. Publication does not mark
 the port complete; PORTING.md records the remaining work.
+
+Continuation, 2026-09-11, in the `port/complete` worktree:
+
+- Consensus foundations: eight groups passed against the actual OCaml DAG,
+  vote and parent aggregators and voter, including recovery and error order.
+  Capture: `.kanon-exec/run-7IfC2c`.
+- Randomness: four groups passed against OCaml ChaCha12, Std_rng and Rand_seq,
+  checking block boundaries, range widths, biased-zone draws, reservoirs and
+  subsequent stream position. Capture: `.kanon-exec/run-9avGd9`.
+- Keccak: two groups passed, including known vectors and Digestif comparisons
+  at 16 message lengths around padding/block boundaries through 1,000 bytes.
+  Capture: `.kanon-exec/run-rLZ5P2`.
+- Commit and proposer behavior: ten groups passed against OCaml, covering
+  reputation scores, leader swaps, sub-DAG wire/preimage/hash behavior,
+  Bullshark insertion and recovery, schedule windows, proposer timers,
+  queued batches and restart behavior. Capture: `.kanon-exec/run-JNgv0O`.
+- Node composition: five groups passed, with 12 transcripts covering voting,
+  offered ancestry, gossip, commit windows and recovery. Capture:
+  `.kanon-exec/run-cvmK1b`.
+- Execution: six groups passed for block/genesis hashes, height bounds, chain,
+  no-op execution, ordered body resolution, reference store and replay. Together
+  with a repeated ten-group commit/proposer run: `.kanon-exec/run-KfEjYd`.
+- Simulator: three groups and 19 seeded transcripts passed, comparing complete
+  committed wire and execution digests, event limits, crashes, loss and batches.
+  Capture `.kanon-exec/run-l3WWwC` also contains two execution fixture failures,
+  subsequently fixed and passed in the execution capture above.
+- U256: three groups, 454 OCaml rows and independent BigInt arithmetic checks
+  passed. Capture: `.kanon-exec/run-fVUaDC`.
+- Account state: six groups and 42 OCaml rows passed, including deployment and
+  delegation precedence, nonce bounds, storage canonicality, genesis allocation,
+  self-transfers, overflow rollback and address narrowing. Capture:
+  `.kanon-exec/run-fsmqK0`.
+- Full source build through account state and the public simulator API passed
+  with 65 exports in `.kanon-exec/run-rasD9L`.
+- Eight public CLI groups and the ten commit/proposer groups passed together in
+  `.kanon-exec/run-GKEnG7`. CLI tests compare six invocations of the actual pinned
+  `bin/tn_sim.ml`, including its default run, reports and exit status. Only the
+  first line changes its project name and separator. The recovery fixture now
+  makes an unexpected recovery error visible instead of falling back silently.
+- The combined suite on a fixed revision is the next publication check.
+
+The larger typed consensus fixtures exceeded the original 120-second compiler
+timeout. The build timeout is now 600 seconds; the validation assertions are
+unchanged. Ordered maps currently use canonical lists, so lookup costs differ
+from OCaml's balanced trees. Proposer configuration uses nonnegative thresholds
+and capacities. Leader-score arithmetic is checked against reachable small
+scores, not arbitrary OCaml host-integer overflow cases.
+
+Test fixture builds use a conservative lexical dependency closure. Three selector
+tests check constructor families, recursion, source order, strings, comments,
+shadowing and rejected ambiguous inputs (`.kanon-exec/run-hhOw9a`). The normal
+build and CLI suite still check every production declaration. No assertions are
+removed by selecting test inputs. Compiler identity and each selected declaration
+are recorded beside fixture artifacts.
+
+The genesis anchor and default aggregate randomness are stored constants checked
+against OCaml. Computing those closed hashes repeatedly during erasure caused
+compiler timeouts; protocol hashing for runtime values remains Kanon code.
+Replay collection stops after the requested maximum-height record. OCaml's
+saturating successor revisits that final height and normally reports a broken
+link. This termination correction is separate from ordinary-range replay parity.

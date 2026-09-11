@@ -1,0 +1,104 @@
+def nodeTestVoteText : Vote -> Bytes := fun (vote : Vote) =>
+  append (headerDigestHex (voteHeaderDigest vote)) (append b":" (append (roundShow (voteRound vote)) (append b":" (append (epochShow (voteEpoch vote))
+    (append b":" (append (authorityIdHex (voteOrigin vote)) (append b":" (append (authorityIdHex (voteAuthor vote)) (append b":" (bytesHex (signatureBytes (voteSignature vote))))))))))))
+def nodeTestCertificateText : Certificate -> Bytes := fun (certificate : Certificate) =>
+  let aggregate : Bytes := case (certificateAggregateSignature certificate) with
+    | 0 (unit : prod ()) => b"none"
+    | 1 (value : Aggregate) => bytesHex (aggregateBytes value) in
+  append (bytesHex (codecWrite Header headerCodec (certificateHeader certificate))) (append b":"
+    (append (consensusJoin AuthorityId AuthorityIds seqAuthorityIdOps authorityIdHex b"," (certificateSigners certificate)) (append b":" aggregate)))
+def nodeTestCommandText : NodeCommand -> Bytes := fun (command : NodeCommand) =>
+  match command as self in NodeCommand return Bytes with
+  | nodeBroadcastHeader header => append b"h:" (bytesHex (codecWrite Header headerCodec header))
+  | nodeSendVote recipient vote => append b"v:" (append (authorityIdHex recipient) (append b":" (nodeTestVoteText vote)))
+  | nodeSendMissingParents recipient digests => append b"m:" (append (authorityIdHex recipient) (append b":" (consensusJoin HeaderDigest HeaderDigests seqHeaderDigestOps headerDigestHex b"," digests)))
+  | nodeBroadcastCertificate certificate => append b"c:" (nodeTestCertificateText certificate)
+  | nodeEmitCommitted value => append b"e:" (bytesHex (codecWrite SubDag subDagCodec value))
+  | nodeArmTimer kind generation delay => append b"t:" (proposerActionText (proposerArmTimer kind generation delay))
+def nodeTestStateText : ConsensusNode -> NodeCommands -> Bytes := fun (node : ConsensusNode) (commands : NodeCommands) =>
+  let snapshot : NodeSnapshot := nodeSnapshot node in
+  let last : Bytes := case snapshot.1 with
+    | 0 (unit : prod ()) => b"none"
+    | 1 (header : Header) => bytesHex (codecWrite Header headerCodec header) in
+  let certificates : Bytes := consensusJoin Certificate Certificates seqCertificateOps (fun (certificate : Certificate) => headerDigestHex (certificateDigest certificate)) b"," snapshot.0 in
+  let votes : Bytes := consensusJoin (prod (AuthorityId, VoterRecord)) VoterEntries seqVoterEntryOps
+    (fun (entry : prod (AuthorityId, VoterRecord)) => append (authorityIdHex entry.0) (append b":" (append (roundShow entry.1.0) (append b":" (headerDigestHex entry.1.1))))) b"," snapshot.2 in
+  append (roundShow (dagCommittedRound (nodeDag node))) (append b"/" (append (roundShow (dagGcRound (nodeDag node)))
+    (append b"/" (append certificates (append b"/" (append last (append b"/" (append votes (append b"/" (consensusJoin NodeCommand NodeCommands seqNodeCommandOps nodeTestCommandText b"|" commands))))))))))
+def nodeTestErrorText : NodeError -> Bytes := fun (error : NodeError) =>
+  match error as self in NodeError return Bytes with
+  | nodeCertificateEquivocation round author => append b"equivocation:" (append (roundShow round) (append b":" (authorityIdHex author)))
+  | nodeMissingParent digest => append b"missing:" (headerDigestHex digest)
+  | nodeMissingParentRound round => append b"round:" (roundShow round)
+def nodeTestBadInput : NodeResult := inj 0 of 2 (nodeMissingParentRound roundGenesis)
+def nodeTestEvent : ConsensusNode -> CommittedLog -> Nat -> Nat -> Bytes -> NodeResult :=
+  fun (node : ConsensusNode) (log : CommittedLog) (window : Nat) (depth : Nat) (raw : Bytes) =>
+    case (codecDecode (prod (Nat, Timestamp, Bytes)) (codecTriple Nat Timestamp Bytes codecU8 timestampCodec codecBytes) raw) with
+    | 0 (error : BcsError) => nodeTestBadInput
+    | 1 (decoded : prod (prod (Nat, Timestamp, Bytes), BcsReader)) =>
+      let event : prod (Nat, Timestamp, Bytes) := decoded.0 in
+      case (natEq event.0 0) with
+      | 1 (unit : prod ()) =>
+        (case (codecDecode (prod (BatchDigest, WorkerId)) (codecPair BatchDigest WorkerId batchDigestCodec proposerWorkerCodec) event.2) with
+        | 0 (error : BcsError) => nodeTestBadInput
+        | 1 (payload : prod (prod (BatchDigest, WorkerId), BcsReader)) => nodeStep node event.1 (nodeOurDigest payload.0.0 payload.0.1))
+      | 0 (unit : prod ()) =>
+        case (natEq event.0 1) with
+        | 1 (unit : prod ()) =>
+          (case (codecDecode (prod (Nat, Header, Headers)) (codecTriple Nat Header Headers codecU64 headerCodec (codecList Header Headers seqHeaderOps headerCodec)) event.2) with
+          | 0 (error : BcsError) => nodeTestBadInput
+          | 1 (payload : prod (prod (Nat, Header, Headers), BcsReader)) =>
+            let parents : Certificates := listMapInto Header Headers Certificate Certificates seqHeaderOps seqCertificateOps (fun (header : Header) => certificateValue header authorityIdsNil certificateGenesisState) payload.0.2 in
+            nodeStep node event.1 (nodeVoteRequest (authorityIdOfPublicKey (secretKeyPublic (secretKeyDerive payload.0.0))) payload.0.1 parents))
+        | 0 (unit : prod ()) =>
+          case (natEq event.0 2) with
+          | 1 (unit : prod ()) =>
+            (case (codecDecode (prod (Nat, Nat)) (codecPair Nat Nat codecU64 codecU8) event.2) with
+            | 0 (error : BcsError) => nodeTestBadInput
+            | 1 (payload : prod (prod (Nat, Nat), BcsReader)) =>
+              case (nodeSnapshot node).1 with
+              | 0 (unit : prod ()) => inj 1 of 2 (tuple (node, nodeCommandsNil))
+              | 1 (header : Header) => nodeStep node event.1 (nodeVoteReceived (protocolChangedVote payload.0.1 header (secretKeyDerive payload.0.0))))
+          | 0 (unit : prod ()) =>
+            case (natEq event.0 3) with
+            | 1 (unit : prod ()) =>
+              (case (codecDecode Header headerCodec event.2) with
+              | 0 (error : BcsError) => nodeTestBadInput
+              | 1 (payload : prod (Header, BcsReader)) => nodeStep node event.1 (nodeCertificateReceived (certificateValue payload.0 authorityIdsNil certificateGenesisState)))
+            | 0 (unit : prod ()) =>
+              case (natEq event.0 4) with
+              | 1 (unit : prod ()) =>
+                (case (codecDecode (prod (Nat, Nat)) (codecPair Nat Nat codecU8 codecU32) event.2) with
+                | 0 (error : BcsError) => nodeTestBadInput
+                | 1 (payload : prod (prod (Nat, Nat), BcsReader)) =>
+                  let kind : ProposerTimer := case (natEq payload.0.0 0) with
+                    | 0 (unit : prod ()) => proposerMaxDelay
+                    | 1 (unit : prod ()) => proposerMinDelay in
+                  nodeStep node event.1 (nodeTimerFired kind payload.0.1))
+              | 0 (unit : prod ()) =>
+                let identity : NodeIdentity := nodeIdentity node in
+                nodeRecover identity.2 identity.1 identity.0 (proposerSettings (nodeData node).0).0 window depth event.1 (nodeSnapshot node) log
+def nodeTestAppendCommitted : CommittedLog -> NodeCommand -> CommittedLog := fun (log : CommittedLog) (command : NodeCommand) =>
+  match command as self in NodeCommand return CommittedLog with
+  | nodeBroadcastHeader header => log
+  | nodeSendVote recipient vote => log
+  | nodeSendMissingParents recipient digests => log
+  | nodeBroadcastCertificate certificate => log
+  | nodeArmTimer kind generation delay => log
+  | nodeEmitCommitted value => committedLogAppend log value
+def node_test : ByteStrings -> Nat -> Nat -> Bytes -> Bytes := fun (roster : ByteStrings) (window : Nat) (depth : Nat) (raw : Bytes) =>
+  match (cryptoCommittee roster) as self in CommitteeResult return Bytes with
+  | committeeError error => b"bad committee"
+  | committeeOk committee =>
+    case (codecDecode ByteStrings (codecList Bytes ByteStrings seqBytesOps codecBytes) raw) with
+    | 0 (error : BcsError) => bcsErrorText error
+    | 1 (events : prod (ByteStrings, BcsReader)) =>
+      let key : SecretKey := secretKeyDerive 1 in
+      let boot : NodeTransition := nodeCreate committee key (authorityIdOfPublicKey (secretKeyPublic key)) (tuple (durationValue 500, durationValue 1000, 2, 2)) window depth timestampZero in
+      let result : prod (ConsensusNode, CommittedLog, Bytes) := listFoldLeft Bytes ByteStrings (prod (ConsensusNode, CommittedLog, Bytes)) seqBytesOps
+        (fun (acc : prod (ConsensusNode, CommittedLog, Bytes)) (event : Bytes) =>
+          case (nodeTestEvent acc.0 acc.1 window depth event) with
+          | 0 (error : NodeError) => tuple (acc.0, acc.1, append acc.2 (append b";error:" (nodeTestErrorText error)))
+          | 1 (next : NodeTransition) =>
+            let log : CommittedLog := listFoldLeft NodeCommand NodeCommands CommittedLog seqNodeCommandOps nodeTestAppendCommitted acc.1 next.1 in
+            tuple (next.0, log, append acc.2 (append b";" (nodeTestStateText next.0 next.1)))) (tuple (boot.0, committedLogEmpty, nodeTestStateText boot.0 boot.1)) events.0 in result.2

@@ -1,0 +1,63 @@
+def SimulatorReport : Type 0 := prod (Bytes, Nat)
+def simulatorReportText : SimulatorReport -> Bytes := fun (report : SimulatorReport) => report.0
+def simulatorReportExit : SimulatorReport -> Nat := fun (report : SimulatorReport) => report.1
+def simServiceShort : AuthorityId -> Bytes := fun (id : AuthorityId) => take 8 (authorityIdHex id)
+def simServiceErrorText : NodeError -> Bytes := fun (error : NodeError) => match error as self in NodeError return Bytes with
+  | nodeCertificateEquivocation round id => append b"certificate equivocation at round " (append (roundShow round) (append b" for " (simServiceShort id)))
+  | nodeMissingParent digest => append b"missing parent " (headerDigestHex digest)
+  | nodeMissingParentRound round => append b"missing parent round " (roundShow round)
+def simServiceAuthorities : Nat -> Authorities := fun (count : Nat) =>
+  let result : prod (Nat, Authorities) := stepsFold (prod (Nat, Authorities)) steps64
+    (fun (acc : prod (Nat, Authorities)) => boolNat (natEq acc.0 count))
+    (fun (acc : prod (Nat, Authorities)) => tuple (natAdd acc.0 1, authoritiesCons (authorityMake (secretKeyPublic (secretKeyDerive acc.0)) addressZero) acc.1))
+    (tuple (0, authoritiesNil)) in seqAuthorityReverse result.1
+def simServiceKey : Nat -> AuthorityId -> SecretKey := fun (count : Nat) (id : AuthorityId) =>
+  let result : prod (Nat, ValueOption SecretKey) := stepsFold (prod (Nat, ValueOption SecretKey)) steps64
+    (fun (acc : prod (Nat, ValueOption SecretKey)) => boolNat (boolOr (natEq acc.0 count) (optionIsSome SecretKey acc.1)))
+    (fun (acc : prod (Nat, ValueOption SecretKey)) => let key : SecretKey := secretKeyDerive acc.0 in
+      let found : ValueOption SecretKey := case (authorityIdEqual id (authorityIdOfPublicKey (secretKeyPublic key))) with
+        | 0 (unit : prod ()) => valueNone SecretKey | 1 (unit : prod ()) => valueSome SecretKey key in tuple (natAdd acc.0 1, found))
+    (tuple (0, valueNone SecretKey)) in
+  case result.1 with | 0 (unit : prod ()) => secretKeyDerive 0 | 1 (key : SecretKey) => key
+def simServiceMembersText : Simulator -> Bytes := fun (state : Simulator) =>
+  let result : prod (Nat, Bytes) := listFoldLeft Authority Authorities (prod (Nat, Bytes)) seqAuthorityOps
+    (fun (acc : prod (Nat, Bytes)) (authority : Authority) => tuple (natAdd acc.0 1, append acc.1
+      (append b"  node " (append (decimal64 acc.0) (append b" (" (append (simServiceShort (authorityId authority))
+        (append b"): " (append (decimal64 (simCommitCount state (authorityId authority))) b" commits\n"))))))))
+    (tuple (0, bytesNil)) (committeeAuthorities (simCommittee state)) in result.1
+def simServiceLeadersText : SubDags -> Bytes := fun (values : SubDags) =>
+  let result : prod (Nat, Bytes) := listFoldLeft SubDag SubDags (prod (Nat, Bytes)) seqSubDagOps
+    (fun (acc : prod (Nat, Bytes)) (value : SubDag) => tuple (natAdd acc.0 1, append acc.1
+      (append b"  [" (append (decimal64 acc.0) (append b"] round " (append (roundShow (subDagLeaderRound value))
+        (append b"  leader " (append (simServiceShort (subDagLeaderAuthor value)) b"\n")))))))) (tuple (0, bytesNil)) values in result.1
+def simServiceAgreement : SimAgreement -> SimulatorReport := fun (agreement : SimAgreement) => match agreement as self in SimAgreement return SimulatorReport with
+  | simAgree count => tuple (append b"agreement: all nodes share a committed prefix of length " (append (decimal64 count) b"\n"), choose (natEq count 0) 1 0)
+  | simDiverge left right index => tuple (append b"DIVERGENCE: " (append (simServiceShort left) (append b" and " (append (simServiceShort right)
+    (append b" disagree at commit index " (append (decimal64 index) b"\n"))))), 1)
+def simServiceReport : Simulator -> Nat -> Nat -> Nat -> SimulatorReport := fun (state : Simulator) (count : Nat) (seed : Nat) (seconds : Nat) =>
+  let seedText : Bytes := case (natLt seed 9223372036854775808) with | 1 (unit : prod ()) => decimal64 seed | 0 (unit : prod ()) => append b"-" (decimal64 (natSub wordModulus seed)) in
+  let heading : Bytes := append b"telcoin-kanon simulator: " (append (decimal64 count) (append b" validators, seed " (append seedText (append b", " (append (decimal64 seconds) b" s horizon\n"))))) in
+  let delivered : Bytes := append b"delivered " (append (decimal64 (simSteps state)) (append b" events over " (append (decimal64 (simClock state)) b" ms of simulated time\n"))) in
+  let fatal : Bytes := case (simError state) with | 0 (unit : prod ()) => bytesNil
+    | 1 (entry : prod (AuthorityId, NodeError)) => append b"FATAL invariant break at node " (append (simServiceShort entry.0) (append b": " (append (simServiceErrorText entry.1) b"\n"))) in
+  let agreement : SimulatorReport := simServiceAgreement (simAgreement state) in
+  let first : AuthorityId := authorityId (committeeFirst (simCommittee state)) in
+  let tip : Bytes := case (simExecutionTip state first) with | 0 (unit : prod ()) => b"(none)"
+    | 1 (block : ConsensusBlock) => append b"#" (append (consensusBlockNumberText (consensusBlockNumberOf block)) (append b" " (outputDigestHex (consensusBlockDigest block)))) in
+  let chain : Bytes := append b"consensus chain (node 0): " (append (decimal64 (seqConsensusBlockLength (simExecuted state first))) (append b" blocks; tip " (append tip b"\n"))) in
+  let leaders : Bytes := append b"committed leader sequence (node 0):\n" (append (simServiceLeadersText (simCommitted state first)) chain) in
+  let details : Bytes := append delivered (append (simServiceMembersText state) (append fatal (append agreement.0 leaders))) in
+  tuple (append heading details, choose (optionIsSome (prod (AuthorityId, NodeError)) (simError state)) 1 agreement.1)
+def apiSimulatorRun : Bytes -> Bytes -> Bytes -> SimulatorReport := fun (countText : Bytes) (seedRaw : Bytes) (secondsText : Bytes) =>
+  match (parseU64 countText) as countParsed in NatOption return SimulatorReport with | natNone => tuple (b"Invalid validator count.\n", 1)
+  | natSome countInput => match (parseU64 secondsText) as secondsParsed in NatOption return SimulatorReport with | natNone => tuple (b"Invalid horizon.\n", 1)
+    | natSome secondsInput =>
+      let count : Nat := maxNat 2 countInput in let seconds : Nat := maxNat 1 secondsInput in
+      case (boolOr (natLt hostIntMax count) (natLt (quotient64 hostIntMax 1000) seconds)) with
+      | 1 (unit : prod ()) => tuple (b"Simulation configuration exceeds the source integer range.\n", 1)
+      | 0 (unit : prod ()) => case (codecDecode Nat codecU64 seedRaw) with | 0 (error : BcsError) => tuple (append (bcsErrorText error) b"\n", 1)
+        | 1 (decoded : prod (Nat, BcsReader)) => match (committeeCreate epochZero (simServiceAuthorities count)) as created in CommitteeResult return SimulatorReport with
+          | committeeError error => tuple (append (committeeErrorText error) b"\n", 1)
+          | committeeOk committee =>
+            let config : SimConfig := simConfig (durationValue 5) (durationValue 50) (durationValue (natMul seconds 1000)) 1000000 decoded.0 authorityIdsNil 0 (valueNone SimBatchPlan) in
+            simServiceReport (simRun (simCreate committee (simServiceKey count) proposerDefaultConfig 100 50 config)) count decoded.0 seconds

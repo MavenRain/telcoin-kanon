@@ -96,13 +96,48 @@ const cryptoFamilies = [
   ['AuthorityIds', 'seqAuthorityId', 'AuthorityId', 'authorityIdsNil', 'authorityIdsCons', true],
   ['HeaderDigests', 'seqHeaderDigest', 'HeaderDigest', 'headerDigestsNil', 'headerDigestsCons', true],
   ['BatchWorkers', 'seqBatchWorker', 'prod (BatchDigest, WorkerId)', 'batchWorkersNil', 'batchWorkersCons', true],
+  ['AuthorityRounds', 'seqAuthorityRound', 'prod (AuthorityId, Round)', 'authorityRoundsNil', 'authorityRoundsCons', true],
+  ['VoterEntries', 'seqVoterEntry', 'prod (AuthorityId, prod (Round, HeaderDigest))', 'voterEntriesNil', 'voterEntriesCons', true],
+  ['AuthorityScores', 'seqAuthorityScore', 'prod (AuthorityId, Nat)', 'authorityScoresNil', 'authorityScoresCons', true],
+  ['BatchDigests', 'seqBatchDigest', 'BatchDigest', 'batchDigestsNil', 'batchDigestsCons', true],
 ];
 const vertexFamilies = [
+  ['Batches', 'seqBatch', 'Batch', 'batchesNil', 'batchesCons', true],
   ['Votes', 'seqVote', 'Vote', 'votesNil', 'votesCons', true],
   ['Headers', 'seqHeader', 'Header', 'headersNil', 'headersCons', true],
   ['Certificates', 'seqCertificate', 'Certificate', 'certificatesNil', 'certificatesCons', true],
 ];
-for (const [name, group] of [['collections', families], ['crypto_collections', cryptoFamilies], ['vertex_collections', vertexFamilies]]) {
+const consensusFamilies = [
+  ['SubDags', 'seqSubDag', 'SubDag', 'subDagsNil', 'subDagsCons', true],
+  ['LeaderCertificates', 'seqLeaderCertificate', 'prod (LeaderRound, Certificate)', 'leaderCertificatesNil', 'leaderCertificatesCons', true],
+];
+const machineFamilies = [
+  ['ProposerActions', 'seqProposerAction', 'ProposerAction', 'proposerActionsNil', 'proposerActionsCons', true],
+  ['ParentAggregators', 'seqParentAggregator', 'prod (Round, ParentAggregator)', 'parentAggregatorsNil', 'parentAggregatorsCons', true],
+];
+const nodeFamilies = [
+  ['NodeCommands', 'seqNodeCommand', 'NodeCommand', 'nodeCommandsNil', 'nodeCommandsCons', true],
+  ['NodeEvents', 'seqNodeEvent', 'NodeEvent', 'nodeEventsNil', 'nodeEventsCons', true],
+];
+const executionFamilies = [
+  ['ConsensusBlocks', 'seqConsensusBlock', 'ConsensusBlock', 'consensusBlocksNil', 'consensusBlocksCons', true],
+  ['ConsensusRecords', 'seqConsensusRecord', 'ConsensusRecord', 'consensusRecordsNil', 'consensusRecordsCons', true],
+  ['ReplayRecords', 'seqReplayRecord', 'prod (ConsensusBlock, Batches)', 'replayRecordsNil', 'replayRecordsCons', true],
+];
+const simFamilies = [
+  ['SimNodes', 'seqSimNode', 'prod (AuthorityId, ConsensusNode)', 'simNodesNil', 'simNodesCons', true],
+  ['SimLogs', 'seqSimLog', 'prod (AuthorityId, SubDags)', 'simLogsNil', 'simLogsCons', true],
+  ['SimStartups', 'seqSimStartup', 'prod (AuthorityId, NodeCommands)', 'simStartupsNil', 'simStartupsCons', true],
+  ['SimQueue', 'seqSimQueue', 'prod (Nat, Nat, AuthorityId, NodeEvent)', 'simQueueNil', 'simQueueCons', true],
+];
+const storageFamilies = [['StorageSlots', 'seqStorageSlot', 'prod (U256, U256)', 'storageSlotsNil', 'storageSlotsCons', true]];
+const stateFamilies = [
+  ['Transfers', 'seqTransfer', 'Transfer', 'transfersNil', 'transfersCons', true],
+  ['WorldAccounts', 'seqWorldAccount', 'prod (Address, Account)', 'worldAccountsNil', 'worldAccountsCons', true],
+  ['GenesisEntries', 'seqGenesisEntry', 'prod (Address, GenesisAccount)', 'genesisEntriesNil', 'genesisEntriesCons', true],
+  ['AddressBalances', 'seqAddressBalance', 'prod (Address, U256)', 'addressBalancesNil', 'addressBalancesCons', true],
+];
+for (const [name, group] of [['collections', families], ['crypto_collections', cryptoFamilies], ['vertex_collections', vertexFamilies], ['consensus_collections', consensusFamilies], ['machine_collections', machineFamilies], ['node_collections', nodeFamilies], ['execution_collections', executionFamilies], ['sim_collections', simFamilies], ['storage_collections', storageFamilies], ['state_collections', stateFamilies]]) {
   const output = renderCollections(group);
   const destination = resolve(root, `src/${name}.kan`);
   if (process.argv.includes('--check')) {

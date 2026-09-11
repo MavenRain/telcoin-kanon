@@ -1,0 +1,89 @@
+-- ChaCha12 with the rand 0.9 stream-zero, 64-bit counter layout.
+def ChaChaRow : Type 0 := prod (Nat, Nat, Nat, Nat)
+def ChaChaBlock : Type 0 := prod (ChaChaRow, ChaChaRow, ChaChaRow, ChaChaRow)
+def chachaQuarter : ChaChaRow -> ChaChaRow := fun (lane : ChaChaRow) =>
+  let a : Nat := wordAdd32 lane.0 lane.1 in
+  let d : Nat := wordRotate32 (wordXor32 lane.3 a) 65536 65536 in
+  let c : Nat := wordAdd32 lane.2 d in
+  let b : Nat := wordRotate32 (wordXor32 lane.1 c) 1048576 4096 in
+  let aa : Nat := wordAdd32 a b in
+  let dd : Nat := wordRotate32 (wordXor32 d aa) 16777216 256 in
+  let cc : Nat := wordAdd32 c dd in
+  let bb : Nat := wordRotate32 (wordXor32 b cc) 33554432 128 in
+  tuple (aa, bb, cc, dd)
+def chachaColumns : ChaChaBlock -> ChaChaBlock := fun (s : ChaChaBlock) =>
+  let a : ChaChaRow := chachaQuarter (tuple (s.0.0, s.1.0, s.2.0, s.3.0)) in
+  let b : ChaChaRow := chachaQuarter (tuple (s.0.1, s.1.1, s.2.1, s.3.1)) in
+  let c : ChaChaRow := chachaQuarter (tuple (s.0.2, s.1.2, s.2.2, s.3.2)) in
+  let d : ChaChaRow := chachaQuarter (tuple (s.0.3, s.1.3, s.2.3, s.3.3)) in
+  tuple (tuple (a.0, b.0, c.0, d.0), tuple (a.1, b.1, c.1, d.1), tuple (a.2, b.2, c.2, d.2), tuple (a.3, b.3, c.3, d.3))
+def chachaDiagonal : ChaChaBlock -> ChaChaBlock := fun (s : ChaChaBlock) =>
+  tuple (s.0, tuple (s.1.1, s.1.2, s.1.3, s.1.0), tuple (s.2.2, s.2.3, s.2.0, s.2.1), tuple (s.3.3, s.3.0, s.3.1, s.3.2))
+def chachaUndiagonal : ChaChaBlock -> ChaChaBlock := fun (s : ChaChaBlock) =>
+  tuple (s.0, tuple (s.1.3, s.1.0, s.1.1, s.1.2), tuple (s.2.2, s.2.3, s.2.0, s.2.1), tuple (s.3.1, s.3.2, s.3.3, s.3.0))
+def chachaDouble : ChaChaBlock -> ChaChaBlock := fun (s : ChaChaBlock) =>
+  chachaUndiagonal (chachaColumns (chachaDiagonal (chachaColumns s)))
+def chachaAddRow : ChaChaRow -> ChaChaRow -> ChaChaRow := fun (a : ChaChaRow) (b : ChaChaRow) =>
+  tuple (wordAdd32 a.0 b.0, wordAdd32 a.1 b.1, wordAdd32 a.2 b.2, wordAdd32 a.3 b.3)
+def chachaRowList : ChaChaRow -> Nats -> Nats := fun (row : ChaChaRow) (tail : Nats) =>
+  natsCons row.0 (natsCons row.1 (natsCons row.2 (natsCons row.3 tail)))
+def chachaBlock : Blake8 -> Nat -> Nats := fun (key : Blake8) (counter : Nat) =>
+  let initial : ChaChaBlock := tuple (tuple (1634760805, 857760878, 2036477234, 1797285236),
+    tuple (key.0, key.1, key.2, key.3), tuple (key.4, key.5, key.6, key.7),
+    tuple (divRemainder (divide64 counter 4294967296), quotient64 counter 4294967296, 0, 0)) in
+  let s : ChaChaBlock := chachaDouble (chachaDouble (chachaDouble (chachaDouble (chachaDouble (chachaDouble initial))))) in
+  chachaRowList (chachaAddRow initial.0 s.0) (chachaRowList (chachaAddRow initial.1 s.1)
+    (chachaRowList (chachaAddRow initial.2 s.2) (chachaRowList (chachaAddRow initial.3 s.3) natsNil)))
+mu StdRng : Type 0 :=
+| stdRngState (key : Blake8) (counter : Nat) (buffer : Nats) : StdRng
+def stdRngOfBytes : Bytes -> StdRng := fun (seed : Bytes) =>
+  let words : Blake16 := blakeMessage seed in
+  stdRngState (tuple (words.0, words.1, words.2, words.3, words.4, words.5, words.6, words.7)) 0 natsNil
+def stdRngOfRandomness : Hash32 -> StdRng := fun (seed : Hash32) => stdRngOfBytes (hash32Bytes seed)
+def stdRngOfLeaderRound : Nat -> StdRng := fun (round : Nat) =>
+  stdRngState (tuple (0, 0, 0, 0, 0, 0, divRemainder (divide64 round 4294967296), quotient64 round 4294967296)) 0 natsNil
+def stdRngNext32 : StdRng -> prod (Nat, StdRng) := fun (rng : StdRng) =>
+  match rng as self in StdRng return prod (Nat, StdRng) with
+  | stdRngState key counter buffer =>
+    match buffer as self in Nats return prod (Nat, StdRng) with
+    | natsCons head tail => tuple (head, stdRngState key counter tail)
+    | natsNil =>
+      match (chachaBlock key counter) as self in Nats return prod (Nat, StdRng) with
+      | natsNil => tuple (0, stdRngState key counter natsNil)
+      | natsCons head tail => tuple (head, stdRngState key (wordAdd64 counter 1) tail)
+def stdRngNext64 : StdRng -> prod (Nat, StdRng) := fun (rng : StdRng) =>
+  let low : prod (Nat, StdRng) := stdRngNext32 rng in
+  let high : prod (Nat, StdRng) := stdRngNext32 low.1 in
+  tuple (natAdd low.0 (natMul high.0 4294967296), high.1)
+-- Canon's biased inclusive sampler must preserve its conditional second draw.
+def stdRngSample32 : StdRng -> Nat -> prod (Nat, StdRng) := fun (rng : StdRng) (range : Nat) =>
+  let draw : prod (Nat, StdRng) := stdRngNext32 rng in
+  let product : DivResult := divide64 (natMul draw.0 range) 4294967296 in
+  case (natLt (natSub 4294967296 range) (divRemainder product)) with
+  | 0 (unit : prod ()) => tuple (divQuotient product, draw.1)
+  | 1 (unit : prod ()) =>
+    let second : prod (Nat, StdRng) := stdRngNext32 draw.1 in
+    let high : Nat := quotient64 (natMul second.0 range) 4294967296 in
+    tuple (natAdd (divQuotient product) (boolNat (natLt 4294967295 (natAdd (divRemainder product) high))), second.1)
+def stdRngSample64 : StdRng -> Nat -> prod (Nat, StdRng) := fun (rng : StdRng) (range : Nat) =>
+  let draw : prod (Nat, StdRng) := stdRngNext64 rng in
+  let product : DivResult := divide64 (natMul draw.0 range) wordModulus in
+  case (natLt (natSub wordModulus range) (divRemainder product)) with
+  | 0 (unit : prod ()) => tuple (divQuotient product, draw.1)
+  | 1 (unit : prod ()) =>
+    let second : prod (Nat, StdRng) := stdRngNext64 draw.1 in
+    let high : Nat := quotient64 (natMul second.0 range) wordModulus in
+    tuple (natAdd (divQuotient product) (boolNat (natLt u64Max (natAdd (divRemainder product) high))), second.1)
+def stdRngRange : StdRng -> Nat -> prod (Nat, StdRng) := fun (rng : StdRng) (bound : Nat) =>
+  case (natLt bound 4294967296) with
+  | 1 (unit : prod ()) =>
+    (case (natEq bound 4294967295) with
+    | 0 (unit : prod ()) => stdRngSample32 rng (natAdd bound 1)
+    | 1 (unit : prod ()) => stdRngNext32 rng)
+  | 0 (unit : prod ()) => stdRngSample64 rng (natAdd bound 1)
+mu StdRngError : Type 0 :=
+| stdRngNegativeBound (magnitude : Nat) : StdRngError
+def stdRngRangeInclusive : StdRng -> HostInt -> sum (StdRngError, prod (Nat, StdRng)) := fun (rng : StdRng) (bound : HostInt) =>
+  match bound as self in HostInt return sum (StdRngError, prod (Nat, StdRng)) with
+  | hostIntNegative magnitude => inj 0 of 2 (stdRngNegativeBound magnitude)
+  | hostIntPositive value => inj 1 of 2 (stdRngRange rng value)

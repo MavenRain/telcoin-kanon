@@ -1,0 +1,27 @@
+-- Config fields: min delay, max delay, batch threshold, per-header batch cap.
+def ProposerConfig : Type 0 := prod (Duration, Duration, Nat, Nat)
+def proposerDefaultConfig : ProposerConfig := tuple (durationValue 500, durationValue 1000, 32, 1000)
+mu ProposerTimer : Type 0 :=
+| proposerMinDelay : ProposerTimer
+| proposerMaxDelay : ProposerTimer
+mu ProposerInput : Type 0 :=
+| proposerOurDigest (batch : BatchDigest) (worker : WorkerId) : ProposerInput
+| proposerParents (certificates : Certificates) (round : Round) : ProposerInput
+| proposerTimerFired (kind : ProposerTimer) (generation : Nat) : ProposerInput
+| proposerCommittedHeaders (rounds : Nats) : ProposerInput
+mu ProposerAction : Type 0 :=
+| proposerAckDigest : ProposerAction
+| proposerBroadcastHeader (header : Header) : ProposerAction
+| proposerArmTimer (kind : ProposerTimer) (generation : Nat) (delay : Duration) : ProposerAction
+def ProposerSettings : Type 0 := prod (ProposerConfig, Committee, AuthorityId, LeaderSchedule)
+-- State fields: round, generation, parents, queue, proposed, last proposal,
+-- last leader, readiness gate, min timeout, max timeout.
+def ProposerData : Type 0 := prod (Round, Nat, Certificates, BatchWorkers, Headers, ValueOption Header, ValueOption Certificate, Bool, Bool, Bool)
+mu Proposer : Type 0 :=
+| proposerValue (settings : ProposerSettings) (data : ProposerData) : Proposer
+def proposerSettings : Proposer -> ProposerSettings := fun (state : Proposer) =>
+  match state as self in Proposer return ProposerSettings with
+  | proposerValue settings data => settings
+def proposerData : Proposer -> ProposerData := fun (state : Proposer) =>
+  match state as self in Proposer return ProposerData with
+  | proposerValue settings data => data

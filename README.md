@@ -4,13 +4,15 @@ A Kanon port of `telcoin-ocaml`, pinned to chunk 44 at
 `6b8bafe5ef1bb14376cddea5be6f4222c5720dfe`.
 
 The port is incomplete. Implemented code includes BCS primitive and composite
-codecs, generic nonempty operations, SplitMix64, scalar and digest types,
-simulation crypto, authorities and committees, batches, execution anchors,
-headers, votes and certificates. Protocol behavior runs in Kanon compiled to
+codecs, generic nonempty operations, SplitMix64, ChaCha12, Keccak-256, scalar
+and digest types, simulation crypto, authorities and committees, batches,
+headers, votes, certificates, DAG and voting state, leader scheduling,
+sub-DAG commits, proposer and node composition, the deterministic simulator,
+consensus-chain execution and replay, U256 and account state. Protocol behavior runs in Kanon compiled to
 WasmGC. JavaScript transports bytes and supplies the CLI and test harness.
 
-Consensus reducers and the simulator, execution/EVM, production crypto,
-durability and networking remain. The source has 178 implementation modules
+The EVM, execution driver, production crypto, durability and networking
+remain. The source has 178 implementation modules
 across 25 libraries. [PORTING.md](PORTING.md) records module coverage and the
 next acceptance target. [VALIDATION.md](VALIDATION.md) records tested behavior.
 
@@ -24,6 +26,7 @@ The project uses its own root variable because capture tools reserve
 
 ```sh
 npm run build
+sh bin/telcoin-kanon simulate --validators 4 --seed 42 --until-s 20
 sh bin/telcoin-kanon bcs encode u64 18446744073709551615
 # ffffffffffffffff
 sh bin/telcoin-kanon bcs normalize set-u8 050302030101
@@ -74,10 +77,10 @@ runtime shared-library search paths.
 With the installed compact tools:
 
 ```sh
-kanoncho test --test-concurrency=1 test/foundation.test.mjs test/composite.test.mjs test/std.test.mjs test/blake2s.test.mjs test/crypto.test.mjs test/protocol.test.mjs test/cli.test.mjs
+kanon-wait run -- kanon-exec run --budget 4000 -- npm test
 ```
 
-The ordinary `npm test` runs these same files sequentially.
+The ordinary `npm test` runs all listed suites sequentially.
 
 ## Semantics and limitations
 

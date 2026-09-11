@@ -6,9 +6,9 @@
   "license": "MIT OR Apache-2.0",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "node --test --test-concurrency=1 test/foundation.test.mjs test/composite.test.mjs test/std.test.mjs test/blake2s.test.mjs test/crypto.test.mjs test/protocol.test.mjs test/cli.test.mjs",
+    "test": "node --test --test-concurrency=1 test/source-closure.test.mjs test/foundation.test.mjs test/composite.test.mjs test/std.test.mjs test/blake2s.test.mjs test/crypto.test.mjs test/protocol.test.mjs test/consensus.test.mjs test/rand.test.mjs test/keccak.test.mjs test/commit.test.mjs test/node.test.mjs test/execution.test.mjs test/sim.test.mjs test/u256.test.mjs test/state.test.mjs test/cli.test.mjs",
     "inventory": "node scripts/inventory.mjs",
-    "collections:check": "node scripts/collections.mjs --check",
+    "collections:check": "node scripts/collections.mjs --check && node scripts/keccak.mjs --check",
     "roadmap": "node scripts/roadmap.mjs"
   }
 }

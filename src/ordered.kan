@@ -1,0 +1,43 @@
+-- Persistent ordered associations share the same typed sequence interface.
+def listAppend : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> L -> L -> L :=
+  fun (0 A : Type 0) (0 L : Type 0) (ops : ListOps A L) (left : L) (right : L) =>
+    listFoldLeft A L L ops (fun (acc : L) (value : A) => ops.1 value acc) right (ops.2 left)
+def optionIsSome : (0 A : Type 0) -> ValueOption A -> Bool := fun (0 A : Type 0) (value : ValueOption A) =>
+  case value with
+  | 0 (unit : prod ()) => natEq 0 1
+  | 1 (item : A) => natEq 0 0
+def listFilter : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> (A -> Bool) -> L -> L :=
+  fun (0 A : Type 0) (0 L : Type 0) (ops : ListOps A L) (keep : A -> Bool) (values : L) =>
+    ops.2 (listFoldLeft A L L ops (fun (acc : L) (value : A) =>
+      case (keep value) with
+      | 0 (unit : prod ()) => acc
+      | 1 (unit : prod ()) => ops.1 value acc) ops.0 values)
+def listFind : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> (A -> Bool) -> L -> ValueOption A :=
+  fun (0 A : Type 0) (0 L : Type 0) (ops : ListOps A L) (accept : A -> Bool) (values : L) =>
+    listFoldLeft A L (ValueOption A) ops (fun (found : ValueOption A) (value : A) =>
+      case found with
+      | 1 (previous : A) => found
+      | 0 (unit : prod ()) =>
+        case (accept value) with
+        | 0 (unit : prod ()) => found
+        | 1 (unit : prod ()) => valueSome A value) (valueNone A) values
+def listAll : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> (A -> Bool) -> L -> Bool :=
+  fun (0 A : Type 0) (0 L : Type 0) (ops : ListOps A L) (accept : A -> Bool) (values : L) =>
+    listFoldLeft A L Bool ops (fun (acc : Bool) (value : A) => boolAnd acc (accept value)) (natEq 0 0) values
+def mapLookup : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> ListOps (prod (K, V)) L -> (K -> K -> Bool) -> K -> L -> ValueOption V :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (ops : ListOps (prod (K, V)) L) (equal : K -> K -> Bool) (key : K) (entries : L) =>
+    case (listFind (prod (K, V)) L ops (fun (entry : prod (K, V)) => equal key entry.0) entries) with
+    | 0 (unit : prod ()) => valueNone V
+    | 1 (entry : prod (K, V)) => valueSome V entry.1
+def orderingEqual : Ordering -> Bool := fun (order : Ordering) =>
+  match order as self in Ordering return Bool with
+  | orderLess => natEq 0 1
+  | orderEqual => natEq 0 0
+  | orderGreater => natEq 0 1
+def mapRemove : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> ListOps (prod (K, V)) L -> (K -> K -> Ordering) -> K -> L -> L :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (ops : ListOps (prod (K, V)) L) (compare : K -> K -> Ordering) (key : K) (entries : L) =>
+    listFilter (prod (K, V)) L ops (fun (entry : prod (K, V)) => natEq (boolNat (orderingEqual (compare key entry.0))) 0) entries
+def mapAdd : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> ListOps (prod (K, V)) L -> (K -> K -> Ordering) -> K -> V -> L -> L :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (ops : ListOps (prod (K, V)) L) (compare : K -> K -> Ordering) (key : K) (value : V) (entries : L) =>
+    ops.7 (fun (a : prod (K, V)) (b : prod (K, V)) => compare a.0 b.0)
+      (ops.1 (tuple (key, value)) (mapRemove K V L ops compare key entries))

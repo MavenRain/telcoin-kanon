@@ -1,0 +1,151 @@
+def simQueueCompare : prod (Nat, Nat, AuthorityId, NodeEvent) -> prod (Nat, Nat, AuthorityId, NodeEvent) -> Ordering :=
+  fun (a : prod (Nat, Nat, AuthorityId, NodeEvent)) (b : prod (Nat, Nat, AuthorityId, NodeEvent)) =>
+    case (natEq a.0 b.0) with
+    | 0 (unit : prod ()) => (case (natLt a.0 b.0) with | 0 (unit : prod ()) => orderGreater | 1 (unit : prod ()) => orderLess)
+    | 1 (unit : prod ()) => case (natEq a.1 b.1) with
+      | 1 (unit : prod ()) => orderEqual
+      | 0 (unit : prod ()) => case (natLt a.1 b.1) with | 0 (unit : prod ()) => orderGreater | 1 (unit : prod ()) => orderLess
+def simSchedule : Simulator -> Nat -> AuthorityId -> NodeEvent -> Simulator := fun (state : Simulator) (delay : Nat) (target : AuthorityId) (event : NodeEvent) =>
+  let network : SimNetwork := state.1 in
+  let queue : SimQueue := seqSimQueueInsert network.1 simQueueCompare (tuple (natAdd network.2 delay, network.3, target, event)) in
+  tuple (state.0, tuple (network.0, queue, network.2, natAdd network.3 1, network.4, network.5), state.2)
+def simLatency : Simulator -> AuthorityId -> NodeEvent -> Simulator := fun (state : Simulator) (target : AuthorityId) (event : NodeEvent) =>
+  let draw : PrngDraw := prngNext state.1.4 in
+  let config : SimConfig := simSettings state in
+  let delay : Nat := case (natLt config.0 config.1) with
+    | 0 (unit : prod ()) => config.0
+    | 1 (unit : prod ()) => natAdd config.0 (remainder64 (prngDrawValue draw) (natAdd (natSub config.1 config.0) 1)) in
+  let network : SimNetwork := state.1 in
+  simSchedule (tuple (state.0, tuple (network.0, network.1, network.2, network.3, prngDrawState draw, network.5), state.2)) delay target event
+def simUnicast : Simulator -> AuthorityId -> NodeEvent -> Simulator := fun (state : Simulator) (target : AuthorityId) (event : NodeEvent) =>
+  case (natEq (simSettings state).6 0) with
+  | 1 (unit : prod ()) => simLatency state target event
+  | 0 (unit : prod ()) =>
+    let draw : PrngDraw := prngNext state.1.5 in
+    let network : SimNetwork := state.1 in
+    let next : Simulator := tuple (state.0, tuple (network.0, network.1, network.2, network.3, network.4, prngDrawState draw), state.2) in
+    case (natLt (remainder64 (prngDrawValue draw) 1000) (simSettings state).6) with
+    | 1 (unit : prod ()) => next
+    | 0 (unit : prod ()) => simLatency next target event
+def simBroadcast : Simulator -> AuthorityId -> NodeEvent -> Simulator := fun (state : Simulator) (src : AuthorityId) (event : NodeEvent) =>
+  listFoldLeft Authority Authorities Simulator seqAuthorityOps (fun (acc : Simulator) (authority : Authority) =>
+    case (authorityIdEqual src (authorityId authority)) with
+    | 1 (unit : prod ()) => acc
+    | 0 (unit : prod ()) => simUnicast acc (authorityId authority) event) state (committeeAuthorities (simCommittee state))
+def simCertificate : Simulator -> HeaderDigest -> ValueOption Certificate := fun (state : Simulator) (digest : HeaderDigest) =>
+  listFind Certificate Certificates seqCertificateOps (fun (certificate : Certificate) => headerDigestEqual (certificateDigest certificate) digest) state.1.0
+def simResolveParents : Simulator -> Header -> Certificates := fun (state : Simulator) (header : Header) =>
+  seqCertificateReverse (listFoldLeft HeaderDigest HeaderDigests Certificates seqHeaderDigestOps (fun (acc : Certificates) (digest : HeaderDigest) =>
+    case (simCertificate state digest) with | 0 (unit : prod ()) => acc | 1 (certificate : Certificate) => certificatesCons certificate acc) certificatesNil (headerParents header))
+def simStoredLog : Simulator -> AuthorityId -> SubDags := fun (state : Simulator) (id : AuthorityId) =>
+  case (mapLookup AuthorityId SubDags SimLogs seqSimLogOps authorityIdEqual id state.2.1) with
+  | 0 (unit : prod ()) => subDagsNil
+  | 1 (values : SubDags) => values
+def simInterpret : Simulator -> AuthorityId -> NodeCommand -> Simulator := fun (state : Simulator) (src : AuthorityId) (command : NodeCommand) =>
+  match command as self in NodeCommand return Simulator with
+  | nodeBroadcastHeader header => simBroadcast state src (nodeVoteRequest src header (simResolveParents state header))
+  | nodeSendVote recipient vote => simUnicast state recipient (nodeVoteReceived vote)
+  | nodeSendMissingParents recipient digests =>
+    listFoldLeft HeaderDigest HeaderDigests Simulator seqHeaderDigestOps (fun (acc : Simulator) (digest : HeaderDigest) =>
+      case (simCertificate acc digest) with | 0 (unit : prod ()) => acc | 1 (certificate : Certificate) => simUnicast acc src (nodeCertificateReceived certificate)) state digests
+  | nodeBroadcastCertificate certificate =>
+    let network : SimNetwork := state.1 in
+    let certs : Certificates := certificatesCons certificate (listFilter Certificate Certificates seqCertificateOps
+      (fun (other : Certificate) => boolNot (headerDigestEqual (certificateDigest certificate) (certificateDigest other))) network.0) in
+    simBroadcast (tuple (state.0, tuple (certs, network.1, network.2, network.3, network.4, network.5), state.2)) src (nodeCertificateReceived certificate)
+  | nodeArmTimer kind generation delay => simSchedule state (durationNat delay) src (nodeTimerFired kind generation)
+  | nodeEmitCommitted value =>
+    let progress : SimProgress := state.2 in
+    let logs : SimLogs := mapAdd AuthorityId SubDags SimLogs seqSimLogOps authorityIdCompare src (subDagsCons value (simStoredLog state src)) progress.1 in
+    tuple (state.0, state.1, tuple (progress.0, logs, progress.2, progress.3, progress.4))
+def simInterpretAll : Simulator -> AuthorityId -> NodeCommands -> Simulator := fun (state : Simulator) (src : AuthorityId) (commands : NodeCommands) =>
+  listFoldLeft NodeCommand NodeCommands Simulator seqNodeCommandOps (fun (acc : Simulator) (command : NodeCommand) => simInterpret acc src command) state commands
+def simDeliver : Simulator -> AuthorityId -> NodeEvent -> Simulator := fun (state : Simulator) (target : AuthorityId) (event : NodeEvent) =>
+  case (simIsCrashed state target) with
+  | 1 (unit : prod ()) => state
+  | 0 (unit : prod ()) =>
+    case (mapLookup AuthorityId ConsensusNode SimNodes seqSimNodeOps authorityIdEqual target state.2.0) with
+    | 0 (unit : prod ()) => state
+    | 1 (node : ConsensusNode) =>
+      let progress : SimProgress := state.2 in
+      case (nodeStep node (simTimestamp (simClock state)) event) with
+      | 0 (error : NodeError) => tuple (state.0, state.1, tuple (progress.0, progress.1, progress.2, progress.3, valueSome (prod (AuthorityId, NodeError)) (tuple (target, error))))
+      | 1 (next : NodeTransition) =>
+        let nodes : SimNodes := mapAdd AuthorityId ConsensusNode SimNodes seqSimNodeOps authorityIdCompare target next.0 progress.0 in
+        simInterpretAll (tuple (state.0, state.1, tuple (nodes, progress.1, progress.2, progress.3, progress.4))) target next.1
+def simStopped : Simulator -> Nat := fun (state : Simulator) =>
+  case (boolOr (optionIsSome (prod (AuthorityId, NodeError)) (simError state)) (boolNot (natLt (simSteps state) (simSettings state).3))) with
+  | 1 (unit : prod ()) => 1
+  | 0 (unit : prod ()) => case (seqSimQueueHead state.1.1) with
+    | 0 (unit : prod ()) => 1
+    | 1 (scheduled : prod (Nat, Nat, AuthorityId, NodeEvent)) => boolNat (natLt (simSettings state).2 scheduled.0)
+def simTick : Simulator -> Simulator := fun (state : Simulator) =>
+  case (seqSimQueueHead state.1.1) with
+  | 0 (unit : prod ()) => state
+  | 1 (scheduled : prod (Nat, Nat, AuthorityId, NodeEvent)) =>
+    let network : SimNetwork := state.1 in let progress : SimProgress := state.2 in
+    simDeliver (tuple (state.0, tuple (network.0, seqSimQueueTail network.1, scheduled.0, network.3, network.4, network.5),
+      tuple (progress.0, progress.1, progress.2, natAdd progress.3 1, progress.4))) scheduled.2 scheduled.3
+def simRun : Simulator -> Simulator := fun (state : Simulator) => stepsFold Simulator steps64 simStopped simTick state
+def simInjectOne : SimBatchPlan -> Authority -> Nat -> Simulator -> Simulator := fun (plan : SimBatchPlan) (authority : Authority) (index : Nat) (state : Simulator) =>
+  let id : AuthorityId := authorityId authority in
+  let body : Batch := batchMake (plan.5 id index) plan.3 (authorityAddress authority) plan.4 plan.2 in
+  let progress : SimProgress := state.2 in
+  simSchedule (tuple (state.0, state.1, tuple (progress.0, progress.1, batchesCons body progress.2, progress.3, progress.4)))
+    (natMul plan.1 (natAdd index 1)) id (nodeOurDigest (batchDigest body) (batchWorkerId body))
+def simInjectFor : Simulator -> SimBatchPlan -> Authority -> Simulator := fun (state : Simulator) (plan : SimBatchPlan) (authority : Authority) =>
+  let result : prod (Nat, Simulator) := stepsFold (prod (Nat, Simulator)) steps64
+    (fun (acc : prod (Nat, Simulator)) => boolNat (boolNot (natLt acc.0 plan.0)))
+    (fun (acc : prod (Nat, Simulator)) => tuple (natAdd acc.0 1, simInjectOne plan authority acc.0 acc.1)) (tuple (0, state)) in result.1
+def simInject : Simulator -> SimBatchPlan -> Simulator := fun (state : Simulator) (plan : SimBatchPlan) =>
+  listFoldLeft Authority Authorities Simulator seqAuthorityOps (fun (acc : Simulator) (authority : Authority) =>
+    case (simIsCrashed acc (authorityId authority)) with | 1 (unit : prod ()) => acc | 0 (unit : prod ()) => simInjectFor acc plan authority) state (committeeAuthorities (simCommittee state))
+def simCreate : Committee -> (AuthorityId -> SecretKey) -> ProposerConfig -> Nat -> Nat -> SimConfig -> Simulator :=
+  fun (committee : Committee) (key : AuthorityId -> SecretKey) (proposerConfig : ProposerConfig) (window : Nat) (depth : Nat) (config : SimConfig) =>
+    let built : prod (SimNodes, SimStartups) := listFoldLeft Authority Authorities (prod (SimNodes, SimStartups)) seqAuthorityOps
+      (fun (acc : prod (SimNodes, SimStartups)) (authority : Authority) =>
+        let id : AuthorityId := authorityId authority in
+        let created : NodeTransition := nodeCreate committee (key id) id proposerConfig window depth (simTimestamp 0) in
+        tuple (simNodesCons (tuple (id, created.0)) acc.0, simStartupsCons (tuple (id, created.1)) acc.1))
+      (tuple (simNodesNil, simStartupsNil)) (committeeAuthorities committee) in
+    let initial : Simulator := tuple (tuple (committee, config),
+      tuple (certificateGenesis committee, simQueueNil, 0, 0, prngState config.4, prngState (prngDrawValue (prngNext (prngState (wordXor64 config.4 15111065706836454659))))),
+      tuple (built.0, simLogsNil, batchesNil, 0, valueNone (prod (AuthorityId, NodeError)))) in
+    let started : Simulator := listFoldLeft (prod (AuthorityId, NodeCommands)) SimStartups Simulator seqSimStartupOps
+      (fun (acc : Simulator) (entry : prod (AuthorityId, NodeCommands)) => case (simIsCrashed acc entry.0) with
+        | 1 (unit : prod ()) => acc | 0 (unit : prod ()) => simInterpretAll acc entry.0 entry.1) initial (seqSimStartupReverse built.1) in
+    case config.7 with | 0 (unit : prod ()) => started | 1 (plan : SimBatchPlan) => simInject started plan
+def simCommitted : Simulator -> AuthorityId -> SubDags := fun (state : Simulator) (id : AuthorityId) => seqSubDagReverse (simStoredLog state id)
+def simCommitCount : Simulator -> AuthorityId -> Nat := fun (state : Simulator) (id : AuthorityId) => seqSubDagLength (simStoredLog state id)
+def simExecuted : Simulator -> AuthorityId -> ConsensusBlocks := fun (state : Simulator) (id : AuthorityId) =>
+  let result : prod (ConsensusChain, ConsensusBlocks) := listFoldLeft SubDag SubDags (prod (ConsensusChain, ConsensusBlocks)) seqSubDagOps
+    (fun (acc : prod (ConsensusChain, ConsensusBlocks)) (value : SubDag) =>
+      let next : prod (ConsensusChain, ConsensusBlock) := consensusChainAppend acc.0 value in tuple (next.0, consensusBlocksCons next.1 acc.1))
+    (tuple (consensusChainGenesis, consensusBlocksNil)) (simCommitted state id) in seqConsensusBlockReverse result.1
+def simExecutionTip : Simulator -> AuthorityId -> ValueOption ConsensusBlock := fun (state : Simulator) (id : AuthorityId) => seqConsensusBlockHead (seqConsensusBlockReverse (simExecuted state id))
+def simFirstDivergence : SubDags -> SubDags -> ValueOption Nat := fun (left : SubDags) (right : SubDags) =>
+  let result : prod (SubDags, Nat, ValueOption Nat) := listFoldLeft SubDag SubDags (prod (SubDags, Nat, ValueOption Nat)) seqSubDagOps
+    (fun (acc : prod (SubDags, Nat, ValueOption Nat)) (value : SubDag) =>
+      let next : ValueOption Nat := case (boolOr (optionIsSome Nat acc.2) (boolNot (optionIsSome SubDag (seqSubDagHead acc.0)))) with
+        | 1 (unit : prod ()) => acc.2
+        | 0 (unit : prod ()) => case (seqSubDagHead acc.0) with
+          | 0 (unit : prod ()) => acc.2
+          | 1 (other : SubDag) => case (subDagDigestEqual (subDagDigest value) (subDagDigest other)) with
+            | 1 (unit : prod ()) => acc.2 | 0 (unit : prod ()) => valueSome Nat acc.1 in
+      tuple (seqSubDagTail acc.0, natAdd acc.1 1, next)) (tuple (right, 0, valueNone Nat)) left in result.2
+def simAgreeOfLogs : SimLogs -> SimAgreement := fun (logs : SimLogs) =>
+  let result : prod (SimLogs, Nat, ValueOption SimAgreement) := listFoldLeft (prod (AuthorityId, SubDags)) SimLogs (prod (SimLogs, Nat, ValueOption SimAgreement)) seqSimLogOps
+    (fun (acc : prod (SimLogs, Nat, ValueOption SimAgreement)) (left : prod (AuthorityId, SubDags)) =>
+      let remaining : SimLogs := seqSimLogTail acc.0 in
+      let found : ValueOption SimAgreement := listFoldLeft (prod (AuthorityId, SubDags)) SimLogs (ValueOption SimAgreement) seqSimLogOps
+        (fun (found : ValueOption SimAgreement) (right : prod (AuthorityId, SubDags)) => case found with
+          | 1 (agreement : SimAgreement) => found
+          | 0 (unit : prod ()) => case (simFirstDivergence left.1 right.1) with
+            | 0 (unit : prod ()) => found | 1 (index : Nat) => valueSome SimAgreement (simDiverge left.0 right.0 index)) acc.2 remaining in
+      tuple (remaining, choose (natLt (seqSubDagLength left.1) acc.1) (seqSubDagLength left.1) acc.1, found))
+      (tuple (logs, hostIntMax, valueNone SimAgreement)) logs in
+  case result.2 with | 1 (agreement : SimAgreement) => agreement
+  | 0 (unit : prod ()) => simAgree (choose (natEq result.1 hostIntMax) 0 result.1)
+def simAgreement : Simulator -> SimAgreement := fun (state : Simulator) =>
+  simAgreeOfLogs (listMapInto Authority Authorities (prod (AuthorityId, SubDags)) SimLogs seqAuthorityOps seqSimLogOps
+    (fun (authority : Authority) => tuple (authorityId authority, simCommitted state (authorityId authority))) (committeeAuthorities (simCommittee state)))

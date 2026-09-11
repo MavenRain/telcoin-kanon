@@ -1,0 +1,33 @@
+mu ConsensusRecord : Type 0 :=
+| consensusRecord (block : ConsensusBlock) (bodies : Batches) : ConsensusRecord
+mu ConsensusRecordError : Type 0 :=
+| consensusRecordMissingBody (digest : BatchDigest) : ConsensusRecordError
+def consensusRecordErrorText : ConsensusRecordError -> Bytes := fun (error : ConsensusRecordError) =>
+  match error as self in ConsensusRecordError return Bytes with
+  | consensusRecordMissingBody digest => append b"no batch body for payload digest " (batchDigestHex digest)
+def consensusRecordFields : ConsensusRecord -> prod (ConsensusBlock, Batches) := fun (record : ConsensusRecord) =>
+  match record as self in ConsensusRecord return prod (ConsensusBlock, Batches) with
+  | consensusRecord block bodies => tuple (block, bodies)
+def consensusRecordBlock : ConsensusRecord -> ConsensusBlock := fun (record : ConsensusRecord) => (consensusRecordFields record).0
+def consensusRecordBodies : ConsensusRecord -> Batches := fun (record : ConsensusRecord) => (consensusRecordFields record).1
+def consensusRecordSubDag : ConsensusRecord -> SubDag := fun (record : ConsensusRecord) => consensusBlockSubDag (consensusRecordBlock record)
+def consensusRecordNumber : ConsensusRecord -> ConsensusBlockNumber := fun (record : ConsensusRecord) => consensusBlockNumberOf (consensusRecordBlock record)
+def consensusRecordDigest : ConsensusRecord -> OutputDigest := fun (record : ConsensusRecord) => consensusBlockDigest (consensusRecordBlock record)
+def consensusRecordParent : ConsensusRecord -> OutputDigest := fun (record : ConsensusRecord) => consensusBlockParent (consensusRecordBlock record)
+def consensusRecordEpoch : ConsensusRecord -> Epoch := fun (record : ConsensusRecord) => subDagLeaderEpoch (consensusRecordSubDag record)
+def consensusRecordCreate : ConsensusBlock -> (BatchDigest -> ValueOption Batch) -> sum (ConsensusRecordError, ConsensusRecord) :=
+  fun (block : ConsensusBlock) (lookup : BatchDigest -> ValueOption Batch) =>
+    let resolved : sum (ConsensusRecordError, Batches) := listFoldLeft BatchDigest BatchDigests (sum (ConsensusRecordError, Batches)) seqBatchDigestOps
+      (fun (acc : sum (ConsensusRecordError, Batches)) (digest : BatchDigest) =>
+        case acc with
+        | 0 (error : ConsensusRecordError) => acc
+        | 1 (bodies : Batches) =>
+          case (lookup digest) with
+          | 0 (unit : prod ()) => inj 0 of 2 (consensusRecordMissingBody digest)
+          | 1 (body : Batch) => inj 1 of 2 (batchesCons body bodies))
+      (inj 1 of 2 batchesNil) (subDagPayloadDigests (consensusBlockSubDag block)) in
+    case resolved with
+    | 0 (error : ConsensusRecordError) => inj 0 of 2 error
+    | 1 (bodies : Batches) => inj 1 of 2 (consensusRecord block (seqBatchReverse bodies))
+def consensusRecordOfWire : prod (ConsensusBlock, Batches) -> sum (ConsensusRecordError, ConsensusRecord) := fun (wire : prod (ConsensusBlock, Batches)) =>
+  consensusRecordCreate wire.0 (fun (digest : BatchDigest) => listFind Batch Batches seqBatchOps (fun (body : Batch) => batchDigestEqual (batchDigest body) digest) wire.1)

@@ -1,0 +1,103 @@
+-- One canonical slot store supplies both round/author and digest lookups.
+-- This representation cannot leave the source's two indexes inconsistent.
+mu Dag : Type 0 :=
+| dagValue (depth : Nat) (committed : Round) (gc : Round) (watermarks : AuthorityRounds) (certificates : Certificates) : Dag
+def dagFields : Dag -> prod (Nat, Round, Round, AuthorityRounds, Certificates) := fun (dag : Dag) =>
+  match dag as self in Dag return prod (Nat, Round, Round, AuthorityRounds, Certificates) with
+  | dagValue depth committed gc watermarks certificates => tuple (depth, committed, gc, watermarks, certificates)
+def dagCreate : Nat -> Dag := fun (depth : Nat) => dagValue depth roundGenesis roundGenesis authorityRoundsNil certificatesNil
+def dagGcDepth : Dag -> Nat := fun (dag : Dag) => (dagFields dag).0
+def dagCommittedRound : Dag -> Round := fun (dag : Dag) => (dagFields dag).1
+def dagGcRound : Dag -> Round := fun (dag : Dag) => (dagFields dag).2
+def dagWatermarks : Dag -> AuthorityRounds := fun (dag : Dag) => (dagFields dag).3
+def dagAllCertificates : Dag -> Certificates := fun (dag : Dag) => (dagFields dag).4
+def dagLastCommittedRound : Dag -> AuthorityId -> Round := fun (dag : Dag) (author : AuthorityId) =>
+  case (mapLookup AuthorityId Round AuthorityRounds seqAuthorityRoundOps authorityIdEqual author (dagWatermarks dag)) with
+  | 0 (unit : prod ()) => roundGenesis
+  | 1 (round : Round) => round
+def certificateSlotCompare : Certificate -> Certificate -> Ordering := fun (a : Certificate) (b : Certificate) =>
+  match (roundCompare (certificateRound a) (certificateRound b)) as self in Ordering return Ordering with
+  | orderLess => orderLess
+  | orderGreater => orderGreater
+  | orderEqual => authorityIdCompare (certificateOrigin a) (certificateOrigin b)
+def dagGet : Dag -> Round -> AuthorityId -> ValueOption Certificate := fun (dag : Dag) (round : Round) (author : AuthorityId) =>
+  listFind Certificate Certificates seqCertificateOps (fun (certificate : Certificate) =>
+    boolAnd (roundEqual round (certificateRound certificate)) (authorityIdEqual author (certificateOrigin certificate))) (dagAllCertificates dag)
+def dagGetByDigest : Dag -> HeaderDigest -> ValueOption Certificate := fun (dag : Dag) (digest : HeaderDigest) =>
+  listFind Certificate Certificates seqCertificateOps (fun (certificate : Certificate) => headerDigestEqual digest (certificateDigest certificate)) (dagAllCertificates dag)
+def dagContainsDigest : Dag -> HeaderDigest -> Bool := fun (dag : Dag) (digest : HeaderDigest) => optionIsSome Certificate (dagGetByDigest dag digest)
+def dagRoundCertificates : Dag -> Round -> Certificates := fun (dag : Dag) (round : Round) =>
+  listFilter Certificate Certificates seqCertificateOps (fun (certificate : Certificate) => roundEqual round (certificateRound certificate)) (dagAllCertificates dag)
+def dagRounds : Dag -> Nats := fun (dag : Dag) => seqNatUniq natOrdering
+  (listMapInto Certificate Certificates Nat Nats seqCertificateOps seqNatOps (fun (certificate : Certificate) => roundNat (certificateRound certificate)) (dagAllCertificates dag))
+mu DagError : Type 0 :=
+| dagEquivocation (round : Round) (author : AuthorityId) : DagError
+| dagMissingParent (digest : HeaderDigest) : DagError
+| dagMissingParentRound (round : Round) : DagError
+def dagErrorText : DagError -> Bytes := fun (error : DagError) =>
+  match error as self in DagError return Bytes with
+  | dagEquivocation round author => append b"certificate equivocates an existing one at round " (append (roundShow round) (append b" for " (authorityIdHex author)))
+  | dagMissingParent digest => append b"parent " (append (headerDigestHex digest) b" is not present at the previous round")
+  | dagMissingParentRound round => append b"previous round " (append (roundShow round) b" is absent from the dag")
+def DagInsertResult : Type 0 := sum (DagError, prod (Dag, Bool))
+def DagResult : Type 0 := sum (DagError, Dag)
+def dagCheckParents : Dag -> Certificate -> ValueOption DagError := fun (dag : Dag) (certificate : Certificate) =>
+  case (natLt (roundNat (roundSucc (dagGcRound dag))) (roundNat (certificateRound certificate))) with
+  | 0 (unit : prod ()) => valueNone DagError
+  | 1 (unit : prod ()) =>
+    let previous : Round := roundSub (certificateRound certificate) 1 in
+    case (natEq (seqCertificateLength (dagRoundCertificates dag previous)) 0) with
+    | 1 (unit : prod ()) => valueSome DagError (dagMissingParentRound previous)
+    | 0 (unit : prod ()) =>
+      case (listFind HeaderDigest HeaderDigests seqHeaderDigestOps (fun (digest : HeaderDigest) =>
+        case (dagGetByDigest dag digest) with
+        | 0 (unit : prod ()) => natEq 0 0
+        | 1 (parent : Certificate) => natEq (boolNat (roundEqual (certificateRound parent) previous)) 0)
+          (headerParents (certificateHeader certificate))) with
+      | 0 (unit : prod ()) => valueNone DagError
+      | 1 (digest : HeaderDigest) => valueSome DagError (dagMissingParent digest)
+def dagInsertStored : Dag -> Certificate -> DagInsertResult := fun (dag : Dag) (certificate : Certificate) =>
+  let conflict : Bool :=
+    case (dagGet dag (certificateRound certificate) (certificateOrigin certificate)) with
+    | 0 (unit : prod ()) => natEq 0 1
+    | 1 (existing : Certificate) => natEq (boolNat (certificateEqual existing certificate)) 0
+  in
+  case conflict with
+  | 1 (unit : prod ()) => inj 0 of 2 (dagEquivocation (certificateRound certificate) (certificateOrigin certificate))
+  | 0 (unit : prod ()) =>
+    let rest : Certificates := listFilter Certificate Certificates seqCertificateOps (fun (existing : Certificate) =>
+      natEq (boolNat (orderingEqual (certificateSlotCompare existing certificate))) 0) (dagAllCertificates dag) in
+    let stored : Certificates := seqCertificateSort certificateSlotCompare (certificatesCons certificate rest) in
+    inj 1 of 2 (tuple (dagValue (dagGcDepth dag) (dagCommittedRound dag) (dagGcRound dag) (dagWatermarks dag) stored,
+      natLt (roundNat (dagLastCommittedRound dag (certificateOrigin certificate))) (roundNat (certificateRound certificate))))
+def dagInsertRecovered : Dag -> Certificate -> DagInsertResult := fun (dag : Dag) (certificate : Certificate) =>
+  case (natLt (roundNat (dagGcRound dag)) (roundNat (certificateRound certificate))) with
+  | 0 (unit : prod ()) => inj 1 of 2 (tuple (dag, natEq 0 1))
+  | 1 (unit : prod ()) => dagInsertStored dag certificate
+def dagTryInsert : Dag -> Certificate -> DagInsertResult := fun (dag : Dag) (certificate : Certificate) =>
+  case (natLt (roundNat (dagGcRound dag)) (roundNat (certificateRound certificate))) with
+  | 0 (unit : prod ()) => inj 1 of 2 (tuple (dag, natEq 0 1))
+  | 1 (unit : prod ()) =>
+    case (dagCheckParents dag certificate) with
+    | 0 (unit : prod ()) => dagInsertStored dag certificate
+    | 1 (error : DagError) => inj 0 of 2 error
+def dagUpdate : Dag -> Certificate -> Dag := fun (dag : Dag) (certificate : Certificate) =>
+  let origin : AuthorityId := certificateOrigin certificate in
+  let round : Round := certificateRound certificate in
+  let old : Round := dagLastCommittedRound dag origin in
+  let last : Round := roundValue (maxNat (roundNat old) (roundNat round)) in
+  let watermarks : AuthorityRounds := mapAdd AuthorityId Round AuthorityRounds seqAuthorityRoundOps authorityIdCompare origin last (dagWatermarks dag) in
+  let committed : Round := roundValue (maxNat (roundNat (dagCommittedRound dag)) (roundNat round)) in
+  let gc : Round := roundSub committed (dagGcDepth dag) in
+  let stored : Certificates := listFilter Certificate Certificates seqCertificateOps (fun (value : Certificate) => natLt (roundNat gc) (roundNat (certificateRound value))) (dagAllCertificates dag) in
+  dagValue (dagGcDepth dag) committed gc watermarks stored
+def dagRecover : Nat -> Round -> AuthorityRounds -> Certificates -> DagResult :=
+  fun (depth : Nat) (committed : Round) (watermarks : AuthorityRounds) (certificates : Certificates) =>
+    let initial : DagResult := inj 1 of 2 (dagValue depth committed (roundSub committed depth) watermarks certificatesNil) in
+    listFoldLeft Certificate Certificates DagResult seqCertificateOps (fun (result : DagResult) (certificate : Certificate) =>
+      case result with
+      | 0 (error : DagError) => result
+      | 1 (dag : Dag) =>
+        case (dagInsertRecovered dag certificate) with
+        | 0 (error : DagError) => inj 0 of 2 error
+        | 1 (pair : prod (Dag, Bool)) => inj 1 of 2 pair.0) initial certificates

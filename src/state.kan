@@ -1,0 +1,154 @@
+def nonceNat : Nonce -> Nat := fun (nonce : Nonce) => match nonce as self in Nonce return Nat with | nonceValue count => count
+def nonceZero : Nonce := nonceValue 0
+def nonceOfNat : Nat -> ValueOption Nonce := fun (count : Nat) => case (natLt hostIntMax count) with
+  | 1 (unit : prod ()) => valueNone Nonce | 0 (unit : prod ()) => valueSome Nonce (nonceValue count)
+def nonceOfHostInt : HostInt -> ValueOption Nonce := fun (value : HostInt) => match value as self in HostInt return ValueOption Nonce with
+  | hostIntPositive count => nonceOfNat count | hostIntNegative magnitude => valueNone Nonce
+def nonceSucc : Nonce -> Nonce := fun (nonce : Nonce) => nonceValue (minNat hostIntMax (natAdd (nonceNat nonce) 1))
+def nonceSuccChecked : Nonce -> ValueOption Nonce := fun (nonce : Nonce) => nonceOfNat (natAdd (nonceNat nonce) 1)
+def nonceEqual : Nonce -> Nonce -> Bool := fun (a : Nonce) (b : Nonce) => natEq (nonceNat a) (nonceNat b)
+def nonceCompare : Nonce -> Nonce -> Ordering := fun (a : Nonce) (b : Nonce) => natOrdering (nonceNat a) (nonceNat b)
+def nonceText : Nonce -> Bytes := fun (nonce : Nonce) => decimal64 (nonceNat nonce)
+def bytecodeBytes : Bytecode -> Bytes := fun (code : Bytecode) => match code as self in Bytecode return Bytes with | bytecodeValue bytes => bytes
+def bytecodeEmpty : Bytecode := bytecodeValue bytesNil
+def bytecodeLength : Bytecode -> Nat := fun (code : Bytecode) => bytesLength (bytecodeBytes code)
+def bytecodeIsEmpty : Bytecode -> Bool := fun (code : Bytecode) => natEq (bytecodeLength code) 0
+def bytecodeHash : Bytecode -> Keccak := fun (code : Bytecode) => keccakDigest (bytecodeBytes code)
+def bytecodeEqual : Bytecode -> Bytecode -> Bool := fun (a : Bytecode) (b : Bytecode) => bytesEqual (bytecodeBytes a) (bytecodeBytes b)
+def bytecodeCompare : Bytecode -> Bytecode -> Ordering := fun (a : Bytecode) (b : Bytecode) => bytesOrdering (bytecodeBytes a) (bytecodeBytes b)
+def bytecodeMaxDeployedSize : Nat := 24576
+def bytecodeMaxInitcodeSize : Nat := 49152
+def bytecodeValidateDeployment : Bytes -> sum (DeploymentError, prod ()) := fun (output : Bytes) =>
+  case (natEq (bytesHead output) 239) with | 1 (unit : prod ()) => inj 0 of 2 deploymentReservedPrefix
+  | 0 (unit : prod ()) => case (natLt bytecodeMaxDeployedSize (bytesLength output)) with
+    | 1 (unit : prod ()) => inj 0 of 2 (deploymentTooLarge (bytesLength output)) | 0 (unit : prod ()) => inj 1 of 2 (tuple ())
+def delegationTarget : Delegation -> Address := fun (delegation : Delegation) => match delegation as self in Delegation return Address with | delegationValue target => target
+def delegationBytes : Delegation -> Bytes := fun (delegation : Delegation) => append b"\xef\x01\x00" (addressBytes (delegationTarget delegation))
+def delegationDecodeErrorText : DelegationDecodeError -> Bytes := fun (error : DelegationDecodeError) =>
+  match error as self in DelegationDecodeError return Bytes with
+  | delegationInvalidLength n => append b"0xef01-prefixed code is " (append (decimal64 n) b" bytes, not the 23 a delegation designator has")
+  | delegationUnsupportedVersion version => append b"delegation designator version 0x" (append (bcsHexByte version) b" is not the supported 0x00")
+def delegationClassify : Bytes -> CodeClass := fun (code : Bytes) =>
+  case (natEq (bytesLength code) 0) with | 1 (unit : prod ()) => codeCodeless
+  | 0 (unit : prod ()) => case (bytesEqual (take 2 code) b"\xef\x01") with | 0 (unit : prod ()) => codeContract
+    | 1 (unit : prod ()) => case (natEq (bytesLength code) 23) with | 0 (unit : prod ()) => codeUndecodable (delegationInvalidLength (bytesLength code))
+      | 1 (unit : prod ()) => case (natEq (bytesHead (drop code 2)) 0) with | 0 (unit : prod ()) => codeUndecodable (delegationUnsupportedVersion (bytesHead (drop code 2)))
+        | 1 (unit : prod ()) => codeDelegated (delegationValue (addressValue (drop code 3)))
+def delegationOfCode : Bytes -> ValueOption Delegation := fun (code : Bytes) => match (delegationClassify code) as self in CodeClass return ValueOption Delegation with
+  | codeCodeless => valueNone Delegation | codeContract => valueNone Delegation | codeUndecodable error => valueNone Delegation
+  | codeDelegated delegation => valueSome Delegation delegation
+def delegationIsContractCode : Bytes -> Bool := fun (code : Bytes) => match (delegationClassify code) as self in CodeClass return Bool with
+  | codeCodeless => natEq 0 1 | codeContract => natEq 0 0 | codeUndecodable error => natEq 0 0 | codeDelegated delegation => natEq 0 1
+def delegationAssignment : Address -> DelegationAssignment := fun (target : Address) => case (addressEqual target addressZero) with
+  | 1 (unit : prod ()) => delegationRevoke | 0 (unit : prod ()) => delegationAssign (delegationValue target)
+def delegationCodeOfAssignment : DelegationAssignment -> Bytes := fun (assignment : DelegationAssignment) => match assignment as self in DelegationAssignment return Bytes with
+  | delegationRevoke => bytesNil | delegationAssign delegation => delegationBytes delegation
+def delegationEqual : Delegation -> Delegation -> Bool := fun (a : Delegation) (b : Delegation) => addressEqual (delegationTarget a) (delegationTarget b)
+def storageEmpty : Storage := storageSlotsNil
+def storageIsEmpty : Storage -> Bool := fun (storage : Storage) => natEq (seqStorageSlotLength storage) 0
+def storageGet : Storage -> U256 -> U256 := fun (storage : Storage) (slot : U256) =>
+  case (mapLookup U256 U256 StorageSlots seqStorageSlotOps u256Equal slot storage) with | 0 (unit : prod ()) => u256Zero | 1 (value : U256) => value
+def storageSet : Storage -> U256 -> U256 -> Storage := fun (storage : Storage) (slot : U256) (value : U256) => case (u256IsZero value) with
+  | 1 (unit : prod ()) => mapRemove U256 U256 StorageSlots seqStorageSlotOps u256Compare slot storage
+  | 0 (unit : prod ()) => mapAdd U256 U256 StorageSlots seqStorageSlotOps u256Compare slot value storage
+def storageCompare : Storage -> Storage -> Ordering := fun (a : Storage) (b : Storage) =>
+  listCompare (prod (U256, U256)) StorageSlots seqStorageSlotOps (fun (a : prod (U256, U256)) (b : prod (U256, U256)) =>
+    let key : Ordering := u256Compare a.0 b.0 in case (orderingEqual key) with | 0 (unit : prod ()) => key | 1 (unit : prod ()) => u256Compare a.1 b.1) a b
+def storageEqual : Storage -> Storage -> Bool := fun (a : Storage) (b : Storage) => orderingEqual (storageCompare a b)
+def storageBindings : Storage -> StorageSlots := fun (storage : Storage) => storage
+def accountMake : Nonce -> U256 -> Account := fun (nonce : Nonce) (balance : U256) => tuple (nonce, balance, storageEmpty, bytecodeEmpty)
+def accountEmpty : Account := accountMake nonceZero u256Zero
+def accountNonce : Account -> Nonce := fun (account : Account) => account.0
+def accountBalance : Account -> U256 := fun (account : Account) => account.1
+def accountStorage : Account -> Storage := fun (account : Account) => account.2
+def accountCode : Account -> Bytes := fun (account : Account) => bytecodeBytes account.3
+def accountCodeLength : Account -> Nat := fun (account : Account) => bytecodeLength account.3
+def accountCodeHash : Account -> Keccak := fun (account : Account) => bytecodeHash account.3
+def accountWithStorage : Account -> Storage -> Account := fun (account : Account) (storage : Storage) => tuple (account.0, account.1, storage, account.3)
+def accountWithCode : Account -> Bytes -> Account := fun (account : Account) (code : Bytes) => tuple (account.0, account.1, account.2, bytecodeValue code)
+def accountSlot : Account -> U256 -> U256 := fun (account : Account) (key : U256) => storageGet account.2 key
+def accountSetSlot : Account -> U256 -> U256 -> Account := fun (account : Account) (key : U256) (value : U256) => accountWithStorage account (storageSet account.2 key value)
+def accountCodeClass : Account -> CodeClass := fun (account : Account) => delegationClassify (accountCode account)
+def accountDelegation : Account -> ValueOption Address := fun (account : Account) => case (delegationOfCode (accountCode account)) with
+  | 0 (unit : prod ()) => valueNone Address | 1 (delegation : Delegation) => valueSome Address (delegationTarget delegation)
+def accountIsEmpty : Account -> Bool := fun (account : Account) => boolAnd (nonceEqual account.0 nonceZero) (boolAnd (u256IsZero account.1) (bytecodeIsEmpty account.3))
+def accountIsAbsent : Account -> Bool := fun (account : Account) => boolAnd (accountIsEmpty account) (storageIsEmpty account.2)
+def accountIsOccupied : Account -> Bool := fun (account : Account) => boolOr (boolNot (bytecodeIsEmpty account.3)) (boolNot (nonceEqual account.0 nonceZero))
+def accountCredit : Account -> U256 -> ValueOption Account := fun (account : Account) (amount : U256) => case (u256CheckedAdd account.1 amount) with
+  | 0 (unit : prod ()) => valueNone Account | 1 (balance : U256) => valueSome Account (tuple (account.0, balance, account.2, account.3))
+def accountDebit : Account -> U256 -> ValueOption Account := fun (account : Account) (amount : U256) => case (u256CheckedSub account.1 amount) with
+  | 0 (unit : prod ()) => valueNone Account | 1 (balance : U256) => valueSome Account (tuple (account.0, balance, account.2, account.3))
+def accountIncrementNonce : Account -> Account := fun (account : Account) => tuple (nonceSucc account.0, account.1, account.2, account.3)
+def accountIncrementNonceChecked : Account -> ValueOption Account := fun (account : Account) => case (nonceSuccChecked account.0) with
+  | 0 (unit : prod ()) => valueNone Account | 1 (nonce : Nonce) => valueSome Account (tuple (nonce, account.1, account.2, account.3))
+def accountDelegate : Account -> Address -> Account := fun (account : Account) (target : Address) => accountIncrementNonce (accountWithCode account (delegationCodeOfAssignment (delegationAssignment target)))
+def accountCompare : Account -> Account -> Ordering := fun (a : Account) (b : Account) =>
+  let first : Ordering := nonceCompare a.0 b.0 in case (orderingEqual first) with | 0 (unit : prod ()) => first
+  | 1 (unit : prod ()) => let second : Ordering := u256Compare a.1 b.1 in case (orderingEqual second) with | 0 (unit : prod ()) => second
+    | 1 (unit : prod ()) => let third : Ordering := storageCompare a.2 b.2 in case (orderingEqual third) with
+      | 0 (unit : prod ()) => third | 1 (unit : prod ()) => bytecodeCompare a.3 b.3
+def accountEqual : Account -> Account -> Bool := fun (a : Account) (b : Account) => orderingEqual (accountCompare a b)
+def genesisAccountMake : Nonce -> U256 -> ValueOption Bytes -> StorageSlots -> GenesisAccount := fun (nonce : Nonce) (balance : U256) (code : ValueOption Bytes) (slots : StorageSlots) =>
+  let canonicalCode : ValueOption Bytes := case code with | 0 (unit : prod ()) => code | 1 (bytes : Bytes) =>
+    case (natEq (bytesLength bytes) 0) with | 1 (unit : prod ()) => valueNone Bytes | 0 (unit : prod ()) => code in
+  tuple (nonce, balance, canonicalCode, listFoldLeft (prod (U256, U256)) StorageSlots Storage seqStorageSlotOps (fun (acc : Storage) (slot : prod (U256, U256)) => storageSet acc slot.0 slot.1) storageEmpty slots)
+def genesisAccountBalanceOnly : U256 -> GenesisAccount := fun (balance : U256) => genesisAccountMake nonceZero balance (valueNone Bytes) storageSlotsNil
+def genesisAccountNonce : GenesisAccount -> Nonce := fun (entry : GenesisAccount) => entry.0
+def genesisAccountBalance : GenesisAccount -> U256 := fun (entry : GenesisAccount) => entry.1
+def genesisAccountCode : GenesisAccount -> ValueOption Bytes := fun (entry : GenesisAccount) => entry.2
+def genesisAccountStorage : GenesisAccount -> Storage := fun (entry : GenesisAccount) => entry.3
+def genesisAccountHasCode : GenesisAccount -> Bool := fun (entry : GenesisAccount) => optionIsSome Bytes entry.2
+def genesisAccountToAccount : GenesisAccount -> Account := fun (entry : GenesisAccount) =>
+  let code : Bytes := case entry.2 with | 0 (unit : prod ()) => bytesNil | 1 (bytes : Bytes) => bytes in tuple (entry.0, entry.1, entry.3, bytecodeValue code)
+def genesisAccountEqual : GenesisAccount -> GenesisAccount -> Bool := fun (a : GenesisAccount) (b : GenesisAccount) => accountEqual (genesisAccountToAccount a) (genesisAccountToAccount b)
+def WorldState : Type 0 := WorldAccounts
+def worldStateEmpty : WorldState := worldAccountsNil
+def worldStateAccount : WorldState -> Address -> Account := fun (state : WorldState) (address : Address) =>
+  case (mapLookup Address Account WorldAccounts seqWorldAccountOps addressEqual address state) with | 0 (unit : prod ()) => accountEmpty | 1 (account : Account) => account
+def worldStateRemoveAccount : WorldState -> Address -> WorldState := fun (state : WorldState) (address : Address) => mapRemove Address Account WorldAccounts seqWorldAccountOps addressCompare address state
+def worldStateSetAccount : WorldState -> Address -> Account -> WorldState := fun (state : WorldState) (address : Address) (account : Account) => case (accountIsAbsent account) with
+  | 1 (unit : prod ()) => worldStateRemoveAccount state address | 0 (unit : prod ()) => mapAdd Address Account WorldAccounts seqWorldAccountOps addressCompare address account state
+def worldStateBalance : WorldState -> Address -> U256 := fun (state : WorldState) (address : Address) => accountBalance (worldStateAccount state address)
+def worldStateNonce : WorldState -> Address -> Nonce := fun (state : WorldState) (address : Address) => accountNonce (worldStateAccount state address)
+def worldStateStorage : WorldState -> Address -> U256 -> U256 := fun (state : WorldState) (address : Address) (key : U256) => accountSlot (worldStateAccount state address) key
+def worldStateSetStorage : WorldState -> Address -> U256 -> U256 -> WorldState := fun (state : WorldState) (address : Address) (key : U256) (value : U256) => worldStateSetAccount state address (accountSetSlot (worldStateAccount state address) key value)
+def worldStateAccounts : WorldState -> WorldAccounts := fun (state : WorldState) => state
+def worldStateEqual : WorldState -> WorldState -> Bool := fun (a : WorldState) (b : WorldState) => orderingEqual
+  (listCompare (prod (Address, Account)) WorldAccounts seqWorldAccountOps (fun (a : prod (Address, Account)) (b : prod (Address, Account)) =>
+    let first : Ordering := addressCompare a.0 b.0 in case (orderingEqual first) with | 0 (unit : prod ()) => first | 1 (unit : prod ()) => accountCompare a.1 b.1) a b)
+def genesisAllocErrorText : GenesisAllocError -> Bytes := fun (error : GenesisAllocError) => match error as self in GenesisAllocError return Bytes with
+  | genesisStorageWithoutCode address => append b"genesis alloc entry 0x" (append (addressHex address) b" pre-populates storage but installs no code")
+  | genesisMalformedDelegation address error => append b"genesis alloc entry 0x" (append (addressHex address) (append b" installs 0xef01-prefixed code that is not a delegation designator: " (delegationDecodeErrorText error)))
+def worldStateOfGenesisAlloc : GenesisEntries -> sum (GenesisAllocError, WorldState) := fun (entries : GenesisEntries) =>
+  listFoldLeft (prod (Address, GenesisAccount)) GenesisEntries (sum (GenesisAllocError, WorldState)) seqGenesisEntryOps
+    (fun (result : sum (GenesisAllocError, WorldState)) (entry : prod (Address, GenesisAccount)) => case result with
+      | 0 (error : GenesisAllocError) => result
+      | 1 (state : WorldState) => let account : Account := genesisAccountToAccount entry.1 in
+        case (boolAnd (boolNot (genesisAccountHasCode entry.1)) (boolNot (storageIsEmpty (genesisAccountStorage entry.1)))) with
+        | 1 (unit : prod ()) => inj 0 of 2 (genesisStorageWithoutCode entry.0)
+        | 0 (unit : prod ()) => match (accountCodeClass account) as classified in CodeClass return sum (GenesisAllocError, WorldState) with
+          | codeUndecodable error => inj 0 of 2 (genesisMalformedDelegation entry.0 error)
+          | codeCodeless => inj 1 of 2 (worldStateSetAccount state entry.0 account)
+          | codeContract => inj 1 of 2 (worldStateSetAccount state entry.0 account)
+          | codeDelegated delegation => inj 1 of 2 (worldStateSetAccount state entry.0 account)) (inj 1 of 2 worldStateEmpty) entries
+def worldStateOfAlloc : AddressBalances -> WorldState := fun (entries : AddressBalances) =>
+  listFoldLeft (prod (Address, U256)) AddressBalances WorldState seqAddressBalanceOps (fun (state : WorldState) (entry : prod (Address, U256)) =>
+    worldStateSetAccount state entry.0 (accountMake nonceZero entry.1)) worldStateEmpty entries
+def transferMake : Address -> Address -> U256 -> Nonce -> Transfer := fun (sender : Address) (recipient : Address) (amount : U256) (nonce : Nonce) => tuple (sender, recipient, amount, nonce)
+def transferSender : Transfer -> Address := fun (transfer : Transfer) => transfer.0
+def transferRecipient : Transfer -> Address := fun (transfer : Transfer) => transfer.1
+def transferValue : Transfer -> U256 := fun (transfer : Transfer) => transfer.2
+def transferNonce : Transfer -> Nonce := fun (transfer : Transfer) => transfer.3
+def transferErrorText : TransferError -> Bytes := fun (error : TransferError) => match error as self in TransferError return Bytes with
+  | transferNonceMismatch expected actual => append b"nonce mismatch: account nonce " (append (nonceText expected) (append b", transfer nonce " (nonceText actual)))
+  | transferInsufficientBalance balance amount => append b"insufficient balance: have " (append (u256Hex balance) (append b", need " (u256Hex amount)))
+  | transferBalanceOverflow => b"balance overflow crediting recipient"
+def transferApply : WorldState -> Transfer -> sum (TransferError, WorldState) := fun (state : WorldState) (transfer : Transfer) =>
+  let sender : Account := worldStateAccount state transfer.0 in
+  case (nonceEqual sender.0 transfer.3) with | 0 (unit : prod ()) => inj 0 of 2 (transferNonceMismatch sender.0 transfer.3)
+  | 1 (unit : prod ()) => case (accountDebit sender transfer.2) with | 0 (unit : prod ()) => inj 0 of 2 (transferInsufficientBalance sender.1 transfer.2)
+    | 1 (debited : Account) => let next : WorldState := worldStateSetAccount state transfer.0 (accountIncrementNonce debited) in
+      case (accountCredit (worldStateAccount next transfer.1) transfer.2) with | 0 (unit : prod ()) => inj 0 of 2 transferBalanceOverflow
+      | 1 (credited : Account) => inj 1 of 2 (worldStateSetAccount next transfer.1 credited)
+def addressToWord : Address -> U256 := fun (address : Address) => u256Value (u256ReadBe (addressBytes address) 0)
+def addressOfWord : U256 -> Address := fun (word : U256) => addressValue (drop (u256ToBeBytes word) 12)

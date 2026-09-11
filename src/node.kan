@@ -1,0 +1,168 @@
+def NodeTransition : Type 0 := prod (ConsensusNode, NodeCommands)
+def NodeResult : Type 0 := sum (NodeError, NodeTransition)
+def nodeDag : ConsensusNode -> Dag := fun (node : ConsensusNode) => bullsharkDag (nodeData node).2
+def nodeLastCommitted : ConsensusNode -> ValueOption SubDag := fun (node : ConsensusNode) => bullsharkLastSubDag (nodeData node).2
+def nodeMapDagError : DagError -> NodeError := fun (error : DagError) =>
+  match error as self in DagError return NodeError with
+  | dagEquivocation round author => nodeCertificateEquivocation round author
+  | dagMissingParent digest => nodeMissingParent digest
+  | dagMissingParentRound round => nodeMissingParentRound round
+def nodeWithProposer : ConsensusNode -> Proposer -> ConsensusNode := fun (node : ConsensusNode) (proposer : Proposer) =>
+  let d : NodeData := nodeData node in consensusNode (nodeIdentity node) (tuple (proposer, d.1, d.2, d.3, d.4))
+def nodeWithVotes : ConsensusNode -> NodeVotes -> ConsensusNode := fun (node : ConsensusNode) (votes : NodeVotes) =>
+  let d : NodeData := nodeData node in consensusNode (nodeIdentity node) (tuple (d.0, d.1, d.2, votes, d.4))
+def nodeApplyProposerActions : ConsensusNode -> ProposerActions -> NodeTransition := fun (node : ConsensusNode) (actions : ProposerActions) =>
+  let result : NodeTransition := listFoldLeft ProposerAction ProposerActions NodeTransition seqProposerActionOps
+    (fun (acc : NodeTransition) (action : ProposerAction) =>
+      match action as self in ProposerAction return NodeTransition with
+      | proposerAckDigest => acc
+      | proposerArmTimer kind generation delay => tuple (acc.0, nodeCommandsCons (nodeArmTimer kind generation delay) acc.1)
+      | proposerBroadcastHeader header =>
+        let identity : NodeIdentity := nodeIdentity acc.0 in
+        let vote : Vote := voteSign identity.1 identity.0 header in
+        let aggregate : prod (VoteAggregator, VoteAggregation) := voteAggregatorAdd voteAggregatorEmpty identity.2 header vote in
+        tuple (nodeWithVotes acc.0 (valueSome (prod (Header, VoteAggregator)) (tuple (header, aggregate.0))), nodeCommandsCons (nodeBroadcastHeader header) acc.1))
+    (tuple (node, nodeCommandsNil)) actions in tuple (result.0, seqNodeCommandReverse result.1)
+def nodeCommittedOwnRounds : SubDags -> AuthorityId -> Nats := fun (values : SubDags) (author : AuthorityId) =>
+  seqNatReverse (listFoldLeft SubDag SubDags Nats seqSubDagOps (fun (acc : Nats) (value : SubDag) =>
+    listFoldLeft Header Headers Nats seqHeaderOps (fun (acc : Nats) (header : Header) =>
+      case (authorityIdEqual (headerAuthor header) author) with
+      | 0 (unit : prod ()) => acc
+      | 1 (unit : prod ()) => natsCons (roundNat (headerRound header)) acc) acc (nonemptyToList Header Headers seqHeaderOps (subDagHeaders value))) natsNil values)
+def nodeHandleOutcome : ConsensusNode -> Timestamp -> BullsharkOutcome -> NodeTransition := fun (node : ConsensusNode) (now : Timestamp) (outcome : BullsharkOutcome) =>
+  match outcome as self in BullsharkOutcome return NodeTransition with
+  | bullsharkNoCommit reason => tuple (node, nodeCommandsNil)
+  | bullsharkCommitted committed =>
+    let d : NodeData := nodeData node in
+    let values : SubDags := nonemptyToList SubDag SubDags seqSubDagOps committed in
+    let commands : NodeCommands := listMapInto SubDag SubDags NodeCommand NodeCommands seqSubDagOps seqNodeCommandOps (fun (value : SubDag) => nodeEmitCommitted value) values in
+    let proposer : Proposer := proposerUpdateSchedule d.0 (bullsharkSchedule d.2) in
+    let proposed : prod (Proposer, ProposerActions) := proposerStep proposer now (proposerCommittedHeaders (nodeCommittedOwnRounds values (nodeIdentity node).0)) in
+    let parents : ParentAggregators := listFilter (prod (Round, ParentAggregator)) ParentAggregators seqParentAggregatorOps
+      (fun (entry : prod (Round, ParentAggregator)) => natLt (roundNat (dagGcRound (nodeDag node))) (roundNat entry.0)) d.4 in
+    let next : ConsensusNode := consensusNode (nodeIdentity node) (tuple (proposed.0, d.1, d.2, d.3, parents)) in
+    let result : NodeTransition := nodeApplyProposerActions next proposed.1 in
+    tuple (result.0, listAppend NodeCommand NodeCommands seqNodeCommandOps commands result.1)
+def nodeFeedParents : ConsensusNode -> Timestamp -> Certificate -> NodeTransition := fun (node : ConsensusNode) (now : Timestamp) (certificate : Certificate) =>
+  let round : Round := certificateRound certificate in
+  case (natLt (roundNat (dagGcRound (nodeDag node))) (roundNat round)) with
+  | 0 (unit : prod ()) => tuple (node, nodeCommandsNil)
+  | 1 (unit : prod ()) =>
+    let d : NodeData := nodeData node in
+    let old : ParentAggregator := case (mapLookup Round ParentAggregator ParentAggregators seqParentAggregatorOps roundEqual round d.4) with
+      | 0 (unit : prod ()) => parentAggregatorEmpty
+      | 1 (aggregate : ParentAggregator) => aggregate in
+    let added : prod (ParentAggregator, ParentRelease) := parentAggregatorAdd old (nodeIdentity node).2 certificate in
+    let parents : ParentAggregators := mapAdd Round ParentAggregator ParentAggregators seqParentAggregatorOps roundCompare round added.0 d.4 in
+    let next : ConsensusNode := consensusNode (nodeIdentity node) (tuple (d.0, d.1, d.2, d.3, parents)) in
+    case added.1 with
+    | 0 (unit : prod ()) => tuple (next, nodeCommandsNil)
+    | 1 (released : Nonempty Certificate Certificates) =>
+      let proposed : prod (Proposer, ProposerActions) := proposerStep d.0 now (proposerParents (nonemptyToList Certificate Certificates seqCertificateOps released) round) in
+      nodeApplyProposerActions (nodeWithProposer next proposed.0) proposed.1
+def nodeInsertCertificate : ConsensusNode -> Timestamp -> Certificate -> NodeResult := fun (node : ConsensusNode) (now : Timestamp) (certificate : Certificate) =>
+  case (epochEqual (certificateEpoch certificate) (committeeEpoch (nodeIdentity node).2)) with
+  | 0 (unit : prod ()) => inj 1 of 2 (tuple (node, nodeCommandsNil))
+  | 1 (unit : prod ()) =>
+    case (bullsharkProcessCertificate (nodeData node).2 certificate) with
+    | 0 (error : DagError) => inj 0 of 2 (nodeMapDagError error)
+    | 1 (committed : prod (Bullshark, BullsharkOutcome)) =>
+      let d : NodeData := nodeData node in
+      let next : ConsensusNode := consensusNode (nodeIdentity node) (tuple (d.0, d.1, committed.0, d.3, d.4)) in
+      let handled : NodeTransition := nodeHandleOutcome next now committed.1 in
+      let fed : NodeTransition := nodeFeedParents handled.0 now certificate in
+      inj 1 of 2 (tuple (fed.0, listAppend NodeCommand NodeCommands seqNodeCommandOps handled.1 fed.1))
+def nodeInsertCertificateTolerant : ConsensusNode -> Timestamp -> Certificate -> NodeResult := fun (node : ConsensusNode) (now : Timestamp) (certificate : Certificate) =>
+  case (nodeInsertCertificate node now certificate) with
+  | 1 (next : NodeTransition) => inj 1 of 2 next
+  | 0 (error : NodeError) =>
+    match error as self in NodeError return NodeResult with
+    | nodeCertificateEquivocation round author => inj 0 of 2 error
+    | nodeMissingParent digest => inj 1 of 2 (tuple (node, nodeCommandsNil))
+    | nodeMissingParentRound round => inj 1 of 2 (tuple (node, nodeCommandsNil))
+def nodeInsertCertificates : (ConsensusNode -> Timestamp -> Certificate -> NodeResult) -> ConsensusNode -> Timestamp -> Certificates -> NodeResult :=
+  fun (insert : ConsensusNode -> Timestamp -> Certificate -> NodeResult) (node : ConsensusNode) (now : Timestamp) (certificates : Certificates) =>
+    listFoldLeft Certificate Certificates NodeResult seqCertificateOps (fun (acc : NodeResult) (certificate : Certificate) =>
+      case acc with
+      | 0 (error : NodeError) => acc
+      | 1 (state : NodeTransition) =>
+        case (insert state.0 now certificate) with
+        | 0 (error : NodeError) => inj 0 of 2 error
+        | 1 (next : NodeTransition) => inj 1 of 2 (tuple (next.0, listAppend NodeCommand NodeCommands seqNodeCommandOps state.1 next.1)))
+      (inj 1 of 2 (tuple (node, nodeCommandsNil))) certificates
+def nodeHandleVoteRequest : ConsensusNode -> Timestamp -> AuthorityId -> Header -> Certificates -> NodeResult :=
+  fun (node : ConsensusNode) (now : Timestamp) (sender : AuthorityId) (header : Header) (parents : Certificates) =>
+    case (authorityIdEqual (headerAuthor header) (nodeIdentity node).0) with
+    | 1 (unit : prod ()) => inj 1 of 2 (tuple (node, nodeCommandsNil))
+    | 0 (unit : prod ()) =>
+      case (nodeInsertCertificates nodeInsertCertificateTolerant node now parents) with
+      | 0 (error : NodeError) => inj 0 of 2 error
+      | 1 (inserted : NodeTransition) =>
+        let d : NodeData := nodeData inserted.0 in
+        let voted : prod (Voter, VoterDecision) := voterVote d.1 (nodeDag inserted.0) now header in
+        let next : ConsensusNode := consensusNode (nodeIdentity inserted.0) (tuple (d.0, voted.0, d.2, d.3, d.4)) in
+        let commands : NodeCommands := match voted.1 as self in VoterDecision return NodeCommands with
+          | voterVoteFresh vote => nodeCommandsCons (nodeSendVote sender vote) nodeCommandsNil
+          | voterVoteRecast vote => nodeCommandsCons (nodeSendVote sender vote) nodeCommandsNil
+          | voterNeedParents digests => nodeCommandsCons (nodeSendMissingParents sender digests) nodeCommandsNil
+          | voterReject reason => nodeCommandsNil in
+        inj 1 of 2 (tuple (next, listAppend NodeCommand NodeCommands seqNodeCommandOps inserted.1 commands))
+def nodeHandleVoteReceived : ConsensusNode -> Timestamp -> Vote -> NodeResult := fun (node : ConsensusNode) (now : Timestamp) (vote : Vote) =>
+  case (nodeData node).3 with
+  | 0 (unit : prod ()) => inj 1 of 2 (tuple (node, nodeCommandsNil))
+  | 1 (collection : prod (Header, VoteAggregator)) =>
+    case (headerDigestEqual (voteHeaderDigest vote) (headerDigest collection.0)) with
+    | 0 (unit : prod ()) => inj 1 of 2 (tuple (node, nodeCommandsNil))
+    | 1 (unit : prod ()) =>
+      let aggregated : prod (VoteAggregator, VoteAggregation) := voteAggregatorAdd collection.1 (nodeIdentity node).2 collection.0 vote in
+      let next : ConsensusNode := nodeWithVotes node (valueSome (prod (Header, VoteAggregator)) (tuple (collection.0, aggregated.0))) in
+      case aggregated.1 with
+      | 0 (error : CertificateError) => inj 1 of 2 (tuple (next, nodeCommandsNil))
+      | 1 (formed : ValueOption Certificate) =>
+        case formed with
+        | 0 (unit : prod ()) => inj 1 of 2 (tuple (next, nodeCommandsNil))
+        | 1 (certificate : Certificate) =>
+          case (nodeInsertCertificate (nodeWithVotes next (valueNone (prod (Header, VoteAggregator)))) now certificate) with
+          | 0 (error : NodeError) => inj 0 of 2 error
+          | 1 (inserted : NodeTransition) => inj 1 of 2 (tuple (inserted.0, nodeCommandsCons (nodeBroadcastCertificate certificate) inserted.1))
+def nodeStep : ConsensusNode -> Timestamp -> NodeEvent -> NodeResult := fun (node : ConsensusNode) (now : Timestamp) (event : NodeEvent) =>
+  match event as self in NodeEvent return NodeResult with
+  | nodeOurDigest batch worker =>
+    let proposed : prod (Proposer, ProposerActions) := proposerStep (nodeData node).0 now (proposerOurDigest batch worker) in
+    inj 1 of 2 (nodeApplyProposerActions (nodeWithProposer node proposed.0) proposed.1)
+  | nodeTimerFired kind generation =>
+    let proposed : prod (Proposer, ProposerActions) := proposerStep (nodeData node).0 now (proposerTimerFired kind generation) in
+    inj 1 of 2 (nodeApplyProposerActions (nodeWithProposer node proposed.0) proposed.1)
+  | nodeVoteRequest sender header parents => nodeHandleVoteRequest node now sender header parents
+  | nodeVoteReceived vote => nodeHandleVoteReceived node now vote
+  | nodeCertificateReceived certificate => nodeInsertCertificateTolerant node now certificate
+def nodeCreate : Committee -> SecretKey -> AuthorityId -> ProposerConfig -> Nat -> Nat -> Timestamp -> NodeTransition :=
+  fun (committee : Committee) (key : SecretKey) (selfId : AuthorityId) (config : ProposerConfig) (window : Nat) (depth : Nat) (now : Timestamp) =>
+    let genesis : Certificates := certificateGenesis committee in
+    let schedule : LeaderSchedule := leaderScheduleCreate committee leaderThresholdDefault in
+    let proposed : prod (Proposer, ProposerActions) := proposerCreate config committee selfId schedule genesis now in
+    let node : ConsensusNode := consensusNode (tuple (selfId, key, committee)) (tuple (proposed.0, voterCreate committee key selfId genesis,
+      bullsharkCreate committee schedule window depth, valueNone (prod (Header, VoteAggregator)), parentAggregatorsNil)) in
+    nodeApplyProposerActions node proposed.1
+def nodeSnapshot : ConsensusNode -> NodeSnapshot := fun (node : ConsensusNode) =>
+  tuple (dagAllCertificates (nodeDag node), proposerLastProposed (nodeData node).0, voterSnapshot (nodeData node).1)
+def nodeRecover : Committee -> SecretKey -> AuthorityId -> ProposerConfig -> Nat -> Nat -> Timestamp -> NodeSnapshot -> CommittedLog -> NodeResult :=
+  fun (committee : Committee) (key : SecretKey) (selfId : AuthorityId) (config : ProposerConfig) (window : Nat) (depth : Nat) (now : Timestamp) (snapshot : NodeSnapshot) (log : CommittedLog) =>
+    let genesis : Certificates := certificateGenesis committee in
+    let schedule : LeaderSchedule := leaderScheduleFromStore committee leaderThresholdDefault log in
+    case (bullsharkOfStore committee schedule window depth snapshot.0 log) with
+    | 0 (error : DagError) => inj 0 of 2 (nodeMapDagError error)
+    | 1 (bullshark : Bullshark) =>
+      let voter : Voter := voterRecover committee key selfId genesis snapshot.2 in
+      let proposed : prod (Proposer, ProposerActions) := proposerRecover config committee selfId schedule genesis now (committedLogLastCommittedRound log) snapshot.1 in
+      let node : ConsensusNode := consensusNode (tuple (selfId, key, committee)) (tuple (proposed.0, voter, bullshark, valueNone (prod (Header, VoteAggregator)), parentAggregatorsNil)) in
+      let boot : NodeTransition := nodeApplyProposerActions node proposed.1 in
+      let frontier : ValueOption Nat := listFind Nat Nats seqNatOps (fun (round : Nat) =>
+        let ids : AuthorityIds := listMapInto Certificate Certificates AuthorityId AuthorityIds seqCertificateOps seqAuthorityIdOps certificateOrigin (dagRoundCertificates (bullsharkDag bullshark) (roundValue round)) in
+        committeeReachesQuorum committee (committeeStakeOf committee ids)) (seqNatReverse (dagRounds (bullsharkDag bullshark))) in
+      case frontier with
+      | 0 (unit : prod ()) => inj 1 of 2 boot
+      | 1 (round : Nat) =>
+        inj 1 of 2 (listFoldLeft Certificate Certificates NodeTransition seqCertificateOps (fun (acc : NodeTransition) (certificate : Certificate) =>
+          let fed : NodeTransition := nodeFeedParents acc.0 now certificate in
+          tuple (fed.0, listAppend NodeCommand NodeCommands seqNodeCommandOps acc.1 fed.1)) boot (dagRoundCertificates (bullsharkDag bullshark) (roundValue round)))

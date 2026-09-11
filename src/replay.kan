@@ -1,0 +1,48 @@
+mu ReplayBreak : Type 0 :=
+| replayHole (number : ConsensusBlockNumber) : ReplayBreak
+| replayBrokenLink (number : ConsensusBlockNumber) (expected : OutputDigest) (found : OutputDigest) : ReplayBreak
+def replayBreakText : ReplayBreak -> Bytes := fun (error : ReplayBreak) =>
+  match error as self in ReplayBreak return Bytes with
+  | replayHole number => append b"hole at consensus block " (append (consensusBlockNumberText number) b": the store has no record there")
+  | replayBrokenLink number expected found => append b"broken link at consensus block " (append (consensusBlockNumberText number)
+      (append b": expected parent " (append (outputDigestHex expected) (append b", found " (outputDigestHex found)))))
+mu Replay : Type 0 :=
+| replayValue (after : ConsensusBlockNumber) (upto : ConsensusBlockNumber) (records : ReplayRecords) : Replay
+def replayFields : Replay -> prod (ConsensusBlockNumber, ConsensusBlockNumber, ReplayRecords) := fun (replay : Replay) =>
+  match replay as self in Replay return prod (ConsensusBlockNumber, ConsensusBlockNumber, ReplayRecords) with
+  | replayValue after upto records => tuple (after, upto, records)
+def replayAfter : Replay -> ConsensusBlockNumber := fun (replay : Replay) => (replayFields replay).0
+def replayUpto : Replay -> ConsensusBlockNumber := fun (replay : Replay) => (replayFields replay).1
+def replayLength : Replay -> Nat := fun (replay : Replay) => seqReplayRecordLength (replayFields replay).2
+def replayIsEmpty : Replay -> Bool := fun (replay : Replay) => natEq (replayLength replay) 0
+def replayBlocks : Replay -> ConsensusBlocks := fun (replay : Replay) =>
+  listMapInto (prod (ConsensusBlock, Batches)) ReplayRecords ConsensusBlock ConsensusBlocks seqReplayRecordOps seqConsensusBlockOps (fun (record : prod (ConsensusBlock, Batches)) => record.0) (replayFields replay).2
+def replaySubDags : Replay -> SubDags := fun (replay : Replay) =>
+  listMapInto (prod (ConsensusBlock, Batches)) ReplayRecords SubDag SubDags seqReplayRecordOps seqSubDagOps (fun (record : prod (ConsensusBlock, Batches)) => consensusBlockSubDag record.0) (replayFields replay).2
+def replayBodies : Replay -> Batches := fun (replay : Replay) =>
+  listFoldLeft (prod (ConsensusBlock, Batches)) ReplayRecords Batches seqReplayRecordOps (fun (acc : Batches) (record : prod (ConsensusBlock, Batches)) => listAppend Batch Batches seqBatchOps acc record.1) batchesNil (replayFields replay).2
+def replayLast : Replay -> ValueOption ConsensusBlock := fun (replay : Replay) =>
+  listFoldLeft (prod (ConsensusBlock, Batches)) ReplayRecords (ValueOption ConsensusBlock) seqReplayRecordOps
+    (fun (acc : ValueOption ConsensusBlock) (record : prod (ConsensusBlock, Batches)) => valueSome ConsensusBlock record.0) (valueNone ConsensusBlock) (replayFields replay).2
+def ReplayWalk : Type 0 := sum (ReplayBreak, prod (Nat, OutputDigest, ReplayRecords))
+def replayCollect : ConsensusBlockNumber -> OutputDigest -> ConsensusBlockNumber -> (ConsensusBlockNumber -> ValueOption (prod (ConsensusBlock, Batches))) -> sum (ReplayBreak, Replay) :=
+  fun (after : ConsensusBlockNumber) (parent : OutputDigest) (upto : ConsensusBlockNumber) (fetch : ConsensusBlockNumber -> ValueOption (prod (ConsensusBlock, Batches))) =>
+    let count : Nat := natSub (consensusBlockNumberNat upto) (consensusBlockNumberNat after) in
+    let result : ReplayWalk := stepsFold ReplayWalk steps64
+      (fun (walk : ReplayWalk) => case walk with
+        | 0 (error : ReplayBreak) => 1
+        | 1 (state : prod (Nat, OutputDigest, ReplayRecords)) => boolNat (natEq state.0 count))
+      (fun (walk : ReplayWalk) => case walk with
+        | 0 (error : ReplayBreak) => walk
+        | 1 (state : prod (Nat, OutputDigest, ReplayRecords)) =>
+          let number : ConsensusBlockNumber := consensusBlockNumber (natAdd (consensusBlockNumberNat after) (natAdd state.0 1)) in
+          case (fetch number) with
+          | 0 (unit : prod ()) => inj 0 of 2 (replayHole number)
+          | 1 (record : prod (ConsensusBlock, Batches)) =>
+            case (outputDigestEqual (consensusBlockParent record.0) state.1) with
+            | 0 (unit : prod ()) => inj 0 of 2 (replayBrokenLink number state.1 (consensusBlockParent record.0))
+            | 1 (unit : prod ()) => inj 1 of 2 (tuple (natAdd state.0 1, consensusBlockDigest record.0, replayRecordsCons record state.2)))
+      (inj 1 of 2 (tuple (0, parent, replayRecordsNil))) in
+    case result with
+    | 0 (error : ReplayBreak) => inj 0 of 2 error
+    | 1 (state : prod (Nat, OutputDigest, ReplayRecords)) => inj 1 of 2 (replayValue after (consensusBlockNumber (maxNat (consensusBlockNumberNat after) (consensusBlockNumberNat upto))) (seqReplayRecordReverse state.2))

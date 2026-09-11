@@ -1,0 +1,32 @@
+-- Newest first internally, with chronological order at the list boundary.
+def CommittedLog : Type 0 := SubDags
+def committedLogEmpty : CommittedLog := subDagsNil
+def committedLogAppend : CommittedLog -> SubDag -> CommittedLog := fun (log : CommittedLog) (value : SubDag) => subDagsCons value log
+def committedLogOfList : SubDags -> CommittedLog := seqSubDagReverse
+def committedLogToList : CommittedLog -> SubDags := seqSubDagReverse
+def committedLogLatest : CommittedLog -> ValueOption SubDag := seqSubDagHead
+def committedLogLastCommitted : CommittedLog -> AuthorityRounds := fun (log : CommittedLog) =>
+  listFoldLeft SubDag SubDags AuthorityRounds seqSubDagOps (fun (acc : AuthorityRounds) (value : SubDag) =>
+    listFoldLeft Header Headers AuthorityRounds seqHeaderOps (fun (acc : AuthorityRounds) (header : Header) =>
+      let old : Round := case (mapLookup AuthorityId Round AuthorityRounds seqAuthorityRoundOps authorityIdEqual (headerAuthor header) acc) with
+        | 0 (unit : prod ()) => roundGenesis
+        | 1 (round : Round) => round in
+      mapAdd AuthorityId Round AuthorityRounds seqAuthorityRoundOps authorityIdCompare (headerAuthor header)
+        (roundValue (maxNat (roundNat old) (roundNat (headerRound header)))) acc)
+      acc (nonemptyToList Header Headers seqHeaderOps (subDagHeaders value))) authorityRoundsNil log
+def committedLogLastCommittedRound : CommittedLog -> Round := fun (log : CommittedLog) =>
+  roundValue (listFoldLeft (prod (AuthorityId, Round)) AuthorityRounds Nat seqAuthorityRoundOps
+    (fun (acc : Nat) (entry : prod (AuthorityId, Round)) => maxNat acc (roundNat entry.1)) 0 (committedLogLastCommitted log))
+def committedLogLatestFinalScores : CommittedLog -> ValueOption SubDag := fun (log : CommittedLog) =>
+  listFind SubDag SubDags seqSubDagOps (fun (value : SubDag) => reputationIsFinal (subDagScores value)) log
+def leaderScheduleFromStore : Committee -> LeaderThreshold -> CommittedLog -> LeaderSchedule := fun (committee : Committee) (threshold : LeaderThreshold) (log : CommittedLog) =>
+  let base : LeaderSchedule := leaderScheduleCreate committee threshold in
+  case (committedLogLatestFinalScores log) with
+  | 0 (unit : prod ()) => base
+  | 1 (value : SubDag) =>
+    match (leaderRoundOfRound (subDagLeaderRound value)) as self in LeaderRoundResult return LeaderSchedule with
+    | leaderRoundInvalid => base
+    | leaderRoundValid round =>
+      case (leaderNoteFinalScores base round (subDagScores value)) with
+      | 0 (unit : prod ()) => base
+      | 1 (schedule : LeaderSchedule) => schedule

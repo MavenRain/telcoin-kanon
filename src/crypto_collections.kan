@@ -413,3 +413,279 @@ def seqBatchWorkerUniq : (prod (BatchDigest, WorkerId) -> prod (BatchDigest, Wor
   fun (compare : prod (BatchDigest, WorkerId) -> prod (BatchDigest, WorkerId) -> Ordering) (xs : BatchWorkers) => seqBatchWorkerUniqScan xs compare (valueNone (prod (BatchDigest, WorkerId))) batchWorkersNil
 def seqBatchWorkerOps : ListOps (prod (BatchDigest, WorkerId)) BatchWorkers :=
   tuple (seqBatchWorkerEmpty, seqBatchWorkerCons, seqBatchWorkerReverse, seqBatchWorkerLength, seqBatchWorkerHead, seqBatchWorkerTail, seqBatchWorkerWrite, seqBatchWorkerSort, seqBatchWorkerUniq)
+
+mu AuthorityRounds : Type 0 :=
+| authorityRoundsNil : AuthorityRounds
+| authorityRoundsCons (head : prod (AuthorityId, Round)) (tail : AuthorityRounds) : AuthorityRounds
+
+def seqAuthorityRoundEmpty : AuthorityRounds := authorityRoundsNil
+def seqAuthorityRoundCons : prod (AuthorityId, Round) -> AuthorityRounds -> AuthorityRounds := fun (head : prod (AuthorityId, Round)) (tail : AuthorityRounds) => authorityRoundsCons head tail
+def seqAuthorityRoundHead : AuthorityRounds -> ValueOption (prod (AuthorityId, Round)) := fun (xs : AuthorityRounds) =>
+  match xs as self in AuthorityRounds return ValueOption (prod (AuthorityId, Round)) with
+  | authorityRoundsNil => valueNone (prod (AuthorityId, Round))
+  | authorityRoundsCons head tail => valueSome (prod (AuthorityId, Round)) head
+def seqAuthorityRoundTail : AuthorityRounds -> AuthorityRounds := fun (xs : AuthorityRounds) =>
+  match xs as self in AuthorityRounds return AuthorityRounds with
+  | authorityRoundsNil => authorityRoundsNil
+  | authorityRoundsCons head tail => tail
+def rec seqAuthorityRoundRevAcc : AuthorityRounds -> AuthorityRounds -> AuthorityRounds := fun (xs : AuthorityRounds) (acc : AuthorityRounds) =>
+  match xs as self in AuthorityRounds return AuthorityRounds with
+  | authorityRoundsNil => acc
+  | authorityRoundsCons head tail => seqAuthorityRoundRevAcc tail (authorityRoundsCons head acc)
+def seqAuthorityRoundReverse : AuthorityRounds -> AuthorityRounds := fun (xs : AuthorityRounds) => seqAuthorityRoundRevAcc xs authorityRoundsNil
+def rec seqAuthorityRoundLengthAcc : AuthorityRounds -> Nat -> Nat := fun (xs : AuthorityRounds) (acc : Nat) =>
+  match xs as self in AuthorityRounds return Nat with
+  | authorityRoundsNil => acc
+  | authorityRoundsCons head tail => seqAuthorityRoundLengthAcc tail (natAdd acc 1)
+def seqAuthorityRoundLength : AuthorityRounds -> Nat := fun (xs : AuthorityRounds) => seqAuthorityRoundLengthAcc xs 0
+def rec seqAuthorityRoundWriteAcc : AuthorityRounds -> (prod (AuthorityId, Round) -> Bytes) -> Bytes -> Bytes :=
+  fun (xs : AuthorityRounds) (write : prod (AuthorityId, Round) -> Bytes) (acc : Bytes) =>
+    match xs as self in AuthorityRounds return Bytes with
+    | authorityRoundsNil => reverse acc
+    | authorityRoundsCons head tail => seqAuthorityRoundWriteAcc tail write (reverseOnto (write head) acc)
+def seqAuthorityRoundWrite : (prod (AuthorityId, Round) -> Bytes) -> AuthorityRounds -> Bytes :=
+  fun (write : prod (AuthorityId, Round) -> Bytes) (xs : AuthorityRounds) => seqAuthorityRoundWriteAcc xs write bytesNil
+def rec seqAuthorityRoundInsert : AuthorityRounds -> (prod (AuthorityId, Round) -> prod (AuthorityId, Round) -> Ordering) -> prod (AuthorityId, Round) -> AuthorityRounds :=
+  fun (xs : AuthorityRounds) (compare : prod (AuthorityId, Round) -> prod (AuthorityId, Round) -> Ordering) (value : prod (AuthorityId, Round)) =>
+    match xs as self in AuthorityRounds return AuthorityRounds with
+    | authorityRoundsNil => authorityRoundsCons value authorityRoundsNil
+    | authorityRoundsCons head tail =>
+      match (compare value head) as compared in Ordering return AuthorityRounds with
+      | orderLess => authorityRoundsCons value xs
+      | orderEqual => authorityRoundsCons value xs
+      | orderGreater => authorityRoundsCons head (seqAuthorityRoundInsert tail compare value)
+def rec seqAuthorityRoundSortScan : AuthorityRounds -> (prod (AuthorityId, Round) -> prod (AuthorityId, Round) -> Ordering) -> AuthorityRounds :=
+  fun (xs : AuthorityRounds) (compare : prod (AuthorityId, Round) -> prod (AuthorityId, Round) -> Ordering) =>
+    match xs as self in AuthorityRounds return AuthorityRounds with
+    | authorityRoundsNil => authorityRoundsNil
+    | authorityRoundsCons head tail => seqAuthorityRoundInsert (seqAuthorityRoundSortScan tail compare) compare head
+def seqAuthorityRoundSort : (prod (AuthorityId, Round) -> prod (AuthorityId, Round) -> Ordering) -> AuthorityRounds -> AuthorityRounds :=
+  fun (compare : prod (AuthorityId, Round) -> prod (AuthorityId, Round) -> Ordering) (xs : AuthorityRounds) => seqAuthorityRoundSortScan xs compare
+def rec seqAuthorityRoundUniqScan : AuthorityRounds -> (prod (AuthorityId, Round) -> prod (AuthorityId, Round) -> Ordering) -> ValueOption (prod (AuthorityId, Round)) -> AuthorityRounds -> AuthorityRounds :=
+  fun (xs : AuthorityRounds) (compare : prod (AuthorityId, Round) -> prod (AuthorityId, Round) -> Ordering) (previous : ValueOption (prod (AuthorityId, Round))) (acc : AuthorityRounds) =>
+    match xs as self in AuthorityRounds return AuthorityRounds with
+    | authorityRoundsNil => seqAuthorityRoundReverse acc
+    | authorityRoundsCons head tail =>
+      let duplicate : Nat :=
+        case previous with
+        | 0 (unit : prod ()) => 0
+        | 1 (value : prod (AuthorityId, Round)) =>
+          match (compare value head) as compared in Ordering return Nat with
+          | orderLess => 0
+          | orderGreater => 0
+          | orderEqual => 1
+      in
+      case (natEq duplicate 1) with
+      | 0 (unit : prod ()) => seqAuthorityRoundUniqScan tail compare (valueSome (prod (AuthorityId, Round)) head) (authorityRoundsCons head acc)
+      | 1 (unit : prod ()) => seqAuthorityRoundUniqScan tail compare previous acc
+def seqAuthorityRoundUniq : (prod (AuthorityId, Round) -> prod (AuthorityId, Round) -> Ordering) -> AuthorityRounds -> AuthorityRounds :=
+  fun (compare : prod (AuthorityId, Round) -> prod (AuthorityId, Round) -> Ordering) (xs : AuthorityRounds) => seqAuthorityRoundUniqScan xs compare (valueNone (prod (AuthorityId, Round))) authorityRoundsNil
+def seqAuthorityRoundOps : ListOps (prod (AuthorityId, Round)) AuthorityRounds :=
+  tuple (seqAuthorityRoundEmpty, seqAuthorityRoundCons, seqAuthorityRoundReverse, seqAuthorityRoundLength, seqAuthorityRoundHead, seqAuthorityRoundTail, seqAuthorityRoundWrite, seqAuthorityRoundSort, seqAuthorityRoundUniq)
+
+mu VoterEntries : Type 0 :=
+| voterEntriesNil : VoterEntries
+| voterEntriesCons (head : prod (AuthorityId, prod (Round, HeaderDigest))) (tail : VoterEntries) : VoterEntries
+
+def seqVoterEntryEmpty : VoterEntries := voterEntriesNil
+def seqVoterEntryCons : prod (AuthorityId, prod (Round, HeaderDigest)) -> VoterEntries -> VoterEntries := fun (head : prod (AuthorityId, prod (Round, HeaderDigest))) (tail : VoterEntries) => voterEntriesCons head tail
+def seqVoterEntryHead : VoterEntries -> ValueOption (prod (AuthorityId, prod (Round, HeaderDigest))) := fun (xs : VoterEntries) =>
+  match xs as self in VoterEntries return ValueOption (prod (AuthorityId, prod (Round, HeaderDigest))) with
+  | voterEntriesNil => valueNone (prod (AuthorityId, prod (Round, HeaderDigest)))
+  | voterEntriesCons head tail => valueSome (prod (AuthorityId, prod (Round, HeaderDigest))) head
+def seqVoterEntryTail : VoterEntries -> VoterEntries := fun (xs : VoterEntries) =>
+  match xs as self in VoterEntries return VoterEntries with
+  | voterEntriesNil => voterEntriesNil
+  | voterEntriesCons head tail => tail
+def rec seqVoterEntryRevAcc : VoterEntries -> VoterEntries -> VoterEntries := fun (xs : VoterEntries) (acc : VoterEntries) =>
+  match xs as self in VoterEntries return VoterEntries with
+  | voterEntriesNil => acc
+  | voterEntriesCons head tail => seqVoterEntryRevAcc tail (voterEntriesCons head acc)
+def seqVoterEntryReverse : VoterEntries -> VoterEntries := fun (xs : VoterEntries) => seqVoterEntryRevAcc xs voterEntriesNil
+def rec seqVoterEntryLengthAcc : VoterEntries -> Nat -> Nat := fun (xs : VoterEntries) (acc : Nat) =>
+  match xs as self in VoterEntries return Nat with
+  | voterEntriesNil => acc
+  | voterEntriesCons head tail => seqVoterEntryLengthAcc tail (natAdd acc 1)
+def seqVoterEntryLength : VoterEntries -> Nat := fun (xs : VoterEntries) => seqVoterEntryLengthAcc xs 0
+def rec seqVoterEntryWriteAcc : VoterEntries -> (prod (AuthorityId, prod (Round, HeaderDigest)) -> Bytes) -> Bytes -> Bytes :=
+  fun (xs : VoterEntries) (write : prod (AuthorityId, prod (Round, HeaderDigest)) -> Bytes) (acc : Bytes) =>
+    match xs as self in VoterEntries return Bytes with
+    | voterEntriesNil => reverse acc
+    | voterEntriesCons head tail => seqVoterEntryWriteAcc tail write (reverseOnto (write head) acc)
+def seqVoterEntryWrite : (prod (AuthorityId, prod (Round, HeaderDigest)) -> Bytes) -> VoterEntries -> Bytes :=
+  fun (write : prod (AuthorityId, prod (Round, HeaderDigest)) -> Bytes) (xs : VoterEntries) => seqVoterEntryWriteAcc xs write bytesNil
+def rec seqVoterEntryInsert : VoterEntries -> (prod (AuthorityId, prod (Round, HeaderDigest)) -> prod (AuthorityId, prod (Round, HeaderDigest)) -> Ordering) -> prod (AuthorityId, prod (Round, HeaderDigest)) -> VoterEntries :=
+  fun (xs : VoterEntries) (compare : prod (AuthorityId, prod (Round, HeaderDigest)) -> prod (AuthorityId, prod (Round, HeaderDigest)) -> Ordering) (value : prod (AuthorityId, prod (Round, HeaderDigest))) =>
+    match xs as self in VoterEntries return VoterEntries with
+    | voterEntriesNil => voterEntriesCons value voterEntriesNil
+    | voterEntriesCons head tail =>
+      match (compare value head) as compared in Ordering return VoterEntries with
+      | orderLess => voterEntriesCons value xs
+      | orderEqual => voterEntriesCons value xs
+      | orderGreater => voterEntriesCons head (seqVoterEntryInsert tail compare value)
+def rec seqVoterEntrySortScan : VoterEntries -> (prod (AuthorityId, prod (Round, HeaderDigest)) -> prod (AuthorityId, prod (Round, HeaderDigest)) -> Ordering) -> VoterEntries :=
+  fun (xs : VoterEntries) (compare : prod (AuthorityId, prod (Round, HeaderDigest)) -> prod (AuthorityId, prod (Round, HeaderDigest)) -> Ordering) =>
+    match xs as self in VoterEntries return VoterEntries with
+    | voterEntriesNil => voterEntriesNil
+    | voterEntriesCons head tail => seqVoterEntryInsert (seqVoterEntrySortScan tail compare) compare head
+def seqVoterEntrySort : (prod (AuthorityId, prod (Round, HeaderDigest)) -> prod (AuthorityId, prod (Round, HeaderDigest)) -> Ordering) -> VoterEntries -> VoterEntries :=
+  fun (compare : prod (AuthorityId, prod (Round, HeaderDigest)) -> prod (AuthorityId, prod (Round, HeaderDigest)) -> Ordering) (xs : VoterEntries) => seqVoterEntrySortScan xs compare
+def rec seqVoterEntryUniqScan : VoterEntries -> (prod (AuthorityId, prod (Round, HeaderDigest)) -> prod (AuthorityId, prod (Round, HeaderDigest)) -> Ordering) -> ValueOption (prod (AuthorityId, prod (Round, HeaderDigest))) -> VoterEntries -> VoterEntries :=
+  fun (xs : VoterEntries) (compare : prod (AuthorityId, prod (Round, HeaderDigest)) -> prod (AuthorityId, prod (Round, HeaderDigest)) -> Ordering) (previous : ValueOption (prod (AuthorityId, prod (Round, HeaderDigest)))) (acc : VoterEntries) =>
+    match xs as self in VoterEntries return VoterEntries with
+    | voterEntriesNil => seqVoterEntryReverse acc
+    | voterEntriesCons head tail =>
+      let duplicate : Nat :=
+        case previous with
+        | 0 (unit : prod ()) => 0
+        | 1 (value : prod (AuthorityId, prod (Round, HeaderDigest))) =>
+          match (compare value head) as compared in Ordering return Nat with
+          | orderLess => 0
+          | orderGreater => 0
+          | orderEqual => 1
+      in
+      case (natEq duplicate 1) with
+      | 0 (unit : prod ()) => seqVoterEntryUniqScan tail compare (valueSome (prod (AuthorityId, prod (Round, HeaderDigest))) head) (voterEntriesCons head acc)
+      | 1 (unit : prod ()) => seqVoterEntryUniqScan tail compare previous acc
+def seqVoterEntryUniq : (prod (AuthorityId, prod (Round, HeaderDigest)) -> prod (AuthorityId, prod (Round, HeaderDigest)) -> Ordering) -> VoterEntries -> VoterEntries :=
+  fun (compare : prod (AuthorityId, prod (Round, HeaderDigest)) -> prod (AuthorityId, prod (Round, HeaderDigest)) -> Ordering) (xs : VoterEntries) => seqVoterEntryUniqScan xs compare (valueNone (prod (AuthorityId, prod (Round, HeaderDigest)))) voterEntriesNil
+def seqVoterEntryOps : ListOps (prod (AuthorityId, prod (Round, HeaderDigest))) VoterEntries :=
+  tuple (seqVoterEntryEmpty, seqVoterEntryCons, seqVoterEntryReverse, seqVoterEntryLength, seqVoterEntryHead, seqVoterEntryTail, seqVoterEntryWrite, seqVoterEntrySort, seqVoterEntryUniq)
+
+mu AuthorityScores : Type 0 :=
+| authorityScoresNil : AuthorityScores
+| authorityScoresCons (head : prod (AuthorityId, Nat)) (tail : AuthorityScores) : AuthorityScores
+
+def seqAuthorityScoreEmpty : AuthorityScores := authorityScoresNil
+def seqAuthorityScoreCons : prod (AuthorityId, Nat) -> AuthorityScores -> AuthorityScores := fun (head : prod (AuthorityId, Nat)) (tail : AuthorityScores) => authorityScoresCons head tail
+def seqAuthorityScoreHead : AuthorityScores -> ValueOption (prod (AuthorityId, Nat)) := fun (xs : AuthorityScores) =>
+  match xs as self in AuthorityScores return ValueOption (prod (AuthorityId, Nat)) with
+  | authorityScoresNil => valueNone (prod (AuthorityId, Nat))
+  | authorityScoresCons head tail => valueSome (prod (AuthorityId, Nat)) head
+def seqAuthorityScoreTail : AuthorityScores -> AuthorityScores := fun (xs : AuthorityScores) =>
+  match xs as self in AuthorityScores return AuthorityScores with
+  | authorityScoresNil => authorityScoresNil
+  | authorityScoresCons head tail => tail
+def rec seqAuthorityScoreRevAcc : AuthorityScores -> AuthorityScores -> AuthorityScores := fun (xs : AuthorityScores) (acc : AuthorityScores) =>
+  match xs as self in AuthorityScores return AuthorityScores with
+  | authorityScoresNil => acc
+  | authorityScoresCons head tail => seqAuthorityScoreRevAcc tail (authorityScoresCons head acc)
+def seqAuthorityScoreReverse : AuthorityScores -> AuthorityScores := fun (xs : AuthorityScores) => seqAuthorityScoreRevAcc xs authorityScoresNil
+def rec seqAuthorityScoreLengthAcc : AuthorityScores -> Nat -> Nat := fun (xs : AuthorityScores) (acc : Nat) =>
+  match xs as self in AuthorityScores return Nat with
+  | authorityScoresNil => acc
+  | authorityScoresCons head tail => seqAuthorityScoreLengthAcc tail (natAdd acc 1)
+def seqAuthorityScoreLength : AuthorityScores -> Nat := fun (xs : AuthorityScores) => seqAuthorityScoreLengthAcc xs 0
+def rec seqAuthorityScoreWriteAcc : AuthorityScores -> (prod (AuthorityId, Nat) -> Bytes) -> Bytes -> Bytes :=
+  fun (xs : AuthorityScores) (write : prod (AuthorityId, Nat) -> Bytes) (acc : Bytes) =>
+    match xs as self in AuthorityScores return Bytes with
+    | authorityScoresNil => reverse acc
+    | authorityScoresCons head tail => seqAuthorityScoreWriteAcc tail write (reverseOnto (write head) acc)
+def seqAuthorityScoreWrite : (prod (AuthorityId, Nat) -> Bytes) -> AuthorityScores -> Bytes :=
+  fun (write : prod (AuthorityId, Nat) -> Bytes) (xs : AuthorityScores) => seqAuthorityScoreWriteAcc xs write bytesNil
+def rec seqAuthorityScoreInsert : AuthorityScores -> (prod (AuthorityId, Nat) -> prod (AuthorityId, Nat) -> Ordering) -> prod (AuthorityId, Nat) -> AuthorityScores :=
+  fun (xs : AuthorityScores) (compare : prod (AuthorityId, Nat) -> prod (AuthorityId, Nat) -> Ordering) (value : prod (AuthorityId, Nat)) =>
+    match xs as self in AuthorityScores return AuthorityScores with
+    | authorityScoresNil => authorityScoresCons value authorityScoresNil
+    | authorityScoresCons head tail =>
+      match (compare value head) as compared in Ordering return AuthorityScores with
+      | orderLess => authorityScoresCons value xs
+      | orderEqual => authorityScoresCons value xs
+      | orderGreater => authorityScoresCons head (seqAuthorityScoreInsert tail compare value)
+def rec seqAuthorityScoreSortScan : AuthorityScores -> (prod (AuthorityId, Nat) -> prod (AuthorityId, Nat) -> Ordering) -> AuthorityScores :=
+  fun (xs : AuthorityScores) (compare : prod (AuthorityId, Nat) -> prod (AuthorityId, Nat) -> Ordering) =>
+    match xs as self in AuthorityScores return AuthorityScores with
+    | authorityScoresNil => authorityScoresNil
+    | authorityScoresCons head tail => seqAuthorityScoreInsert (seqAuthorityScoreSortScan tail compare) compare head
+def seqAuthorityScoreSort : (prod (AuthorityId, Nat) -> prod (AuthorityId, Nat) -> Ordering) -> AuthorityScores -> AuthorityScores :=
+  fun (compare : prod (AuthorityId, Nat) -> prod (AuthorityId, Nat) -> Ordering) (xs : AuthorityScores) => seqAuthorityScoreSortScan xs compare
+def rec seqAuthorityScoreUniqScan : AuthorityScores -> (prod (AuthorityId, Nat) -> prod (AuthorityId, Nat) -> Ordering) -> ValueOption (prod (AuthorityId, Nat)) -> AuthorityScores -> AuthorityScores :=
+  fun (xs : AuthorityScores) (compare : prod (AuthorityId, Nat) -> prod (AuthorityId, Nat) -> Ordering) (previous : ValueOption (prod (AuthorityId, Nat))) (acc : AuthorityScores) =>
+    match xs as self in AuthorityScores return AuthorityScores with
+    | authorityScoresNil => seqAuthorityScoreReverse acc
+    | authorityScoresCons head tail =>
+      let duplicate : Nat :=
+        case previous with
+        | 0 (unit : prod ()) => 0
+        | 1 (value : prod (AuthorityId, Nat)) =>
+          match (compare value head) as compared in Ordering return Nat with
+          | orderLess => 0
+          | orderGreater => 0
+          | orderEqual => 1
+      in
+      case (natEq duplicate 1) with
+      | 0 (unit : prod ()) => seqAuthorityScoreUniqScan tail compare (valueSome (prod (AuthorityId, Nat)) head) (authorityScoresCons head acc)
+      | 1 (unit : prod ()) => seqAuthorityScoreUniqScan tail compare previous acc
+def seqAuthorityScoreUniq : (prod (AuthorityId, Nat) -> prod (AuthorityId, Nat) -> Ordering) -> AuthorityScores -> AuthorityScores :=
+  fun (compare : prod (AuthorityId, Nat) -> prod (AuthorityId, Nat) -> Ordering) (xs : AuthorityScores) => seqAuthorityScoreUniqScan xs compare (valueNone (prod (AuthorityId, Nat))) authorityScoresNil
+def seqAuthorityScoreOps : ListOps (prod (AuthorityId, Nat)) AuthorityScores :=
+  tuple (seqAuthorityScoreEmpty, seqAuthorityScoreCons, seqAuthorityScoreReverse, seqAuthorityScoreLength, seqAuthorityScoreHead, seqAuthorityScoreTail, seqAuthorityScoreWrite, seqAuthorityScoreSort, seqAuthorityScoreUniq)
+
+mu BatchDigests : Type 0 :=
+| batchDigestsNil : BatchDigests
+| batchDigestsCons (head : BatchDigest) (tail : BatchDigests) : BatchDigests
+
+def seqBatchDigestEmpty : BatchDigests := batchDigestsNil
+def seqBatchDigestCons : BatchDigest -> BatchDigests -> BatchDigests := fun (head : BatchDigest) (tail : BatchDigests) => batchDigestsCons head tail
+def seqBatchDigestHead : BatchDigests -> ValueOption BatchDigest := fun (xs : BatchDigests) =>
+  match xs as self in BatchDigests return ValueOption BatchDigest with
+  | batchDigestsNil => valueNone (BatchDigest)
+  | batchDigestsCons head tail => valueSome (BatchDigest) head
+def seqBatchDigestTail : BatchDigests -> BatchDigests := fun (xs : BatchDigests) =>
+  match xs as self in BatchDigests return BatchDigests with
+  | batchDigestsNil => batchDigestsNil
+  | batchDigestsCons head tail => tail
+def rec seqBatchDigestRevAcc : BatchDigests -> BatchDigests -> BatchDigests := fun (xs : BatchDigests) (acc : BatchDigests) =>
+  match xs as self in BatchDigests return BatchDigests with
+  | batchDigestsNil => acc
+  | batchDigestsCons head tail => seqBatchDigestRevAcc tail (batchDigestsCons head acc)
+def seqBatchDigestReverse : BatchDigests -> BatchDigests := fun (xs : BatchDigests) => seqBatchDigestRevAcc xs batchDigestsNil
+def rec seqBatchDigestLengthAcc : BatchDigests -> Nat -> Nat := fun (xs : BatchDigests) (acc : Nat) =>
+  match xs as self in BatchDigests return Nat with
+  | batchDigestsNil => acc
+  | batchDigestsCons head tail => seqBatchDigestLengthAcc tail (natAdd acc 1)
+def seqBatchDigestLength : BatchDigests -> Nat := fun (xs : BatchDigests) => seqBatchDigestLengthAcc xs 0
+def rec seqBatchDigestWriteAcc : BatchDigests -> (BatchDigest -> Bytes) -> Bytes -> Bytes :=
+  fun (xs : BatchDigests) (write : BatchDigest -> Bytes) (acc : Bytes) =>
+    match xs as self in BatchDigests return Bytes with
+    | batchDigestsNil => reverse acc
+    | batchDigestsCons head tail => seqBatchDigestWriteAcc tail write (reverseOnto (write head) acc)
+def seqBatchDigestWrite : (BatchDigest -> Bytes) -> BatchDigests -> Bytes :=
+  fun (write : BatchDigest -> Bytes) (xs : BatchDigests) => seqBatchDigestWriteAcc xs write bytesNil
+def rec seqBatchDigestInsert : BatchDigests -> (BatchDigest -> BatchDigest -> Ordering) -> BatchDigest -> BatchDigests :=
+  fun (xs : BatchDigests) (compare : BatchDigest -> BatchDigest -> Ordering) (value : BatchDigest) =>
+    match xs as self in BatchDigests return BatchDigests with
+    | batchDigestsNil => batchDigestsCons value batchDigestsNil
+    | batchDigestsCons head tail =>
+      match (compare value head) as compared in Ordering return BatchDigests with
+      | orderLess => batchDigestsCons value xs
+      | orderEqual => batchDigestsCons value xs
+      | orderGreater => batchDigestsCons head (seqBatchDigestInsert tail compare value)
+def rec seqBatchDigestSortScan : BatchDigests -> (BatchDigest -> BatchDigest -> Ordering) -> BatchDigests :=
+  fun (xs : BatchDigests) (compare : BatchDigest -> BatchDigest -> Ordering) =>
+    match xs as self in BatchDigests return BatchDigests with
+    | batchDigestsNil => batchDigestsNil
+    | batchDigestsCons head tail => seqBatchDigestInsert (seqBatchDigestSortScan tail compare) compare head
+def seqBatchDigestSort : (BatchDigest -> BatchDigest -> Ordering) -> BatchDigests -> BatchDigests :=
+  fun (compare : BatchDigest -> BatchDigest -> Ordering) (xs : BatchDigests) => seqBatchDigestSortScan xs compare
+def rec seqBatchDigestUniqScan : BatchDigests -> (BatchDigest -> BatchDigest -> Ordering) -> ValueOption (BatchDigest) -> BatchDigests -> BatchDigests :=
+  fun (xs : BatchDigests) (compare : BatchDigest -> BatchDigest -> Ordering) (previous : ValueOption (BatchDigest)) (acc : BatchDigests) =>
+    match xs as self in BatchDigests return BatchDigests with
+    | batchDigestsNil => seqBatchDigestReverse acc
+    | batchDigestsCons head tail =>
+      let duplicate : Nat :=
+        case previous with
+        | 0 (unit : prod ()) => 0
+        | 1 (value : BatchDigest) =>
+          match (compare value head) as compared in Ordering return Nat with
+          | orderLess => 0
+          | orderGreater => 0
+          | orderEqual => 1
+      in
+      case (natEq duplicate 1) with
+      | 0 (unit : prod ()) => seqBatchDigestUniqScan tail compare (valueSome (BatchDigest) head) (batchDigestsCons head acc)
+      | 1 (unit : prod ()) => seqBatchDigestUniqScan tail compare previous acc
+def seqBatchDigestUniq : (BatchDigest -> BatchDigest -> Ordering) -> BatchDigests -> BatchDigests :=
+  fun (compare : BatchDigest -> BatchDigest -> Ordering) (xs : BatchDigests) => seqBatchDigestUniqScan xs compare (valueNone (BatchDigest)) batchDigestsNil
+def seqBatchDigestOps : ListOps (BatchDigest) BatchDigests :=
+  tuple (seqBatchDigestEmpty, seqBatchDigestCons, seqBatchDigestReverse, seqBatchDigestLength, seqBatchDigestHead, seqBatchDigestTail, seqBatchDigestWrite, seqBatchDigestSort, seqBatchDigestUniq)

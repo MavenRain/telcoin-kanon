@@ -1,0 +1,180 @@
+mu Bullshark : Type 0 :=
+| bullsharkValue (committee : Committee) (schedule : LeaderSchedule) (window : Nat) (dag : Dag) (previous : ValueOption SubDag) (maxInserted : Round) : Bullshark
+def bullsharkFields : Bullshark -> prod (Committee, LeaderSchedule, Nat, Dag, ValueOption SubDag, Round) := fun (state : Bullshark) =>
+  match state as self in Bullshark return prod (Committee, LeaderSchedule, Nat, Dag, ValueOption SubDag, Round) with
+  | bullsharkValue committee schedule window dag previous maxInserted => tuple (committee, schedule, window, dag, previous, maxInserted)
+def bullsharkDag : Bullshark -> Dag := fun (state : Bullshark) => (bullsharkFields state).3
+def bullsharkSchedule : Bullshark -> LeaderSchedule := fun (state : Bullshark) => (bullsharkFields state).1
+def bullsharkLastSubDag : Bullshark -> ValueOption SubDag := fun (state : Bullshark) => (bullsharkFields state).4
+def bullsharkMaxInsertedRound : Bullshark -> Round := fun (state : Bullshark) => (bullsharkFields state).5
+def bullsharkCreate : Committee -> LeaderSchedule -> Nat -> Nat -> Bullshark := fun (committee : Committee) (schedule : LeaderSchedule) (window : Nat) (depth : Nat) =>
+  bullsharkValue committee schedule (maxNat 1 window) (dagCreate depth) (valueNone SubDag) roundGenesis
+def bullsharkOfStore : Committee -> LeaderSchedule -> Nat -> Nat -> Certificates -> CommittedLog -> sum (DagError, Bullshark) :=
+  fun (committee : Committee) (schedule : LeaderSchedule) (window : Nat) (depth : Nat) (certificates : Certificates) (log : CommittedLog) =>
+    case (dagRecover depth (committedLogLastCommittedRound log) (committedLogLastCommitted log) certificates) with
+    | 0 (error : DagError) => inj 0 of 2 error
+    | 1 (dag : Dag) =>
+      let maximum : Nat := listFoldLeft Certificate Certificates Nat seqCertificateOps (fun (acc : Nat) (certificate : Certificate) => maxNat acc (roundNat (certificateRound certificate))) 0 certificates in
+      inj 1 of 2 (bullsharkValue committee schedule (maxNat 1 window) dag (committedLogLatest log) (roundValue maximum))
+def headerNamesParent : Header -> HeaderDigest -> Bool := fun (header : Header) (digest : HeaderDigest) =>
+  optionIsSome HeaderDigest (listFind HeaderDigest HeaderDigests seqHeaderDigestOps (headerDigestEqual digest) (headerParents header))
+def bullsharkFrontier : Dag -> Certificates -> Nat -> Certificates := fun (dag : Dag) (frontier : Certificates) (round : Nat) =>
+  listFilter Certificate Certificates seqCertificateOps (fun (candidate : Certificate) =>
+    optionIsSome Certificate (listFind Certificate Certificates seqCertificateOps
+      (fun (parent : Certificate) => headerNamesParent (certificateHeader parent) (certificateDigest candidate)) frontier)) (dagRoundCertificates dag (roundValue round))
+def bullsharkLinked : Bullshark -> Certificate -> Certificate -> Bool := fun (state : Bullshark) (leader : Certificate) (previous : Certificate) =>
+  let target : Nat := roundNat (certificateRound previous) in
+  let result : prod (Nat, Certificates) := stepsFold (prod (Nat, Certificates)) steps32
+    (fun (walk : prod (Nat, Certificates)) => boolNat (natLt walk.0 (natAdd target 1)))
+    (fun (walk : prod (Nat, Certificates)) => tuple (natSub walk.0 1, bullsharkFrontier (bullsharkDag state) walk.1 (natSub walk.0 1)))
+    (tuple (roundNat (certificateRound leader), certificatesCons leader certificatesNil)) in
+  optionIsSome Certificate (listFind Certificate Certificates seqCertificateOps (certificateEqual previous) result.1)
+def bullsharkOrderLeaders : Bullshark -> Certificate -> LeaderRound -> LeaderCertificates := fun (state : Bullshark) (leader : Certificate) (round : LeaderRound) =>
+  let committed : Nat := roundNat (dagCommittedRound (bullsharkDag state)) in
+  let result : prod (Nat, Certificate, LeaderCertificates) := stepsFold (prod (Nat, Certificate, LeaderCertificates)) steps32
+    (fun (walk : prod (Nat, Certificate, LeaderCertificates)) => boolNat (boolOr (natLt walk.0 4) (natLt (natSub walk.0 2) (natAdd committed 1))))
+    (fun (walk : prod (Nat, Certificate, LeaderCertificates)) =>
+      let previousRound : Nat := natSub walk.0 2 in
+      let lr : LeaderRound := leaderRoundValue (roundValue previousRound) in
+      let found : prod (Authority, ValueOption Certificate) := leaderScheduleCertificate (bullsharkSchedule state) (bullsharkDag state) lr in
+      case found.1 with
+      | 0 (unit : prod ()) => tuple (previousRound, walk.1, walk.2)
+      | 1 (previous : Certificate) =>
+        case (bullsharkLinked state walk.1 previous) with
+        | 0 (unit : prod ()) => tuple (previousRound, walk.1, walk.2)
+        | 1 (unit : prod ()) => tuple (previousRound, previous, leaderCertificatesCons (tuple (lr, previous)) walk.2))
+    (tuple (roundNat (leaderRoundRound round), leader, leaderCertificatesCons (tuple (round, leader)) leaderCertificatesNil)) in result.2
+def bullsharkOrderDagStep : Bullshark -> Nat -> prod (Certificates, Certificates, HeaderDigests) -> prod (Certificates, Certificates, HeaderDigests) :=
+  fun (state : Bullshark) (localGc : Nat) (walk : prod (Certificates, Certificates, HeaderDigests)) =>
+    match walk.0 as self in Certificates return prod (Certificates, Certificates, HeaderDigests) with
+    | certificatesNil => walk
+    | certificatesCons certificate rest =>
+      let discovered : Certificates := certificatesCons certificate walk.1 in
+      case (roundEqual (certificateRound certificate) (roundSucc (roundValue localGc))) with
+      | 1 (unit : prod ()) => tuple (rest, discovered, walk.2)
+      | 0 (unit : prod ()) =>
+        let previousRound : Nat := natSub (roundNat (certificateRound certificate)) 1 in
+        let parents : prod (Certificates, HeaderDigests) := listFoldLeft HeaderDigest HeaderDigests (prod (Certificates, HeaderDigests)) seqHeaderDigestOps
+          (fun (acc : prod (Certificates, HeaderDigests)) (digest : HeaderDigest) =>
+            case (dagGetByDigest (bullsharkDag state) digest) with
+            | 0 (unit : prod ()) => acc
+            | 1 (parent : Certificate) =>
+              let seen : Bool := optionIsSome HeaderDigest (listFind HeaderDigest HeaderDigests seqHeaderDigestOps (headerDigestEqual digest) acc.1) in
+              let above : Bool := natLt (roundNat (dagLastCommittedRound (bullsharkDag state) (certificateOrigin parent))) (roundNat (certificateRound parent)) in
+              case (boolAnd (natEq previousRound (roundNat (certificateRound parent))) (boolAnd (natEq (boolNat seen) 0) above)) with
+              | 0 (unit : prod ()) => acc
+              | 1 (unit : prod ()) => tuple (certificatesCons parent acc.0, headerDigestsCons digest acc.1))
+          (tuple (certificatesNil, walk.2)) (headerParents (certificateHeader certificate)) in
+        tuple (listAppend Certificate Certificates seqCertificateOps parents.0 rest, discovered, parents.1)
+def bullsharkOrderDag : Bullshark -> Certificate -> Certificates := fun (state : Bullshark) (leader : Certificate) =>
+  let localGc : Nat := natSub (roundNat (certificateRound leader)) (dagGcDepth (bullsharkDag state)) in
+  let result : prod (Certificates, Certificates, HeaderDigests) := stepsFold (prod (Certificates, Certificates, HeaderDigests)) steps64
+    (fun (walk : prod (Certificates, Certificates, HeaderDigests)) => natSub 1 (boolNat (optionIsSome Certificate (seqCertificateHead walk.0))))
+    (bullsharkOrderDagStep state localGc) (tuple (certificatesCons leader certificatesNil, certificatesNil, headerDigestsNil)) in
+  seqCertificateSort (fun (a : Certificate) (b : Certificate) => roundCompare (certificateRound a) (certificateRound b)) (seqCertificateReverse result.1)
+def bullsharkResolveScores : Bullshark -> Certificate -> Certificates -> ReputationScores := fun (state : Bullshark) (leader : Certificate) (sequence : Certificates) =>
+  let fields : prod (Committee, LeaderSchedule, Nat, Dag, ValueOption SubDag, Round) := bullsharkFields state in
+  let half : Nat := quotient64 (sequenceBits (sequenceNumber (certificateEpoch leader) (certificateRound leader))) 2 in
+  let old : ReputationScores := case fields.4 with
+    | 0 (unit : prod ()) => reputationFresh fields.0
+    | 1 (previous : SubDag) => subDagScores previous in
+  let base : ReputationScores := case (natEq (remainder64 half fields.2) 0) with
+    | 0 (unit : prod ()) => old
+    | 1 (unit : prod ()) => reputationFresh fields.0 in
+  let bumped : ReputationScores := case fields.4 with
+    | 0 (unit : prod ()) => base
+    | 1 (previous : SubDag) =>
+      listFoldLeft Certificate Certificates ReputationScores seqCertificateOps (fun (scores : ReputationScores) (certificate : Certificate) =>
+        case (boolAnd (roundEqual (certificateRound certificate) (roundSucc (subDagLeaderRound previous)))
+          (headerNamesParent (certificateHeader certificate) (headerDigest (subDagLeader previous)))) with
+        | 0 (unit : prod ()) => scores
+        | 1 (unit : prod ()) => reputationBump scores (certificateOrigin certificate)) base sequence in
+  reputationWithFinal (natEq (remainder64 (natAdd half 1) fields.2) 0) bumped
+def bullsharkCommitOne : Bullshark -> prod (LeaderRound, Certificate) -> prod (Bullshark, SubDag, Bool) := fun (state : Bullshark) (leader : prod (LeaderRound, Certificate)) =>
+  let fields : prod (Committee, LeaderSchedule, Nat, Dag, ValueOption SubDag, Round) := bullsharkFields state in
+  let sequence : Certificates := bullsharkOrderDag state leader.1 in
+  let dag : Dag := listFoldLeft Certificate Certificates Dag seqCertificateOps dagUpdate fields.3 sequence in
+  let scores : ReputationScores := bullsharkResolveScores state leader.1 sequence in
+  let nonempty : Nonempty Certificate Certificates := case (nonemptyOfList Certificate Certificates seqCertificateOps sequence) with
+    | 0 (unit : prod ()) => tuple (leader.1, certificatesNil)
+    | 1 (values : Nonempty Certificate Certificates) => values in
+  let subdag : SubDag := subDagCreate nonempty scores fields.4 in
+  let changed : ValueOption LeaderSchedule := leaderNoteFinalScores fields.1 leader.0 scores in
+  let schedule : LeaderSchedule := case changed with
+    | 0 (unit : prod ()) => fields.1
+    | 1 (value : LeaderSchedule) => value in
+  tuple (bullsharkValue fields.0 schedule fields.2 dag (valueSome SubDag subdag) fields.5, subdag, optionIsSome LeaderSchedule changed)
+mu BullsharkNoCommit : Type 0 :=
+| bullsharkCertificateBelowCommit : BullsharkNoCommit
+| bullsharkNoLeaderRound : BullsharkNoCommit
+| bullsharkLeaderBelowCommit : BullsharkNoCommit
+| bullsharkLeaderNotFound : BullsharkNoCommit
+| bullsharkNotEnoughSupport : BullsharkNoCommit
+def bullsharkNoCommitText : BullsharkNoCommit -> Bytes := fun (reason : BullsharkNoCommit) =>
+  match reason as self in BullsharkNoCommit return Bytes with
+  | bullsharkCertificateBelowCommit => b"certificate below commit round"
+  | bullsharkNoLeaderRound => b"no leader round"
+  | bullsharkLeaderBelowCommit => b"leader below commit round"
+  | bullsharkLeaderNotFound => b"leader not found"
+  | bullsharkNotEnoughSupport => b"not enough support for leader"
+mu BullsharkOutcome : Type 0 :=
+| bullsharkNoCommit (reason : BullsharkNoCommit) : BullsharkOutcome
+| bullsharkCommitted (values : Nonempty SubDag SubDags) : BullsharkOutcome
+mu BullsharkStep : Type 0 :=
+| bullsharkStopped (reason : BullsharkNoCommit) : BullsharkStep
+| bullsharkChainCommitted (values : SubDags) : BullsharkStep
+| bullsharkScheduleChanged (values : SubDags) : BullsharkStep
+def rec bullsharkContinueChain : LeaderCertificates -> Bullshark -> SubDags -> Bool -> prod (Bullshark, BullsharkStep) :=
+  fun (rest : LeaderCertificates) (state : Bullshark) (reversed : SubDags) (changed : Bool) =>
+    match rest as self in LeaderCertificates return prod (Bullshark, BullsharkStep) with
+    | leaderCertificatesNil => tuple (state, bullsharkChainCommitted (seqSubDagReverse reversed))
+    | leaderCertificatesCons next tail =>
+      case changed with
+      | 1 (unit : prod ()) => tuple (state, bullsharkScheduleChanged (seqSubDagReverse reversed))
+      | 0 (unit : prod ()) =>
+        let committed : prod (Bullshark, SubDag, Bool) := bullsharkCommitOne state next in
+        bullsharkContinueChain tail committed.0 (subDagsCons committed.1 reversed) committed.2
+def bullsharkCommitLeader : Bullshark -> LeaderRound -> prod (Bullshark, BullsharkStep) := fun (state : Bullshark) (round : LeaderRound) =>
+  let found : prod (Authority, ValueOption Certificate) := leaderScheduleCertificate (bullsharkSchedule state) (bullsharkDag state) round in
+  case found.1 with
+  | 0 (unit : prod ()) => tuple (state, bullsharkStopped bullsharkLeaderNotFound)
+  | 1 (leader : Certificate) =>
+    let supporters : Certificates := listFilter Certificate Certificates seqCertificateOps (fun (candidate : Certificate) =>
+      headerNamesParent (certificateHeader candidate) (certificateDigest leader)) (dagRoundCertificates (bullsharkDag state) (roundSucc (leaderRoundRound round))) in
+    let ids : AuthorityIds := listMapInto Certificate Certificates AuthorityId AuthorityIds seqCertificateOps seqAuthorityIdOps certificateOrigin supporters in
+    case (committeeReachesValidity (bullsharkFields state).0 (committeeStakeOf (bullsharkFields state).0 ids)) with
+    | 0 (unit : prod ()) => tuple (state, bullsharkStopped bullsharkNotEnoughSupport)
+    | 1 (unit : prod ()) =>
+      match (bullsharkOrderLeaders state leader round) as self in LeaderCertificates return prod (Bullshark, BullsharkStep) with
+      | leaderCertificatesNil => tuple (state, bullsharkStopped bullsharkNotEnoughSupport)
+      | leaderCertificatesCons first rest =>
+        let committed : prod (Bullshark, SubDag, Bool) := bullsharkCommitOne state first in
+        bullsharkContinueChain rest committed.0 (subDagsCons committed.1 subDagsNil) committed.2
+def bullsharkRunCommit : Bullshark -> LeaderRound -> prod (Bullshark, BullsharkOutcome) := fun (state : Bullshark) (round : LeaderRound) =>
+  let result : prod (Bullshark, SubDags, Nat, BullsharkNoCommit) := stepsFold (prod (Bullshark, SubDags, Nat, BullsharkNoCommit)) steps32
+    (fun (acc : prod (Bullshark, SubDags, Nat, BullsharkNoCommit)) => acc.2)
+    (fun (acc : prod (Bullshark, SubDags, Nat, BullsharkNoCommit)) =>
+      let step : prod (Bullshark, BullsharkStep) := bullsharkCommitLeader acc.0 round in
+      match step.1 as self in BullsharkStep return prod (Bullshark, SubDags, Nat, BullsharkNoCommit) with
+      | bullsharkStopped reason => tuple (step.0, acc.1, 1, reason)
+      | bullsharkChainCommitted values => tuple (step.0, listAppend SubDag SubDags seqSubDagOps acc.1 values, 1, acc.3)
+      | bullsharkScheduleChanged values => tuple (step.0, listAppend SubDag SubDags seqSubDagOps acc.1 values, 0, acc.3))
+    (tuple (state, subDagsNil, 0, bullsharkNotEnoughSupport)) in
+  let outcome : BullsharkOutcome := case (nonemptyOfList SubDag SubDags seqSubDagOps result.1) with
+    | 0 (unit : prod ()) => bullsharkNoCommit result.3
+    | 1 (values : Nonempty SubDag SubDags) => bullsharkCommitted values in tuple (result.0, outcome)
+def bullsharkProcessCertificate : Bullshark -> Certificate -> sum (DagError, prod (Bullshark, BullsharkOutcome)) := fun (state : Bullshark) (certificate : Certificate) =>
+  let fields : prod (Committee, LeaderSchedule, Nat, Dag, ValueOption SubDag, Round) := bullsharkFields state in
+  case (dagTryInsert fields.3 certificate) with
+  | 0 (error : DagError) => inj 0 of 2 error
+  | 1 (inserted : prod (Dag, Bool)) =>
+    case inserted.1 with
+    | 0 (unit : prod ()) => inj 1 of 2 (tuple (bullsharkValue fields.0 fields.1 fields.2 inserted.0 fields.4 fields.5, bullsharkNoCommit bullsharkCertificateBelowCommit))
+    | 1 (unit : prod ()) =>
+      let next : Bullshark := bullsharkValue fields.0 fields.1 fields.2 inserted.0 fields.4 (roundValue (maxNat (roundNat fields.5) (roundNat (certificateRound certificate)))) in
+      match (leaderRoundOfRound (roundValue (natSub (roundNat (certificateRound certificate)) 1))) as self in LeaderRoundResult return sum (DagError, prod (Bullshark, BullsharkOutcome)) with
+      | leaderRoundInvalid => inj 1 of 2 (tuple (next, bullsharkNoCommit bullsharkNoLeaderRound))
+      | leaderRoundValid lr =>
+        case (natLt (roundNat (dagCommittedRound inserted.0)) (roundNat (leaderRoundRound lr))) with
+        | 0 (unit : prod ()) => inj 1 of 2 (tuple (next, bullsharkNoCommit bullsharkLeaderBelowCommit))
+        | 1 (unit : prod ()) => inj 1 of 2 (bullsharkRunCommit next lr)

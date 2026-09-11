@@ -1,0 +1,14 @@
+mu ConsensusChain : Type 0 :=
+| consensusChain (parent : OutputDigest) (number : ConsensusBlockNumber) (tip : ValueOption ConsensusBlock) : ConsensusChain
+def consensusChainFields : ConsensusChain -> prod (OutputDigest, ConsensusBlockNumber, ValueOption ConsensusBlock) := fun (chain : ConsensusChain) =>
+  match chain as self in ConsensusChain return prod (OutputDigest, ConsensusBlockNumber, ValueOption ConsensusBlock) with
+  | consensusChain parent number tip => tuple (parent, number, tip)
+def consensusChainGenesis : ConsensusChain := consensusChain consensusBlockGenesisParent consensusBlockNumberGenesis (valueNone ConsensusBlock)
+def consensusChainResume : OutputDigest -> ConsensusBlockNumber -> ConsensusChain := fun (parent : OutputDigest) (number : ConsensusBlockNumber) => consensusChain parent number (valueNone ConsensusBlock)
+def consensusChainParent : ConsensusChain -> OutputDigest := fun (chain : ConsensusChain) => (consensusChainFields chain).0
+def consensusChainNumber : ConsensusChain -> ConsensusBlockNumber := fun (chain : ConsensusChain) => (consensusChainFields chain).1
+def consensusChainTip : ConsensusChain -> ValueOption ConsensusBlock := fun (chain : ConsensusChain) => (consensusChainFields chain).2
+def consensusChainAppend : ConsensusChain -> SubDag -> prod (ConsensusChain, ConsensusBlock) := fun (chain : ConsensusChain) (subdag : SubDag) =>
+  let number : ConsensusBlockNumber := consensusBlockNumberSucc (consensusChainNumber chain) in
+  let block : ConsensusBlock := consensusBlockCreate (consensusChainParent chain) subdag number in
+  tuple (consensusChain (consensusBlockDigest block) number (valueSome ConsensusBlock block), block)

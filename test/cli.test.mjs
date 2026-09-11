@@ -6,10 +6,39 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import test from 'node:test';
 import { build, project } from '../scripts/build.mjs';
+import { compileOracle, protocolSources, protocolModules } from './harness.mjs';
+import { parseOcamlInteger } from '../sim-cli.mjs';
 
 mkdirSync(resolve(project, 'build'), { recursive: true });
 build(resolve(project, 'build/telcoin-foundation.wasm'), JSON.parse(readFileSync(resolve(project, 'exports.json'), 'utf8')));
 const run = args => spawnSync(process.execPath, [resolve(project, 'cli.mjs'), ...args], { encoding: 'utf8', timeout: 10000 });
+const consensusModules = ['dag', 'reputation_scores', 'sub_dag', 'committed_log', 'leader_schedule', 'bullshark', 'proposer', 'voter', 'vote_aggregator', 'parent_aggregator', 'node'];
+const executionModules = ['consensus_block', 'consensus_chain', 'nothing', 'engine'];
+const sourceLock = JSON.parse(readFileSync(resolve(project, 'source-lock.json'), 'utf8'));
+const simOracle = compileOracle({ name: 'cli-sim', sources: [...protocolSources, 'lib/std/nonempty.ml', 'lib/std/prng.ml', 'lib/types/leader_round.ml', 'lib/rand/chacha12.ml', 'lib/rand/std_rng.ml',
+  ...consensusModules.map(name => `lib/consensus/${name}.ml`), ...executionModules.map(name => `lib/execution/${name}.ml`), 'lib/sim/sim.ml', 'bin/tn_sim.ml'],
+  modules: [...protocolModules, 'nonempty.ml', 'prng.ml', 'tn_std.ml', 'leader_round.ml', 'chacha12.ml', 'std_rng.ml', 'tn_rand.ml',
+    ...consensusModules.map(name => `${name}.ml`), 'tn_consensus.ml', ...executionModules.map(name => `${name}.ml`), 'tn_execution.ml', 'sim.ml', 'tn_sim.ml'],
+  extraAliases: { 'tn_std.ml': ['Nonempty', 'Prng'], 'tn_rand.ml': ['Std_rng'], 'tn_consensus.ml': consensusModules.map(name => name[0].toUpperCase() + name.slice(1)),
+    'tn_execution.ml': ['Consensus_block', 'Nothing', 'Engine'], 'tn_sim.ml': ['Sim'] },
+  oracle: resolve(process.env.TELCOIN_OCAML_ROOT ?? sourceLock.upstream.root, 'bin/tn_sim.ml') });
+test('simulator CLI matches the original executable reports and exit statuses', () => {
+  for (const args of [[], ['--until-s', '2', '--seed', '-1'], ['--until-s', '1', '--validators', '7'],
+    ['--until-s', '0', '--validators', '-3'], ['--until-s', '1', '--seed', '0xffffffffffffffff'], ['--until-s', '1', '--seed', 'bad', '--seed', '7']]) {
+    const expected = simOracle.runOracle(args);
+    assert.ok(expected.status === 0 || expected.status === 1, expected.stderr);
+    const actual = spawnSync(process.execPath, [resolve(project, 'cli.mjs'), 'simulate', ...args], { encoding: 'utf8', timeout: 180000 });
+    assert.equal(actual.status, expected.status, actual.error?.message ?? actual.stderr);
+    assert.equal(actual.stderr, '');
+    assert.match(actual.stdout, /^telcoin-kanon simulator: /);
+    assert.equal(actual.stdout.split('\n').slice(1).join('\n'), expected.stdout.split('\n').slice(1).join('\n'), args.join(' '));
+  }
+});
+test('simulator numeric flags support source integer widths, signs, prefixes and fallback', () => {
+  for (const [text, bits, expected] of [['+42', 63, 42n], ['1_000', 63, 1000n], ['0b101', 63, 5n], ['0o77', 63, 63n],
+    ['0xffffffffffffffff', 64, -1n], ['-9223372036854775808', 64, -9223372036854775808n], ['4611686018427387904', 63, undefined],
+    ['9223372036854775808', 64, undefined], ['0x', 64, undefined], ['bad', 64, undefined]]) assert.equal(parseOcamlInteger(text, bits), expected);
+});
 test('CLI encodes and decodes full-width protocol data', () => {
   for (const [args, output] of [
     [['bcs', 'encode', 'u64', '18446744073709551615'], 'ffffffffffffffff\n'],

@@ -1,0 +1,37 @@
+def listSplitAt : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> Nat -> L -> prod (L, L) :=
+  fun (0 A : Type 0) (0 L : Type 0) (ops : ListOps A L) (amount : Nat) (values : L) =>
+    let result : prod (Nat, L, L) := listFoldLeft A L (prod (Nat, L, L)) ops
+      (fun (state : prod (Nat, L, L)) (value : A) =>
+        case (natLt state.0 amount) with
+        | 0 (unit : prod ()) => tuple (natAdd state.0 1, state.1, ops.1 value state.2)
+        | 1 (unit : prod ()) => tuple (natAdd state.0 1, ops.1 value state.1, state.2))
+      (tuple (0, ops.0, ops.0)) values in
+    tuple (ops.2 result.1, ops.2 result.2)
+def listReplaceAt : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> Nat -> A -> L -> L :=
+  fun (0 A : Type 0) (0 L : Type 0) (ops : ListOps A L) (index : Nat) (value : A) (values : L) =>
+    let result : prod (Nat, L) := listFoldLeft A L (prod (Nat, L)) ops
+      (fun (state : prod (Nat, L)) (old : A) =>
+        let item : A := case (natEq state.0 index) with
+          | 0 (unit : prod ()) => old
+          | 1 (unit : prod ()) => value in
+        tuple (natAdd state.0 1, ops.1 item state.1)) (tuple (0, ops.0)) values in
+    ops.2 result.1
+def randChooseMultiple : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> StdRng -> Nat -> L -> prod (L, StdRng) :=
+  fun (0 A : Type 0) (0 L : Type 0) (ops : ListOps A L) (rng : StdRng) (amount : Nat) (pool : L) =>
+    let split : prod (L, L) := listSplitAt A L ops amount pool in
+    case (natEq (ops.3 split.0) amount) with
+    | 0 (unit : prod ()) => tuple (split.0, rng)
+    | 1 (unit : prod ()) =>
+      let result : prod (Nat, L, StdRng) := listFoldLeft A L (prod (Nat, L, StdRng)) ops
+        (fun (state : prod (Nat, L, StdRng)) (value : A) =>
+          let draw : prod (Nat, StdRng) := stdRngRange state.2 (natAdd state.0 amount) in
+          let chosen : L := case (natLt draw.0 amount) with
+            | 0 (unit : prod ()) => state.1
+            | 1 (unit : prod ()) => listReplaceAt A L ops draw.0 value state.1 in
+          tuple (natAdd state.0 1, chosen, draw.1)) (tuple (0, split.0, rng)) split.1 in
+      tuple (result.1, result.2)
+def randChooseMultipleHost : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> StdRng -> HostInt -> L -> prod (L, StdRng) :=
+  fun (0 A : Type 0) (0 L : Type 0) (ops : ListOps A L) (rng : StdRng) (amount : HostInt) (pool : L) =>
+    match amount as self in HostInt return prod (L, StdRng) with
+    | hostIntNegative magnitude => tuple (ops.0, rng)
+    | hostIntPositive value => randChooseMultiple A L ops rng value pool

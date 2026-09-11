@@ -12,9 +12,9 @@ not a claim of complete module parity.
 | --- | --- | --- |
 | 0 | Pin the chunk-44 source and compiler, compile reusable Wasm, port scalar/primitive-codec core, compare exact outputs and failures with OCaml, provide a working CLI. | Implemented; see VALIDATION.md. |
 | 1 | Complete tn_std, tn_codec and tn_types. Add general codecs, scalars, SplitMix64, digests, authorities, committees, batches and anchors. Match vectors and constructor rejections. | Value and codec behavior tested. General Round/Authority Map/Set APIs remain. |
-| 2 | Port tn_vertex and tn_consensus pure state machines, plus deterministic tn_sim and the CLI. Compare complete seeded output transcripts. | Vertex values, validation and simulation crypto tested. Consensus DAG, reducers, scheduling and simulator are next. |
-| 3 | Timing, consensus recovery and tn_execution. Compare durable-before-action transitions, restart transcripts and consensus-chain hashes. | Planned |
-| 4 | tn_state and EVM ALU/interpreter, then environment, access/refund, storage, calls, creation and transaction execution. Preserve full U256 arithmetic, gas, rollback and fork-specific outcomes. | Planned |
+| 2 | Port tn_vertex and tn_consensus pure state machines, plus deterministic tn_sim and the CLI. Compare complete seeded output transcripts. | Consensus, node composition, seeded simulator and public simulator CLI tested within the configuration bounds recorded below. |
+| 3 | Timing, consensus recovery and tn_execution. Compare durable-before-action transitions, restart transcripts and consensus-chain hashes. | Pure execution, replay, reference store and consensus recovery tested. Durable shells remain. |
+| 4 | tn_state and EVM ALU/interpreter, then environment, access/refund, storage, calls, creation and transaction execution. Preserve full U256 arithmetic, gas, rollback and fork-specific outcomes. | U256 and account state tested. EVM remains. |
 | 5 | RLP, Keccak, trie/state roots, transaction envelopes, signatures and source-supported precompiles. Reuse existing golden fixtures; compare acceptance, output, gas and errors separately. | Planned |
 | 6 | Batch validation, executed blocks, engine, driver, registry and epoch transitions. Compare complete committed/executed output and checkpoint consistency. | Planned |
 | 7 | Durable file framing, logs, locks and checkpoints. Audit the host's fsync, atomic replacement, locking and recovery guarantees before porting the IO shell. Test interrupted writes and restart behavior. | Planned |
@@ -43,8 +43,8 @@ missing from that source is a separate extension.
 
 Kanon's primitives have add/subtract/multiply/compare but no division or bitwise
 operations. Bounded division, wrapping words, SplitMix64 and BLAKE2s are ordinary
-Kanon code. Production BLAKE3/BLS and U256 still need performance and
-representation work. Simulation signatures are forgeable and cannot
+Kanon code. U256 arithmetic is implemented and tested. Production BLAKE3/BLS still
+need implementation and performance work. Simulation signatures are forgeable and cannot
 authenticate a real node.
 
 Kanon does not currently provide OCaml .mli-style constructor hiding. Review
@@ -54,15 +54,14 @@ invariants or establish a cross-module security boundary.
 
 General Nonempty and BCS combinators use erased type parameters and typed
 collection dictionaries. The compiler cannot construct parameterized recursive
-families. scripts/collections.mjs generates 15 concrete carriers from one
+families. scripts/collections.mjs generates concrete carriers from one
 template. Zero-byte codec units use a nominal nullary type to avoid a backend
 trap with polymorphic empty-product payloads. Generated insertion sort is
 quadratic; production-size collection performance remains unvalidated.
 
-The next acceptance target is the source simulator: port the DAG, leader
-schedule, vote/parent aggregation, voter/proposer, Bullshark, sub-DAG and node
-reducers, then compare complete seeded event/output transcripts. No consensus
-agreement or liveness claim follows from vertex validation alone.
+The next acceptance target is the EVM and execution driver. Simulator comparisons
+establish parity on tested seeded transcripts; they are not a proof of consensus
+safety or liveness for every possible schedule.
 
 ## Library inventory
 
@@ -104,17 +103,17 @@ agreement or liveness claim follows from vertex validation alone.
 | lib/batch/output.ml | Pending |
 | lib/batch/tx_shape.ml | Pending |
 | lib/codec/bcs.ml | Ported: primitive and composite codecs, refinement, enums, list/map/set canonicality, src/bcs.kan, src/codec.kan, src/sequence.kan; OCaml differential tests |
-| lib/consensus/bullshark.ml | Pending |
-| lib/consensus/committed_log.ml | Pending |
-| lib/consensus/dag.ml | Pending |
-| lib/consensus/leader_schedule.ml | Pending |
-| lib/consensus/node.ml | Pending |
-| lib/consensus/parent_aggregator.ml | Pending |
-| lib/consensus/proposer.ml | Pending |
-| lib/consensus/reputation_scores.ml | Pending |
-| lib/consensus/sub_dag.ml | Pending |
-| lib/consensus/vote_aggregator.ml | Pending |
-| lib/consensus/voter.ml | Pending |
+| lib/consensus/bullshark.ml | Ported: linked leaders, ordering, scoring, commits, schedule retries and recovery, src/bullshark.kan; OCaml differential traces |
+| lib/consensus/committed_log.ml | Ported: append, watermarks, latest final scores and schedule recovery, src/committed_log.kan; recovery traces against OCaml |
+| lib/consensus/dag.ml | Ported: insertion, ancestry, equivocation, watermarks, GC and recovery, src/dag.kan; OCaml differential traces |
+| lib/consensus/leader_schedule.ml | Ported for reachable score ranges: replacement tables, elections and recovery, src/leader_schedule.kan and src/committed_log.kan; OCaml differential tests |
+| lib/consensus/node.ml | Ported: composition and frontier recovery, src/node.kan; five composed-node differential groups against OCaml |
+| lib/consensus/parent_aggregator.ml | Ported: quorum release, duplicate origins and drained deltas, src/aggregators.kan; OCaml differential tests |
+| lib/consensus/proposer.ml | Ported for nonnegative configurations: timers, readiness, batch queues, requeue and restart, src/proposer.kan; OCaml differential traces |
+| lib/consensus/reputation_scores.ml | Ported: closed score maps, ordering, persisted codec and final markers, src/reputation_scores.kan; OCaml differential tests |
+| lib/consensus/sub_dag.ml | Ported: commit ordering, timestamps, signature randomness, preimages and persisted codec, src/sub_dag.kan; OCaml differential tests |
+| lib/consensus/vote_aggregator.ml | Ported: vote collection, rejection order and certificate formation, src/aggregators.kan; OCaml differential tests |
+| lib/consensus/voter.ml | Ported: vote-once records, recasts, parent validation, clock drift and recovery, src/voter.kan; OCaml differential traces |
 | lib/crypto_blst/blake3.ml | Pending |
 | lib/crypto_blst/tn_crypto.ml | Pending |
 | lib/crypto_stub/tn_crypto.ml | Ported simulation profile: BLAKE2s, keys, signatures and aggregates, src/crypto_stub.kan; OCaml differential tests |
@@ -206,14 +205,14 @@ agreement or liveness claim follows from vertex validation alone.
 | lib/evm/tx_recovery.ml | Pending |
 | lib/evm/tx_signature.ml | Pending |
 | lib/evm/withdrawal.ml | Pending |
-| lib/execution/consensus_block.ml | Pending |
-| lib/execution/consensus_chain.ml | Pending |
-| lib/execution/consensus_store.ml | Pending |
-| lib/execution/engine.ml | Pending |
-| lib/execution/nothing.ml | Pending |
-| lib/execution/replay.ml | Pending |
-| lib/hash32/hash32.ml | Partial: checked bytes, zero, equality, ordering and hex, src/fixed.kan; Keccak conversion awaits Keccak type |
-| lib/keccak/tn_keccak.ml | Pending |
+| lib/execution/consensus_block.ml | Ported: height, block codec, preimages and genesis anchor, src/consensus_block.kan; OCaml differential tests |
+| lib/execution/consensus_chain.ml | Ported: genesis, resume and append, src/consensus_chain.kan; OCaml differential tests |
+| lib/execution/consensus_store.ml | Ported reference store: body resolution, append validation, epochs, retries, forks and replay gaps, src/consensus_record.kan and src/consensus_store.kan; OCaml differential tests |
+| lib/execution/engine.ml | Ported: typed engine dictionary and no-op execution, src/engine.kan; OCaml differential tests |
+| lib/execution/nothing.ml | Ported: uninhabited error and eliminator, src/engine.kan |
+| lib/execution/replay.ml | Ported with maximum-height termination correction: gap collection and projections, src/replay.kan; ordinary-range OCaml differential tests |
+| lib/hash32/hash32.ml | Ported: checked bytes, zero, equality, ordering, hex and nominal Keccak conversion, src/fixed.kan and src/keccak.kan |
+| lib/keccak/tn_keccak.ml | Ported: legacy Keccak-256, checked stored bytes, equality and hex, src/keccak.kan; Digestif differential tests |
 | lib/network/base58.ml | Pending |
 | lib/network/bls_public_key.ml | Pending |
 | lib/network/bls_signature.ml | Pending |
@@ -238,25 +237,25 @@ agreement or liveness claim follows from vertex validation alone.
 | lib/network/wire_frame.ml | Pending |
 | lib/network/wire_scalar.ml | Pending |
 | lib/network/worker_msg.ml | Pending |
-| lib/rand/chacha12.ml | Pending |
-| lib/rand/rand_seq.ml | Pending |
-| lib/rand/std_rng.ml | Pending |
+| lib/rand/chacha12.ml | Ported: ChaCha12 blocks, counter and buffered stream, src/chacha12.kan; OCaml differential tests |
+| lib/rand/rand_seq.ml | Ported: reservoir sampling with typed collections, src/rand_seq.kan; OCaml differential tests |
+| lib/rand/std_rng.ml | Ported: leader seeds and inclusive u32/u64 sampling with exact draw advancement, src/chacha12.kan; OCaml differential tests |
 | lib/rlp/rlp.ml | Pending |
-| lib/sim/sim.ml | Pending |
+| lib/sim/sim.ml | Ported for nonnegative limits: event ordering, loss, crashes, batch injection, agreement and execution, src/sim.kan; 19 seeded OCaml transcripts |
 | lib/snappy/byte_reader.ml | Pending |
 | lib/snappy/crc32c.ml | Pending |
 | lib/snappy/snappy_frame.ml | Pending |
 | lib/snappy/snappy_raw.ml | Pending |
-| lib/state/account.ml | Pending |
-| lib/state/address_word.ml | Pending |
-| lib/state/bytecode.ml | Pending |
-| lib/state/delegation.ml | Pending |
-| lib/state/genesis_account.ml | Pending |
-| lib/state/nonce.ml | Pending |
-| lib/state/storage.ml | Pending |
-| lib/state/transfer.ml | Pending |
-| lib/state/u256.ml | Pending |
-| lib/state/world_state.ml | Pending |
+| lib/state/account.ml | Ported: canonical account state and transitions, src/state_types.kan and src/state.kan; 42 OCaml differential rows |
+| lib/state/address_word.ml | Ported: canonical account state and transitions, src/state_types.kan and src/state.kan; 42 OCaml differential rows |
+| lib/state/bytecode.ml | Ported: canonical account state and transitions, src/state_types.kan and src/state.kan; 42 OCaml differential rows |
+| lib/state/delegation.ml | Ported: canonical account state and transitions, src/state_types.kan and src/state.kan; 42 OCaml differential rows |
+| lib/state/genesis_account.ml | Ported: canonical account state and transitions, src/state_types.kan and src/state.kan; 42 OCaml differential rows |
+| lib/state/nonce.ml | Ported: canonical account state and transitions, src/state_types.kan and src/state.kan; 42 OCaml differential rows |
+| lib/state/storage.ml | Ported: canonical account state and transitions, src/state_types.kan and src/state.kan; 42 OCaml differential rows |
+| lib/state/transfer.ml | Ported: canonical account state and transitions, src/state_types.kan and src/state.kan; 42 OCaml differential rows |
+| lib/state/u256.ml | Ported: full 256-bit arithmetic, wide modular operations, bitwise logic, shifts and constructors, src/u256.kan; 454 OCaml rows and BigInt checks |
+| lib/state/world_state.ml | Ported: canonical account state and transitions, src/state_types.kan and src/state.kan; 42 OCaml differential rows |
 | lib/std/nonempty.ml | Ported: generic operations with typed collection dictionaries, src/nonempty.kan; OCaml differential tests |
 | lib/std/prng.ml | Ported: full-width SplitMix64, split and signed inclusive ranges, src/prng.kan; OCaml differential tests |
 | lib/trie/hex_prefix.ml | Pending |

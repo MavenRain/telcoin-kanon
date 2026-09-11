@@ -1,0 +1,125 @@
+mu ConsensusStoreError : Type 0 :=
+| consensusStoreNotNext (expected : ConsensusBlockNumber) (got : ConsensusBlockNumber) : ConsensusStoreError
+| consensusStoreBrokenChain (expected : OutputDigest) (got : OutputDigest) : ConsensusStoreError
+| consensusStoreConflictingRecord (number : ConsensusBlockNumber) (stored : OutputDigest) (offered : OutputDigest) : ConsensusStoreError
+| consensusStoreWrongEpoch (openEpoch : Epoch) (offered : Epoch) : ConsensusStoreError
+| consensusStoreEpochNotAdvanced (openEpoch : Epoch) (proposed : Epoch) : ConsensusStoreError
+def consensusStoreErrorText : ConsensusStoreError -> Bytes := fun (error : ConsensusStoreError) =>
+  match error as self in ConsensusStoreError return Bytes with
+  | consensusStoreNotNext expected got => append b"consensus block " (append (consensusBlockNumberText got) (append b" is not the next slot: the store expects " (consensusBlockNumberText expected)))
+  | consensusStoreBrokenChain expected got => append b"broken chain: the record links to " (append (outputDigestHex got) (append b", the store's tip is " (outputDigestHex expected)))
+  | consensusStoreConflictingRecord number stored offered => append b"conflicting record at consensus block " (append (consensusBlockNumberText number)
+      (append b": the store holds " (append (outputDigestHex stored) (append b", the writer offers " (outputDigestHex offered)))))
+  | consensusStoreWrongEpoch openEpoch offered => append b"wrong epoch: the record belongs to epoch " (append (epochShow offered) (append b", the store has epoch " (append (epochShow openEpoch) b" open")))
+  | consensusStoreEpochNotAdvanced openEpoch proposed => append b"epoch " (append (epochShow proposed) (append b" does not advance on the open epoch " (epochShow openEpoch)))
+mu ConsensusStoreMiss : Type 0 :=
+| consensusStoreBelowRetained (earliest : ConsensusBlockNumber) (asked : ConsensusBlockNumber) : ConsensusStoreMiss
+| consensusStoreAboveTip (expectedNext : ConsensusBlockNumber) (asked : ConsensusBlockNumber) : ConsensusStoreMiss
+| consensusStoreForked (number : ConsensusBlockNumber) (stored : OutputDigest) (offered : OutputDigest) : ConsensusStoreMiss
+| consensusStoreBroken (error : ReplayBreak) : ConsensusStoreMiss
+def consensusStoreMissText : ConsensusStoreMiss -> Bytes := fun (error : ConsensusStoreMiss) =>
+  match error as self in ConsensusStoreMiss return Bytes with
+  | consensusStoreBelowRetained earliest asked => append b"consensus block " (append (consensusBlockNumberText asked) (append b" is below everything retained: the store starts at " (consensusBlockNumberText earliest)))
+  | consensusStoreAboveTip expectedNext asked => append b"consensus block " (append (consensusBlockNumberText asked) (append b" is at or above the tip: the store expects " (append (consensusBlockNumberText expectedNext) b" next")))
+  | consensusStoreForked number stored offered => append b"fork at consensus block " (append (consensusBlockNumberText number)
+      (append b": the store holds " (append (outputDigestHex stored) (append b", the caller offers " (outputDigestHex offered)))))
+  | consensusStoreBroken error => replayBreakText error
+mu ConsensusStore : Type 0 :=
+| consensusStore (epoch : Epoch) (epochStart : ConsensusBlockNumber) (epochParent : OutputDigest) (epochAnchor : ConsensusBlockNumber) (records : ConsensusRecords) : ConsensusStore
+def consensusStoreFields : ConsensusStore -> prod (Epoch, ConsensusBlockNumber, OutputDigest, ConsensusBlockNumber, ConsensusRecords) := fun (store : ConsensusStore) =>
+  match store as self in ConsensusStore return prod (Epoch, ConsensusBlockNumber, OutputDigest, ConsensusBlockNumber, ConsensusRecords) with
+  | consensusStore epoch epochStart epochParent epochAnchor records => tuple (epoch, epochStart, epochParent, epochAnchor, records)
+def consensusStoreCreate : Epoch -> ConsensusBlockNumber -> OutputDigest -> ConsensusStore := fun (epoch : Epoch) (anchor : ConsensusBlockNumber) (parent : OutputDigest) =>
+  consensusStore epoch (consensusBlockNumberSucc anchor) parent anchor consensusRecordsNil
+def consensusStoreEpoch : ConsensusStore -> Epoch := fun (store : ConsensusStore) => (consensusStoreFields store).0
+def consensusStoreEpochStart : ConsensusStore -> ConsensusBlockNumber := fun (store : ConsensusStore) => (consensusStoreFields store).1
+def consensusStoreEpochParent : ConsensusStore -> OutputDigest := fun (store : ConsensusStore) => (consensusStoreFields store).2
+def consensusStoreRecords : ConsensusStore -> ConsensusRecords := fun (store : ConsensusStore) => (consensusStoreFields store).4
+def consensusStoreCardinal : ConsensusStore -> Nat := fun (store : ConsensusStore) => seqConsensusRecordLength (consensusStoreRecords store)
+def consensusStoreEarliest : ConsensusStore -> ValueOption ConsensusBlockNumber := fun (store : ConsensusStore) =>
+  case (seqConsensusRecordHead (consensusStoreRecords store)) with
+  | 0 (unit : prod ()) => valueNone ConsensusBlockNumber
+  | 1 (record : ConsensusRecord) => valueSome ConsensusBlockNumber (consensusRecordNumber record)
+def consensusStoreLatestReceived : ConsensusStore -> ValueOption ConsensusRecord := fun (store : ConsensusStore) =>
+  listFoldLeft ConsensusRecord ConsensusRecords (ValueOption ConsensusRecord) seqConsensusRecordOps
+    (fun (acc : ValueOption ConsensusRecord) (record : ConsensusRecord) => valueSome ConsensusRecord record) (valueNone ConsensusRecord) (consensusStoreRecords store)
+def consensusStoreExpectedNext : ConsensusStore -> ConsensusBlockNumber := fun (store : ConsensusStore) =>
+  case (consensusStoreLatestReceived store) with
+  | 0 (unit : prod ()) => consensusStoreEpochStart store
+  | 1 (record : ConsensusRecord) => consensusBlockNumberSucc (consensusRecordNumber record)
+def consensusStoreExpectedParent : ConsensusStore -> OutputDigest := fun (store : ConsensusStore) =>
+  case (consensusStoreLatestReceived store) with
+  | 0 (unit : prod ()) => consensusStoreEpochParent store
+  | 1 (record : ConsensusRecord) => consensusRecordDigest record
+def consensusStoreLookup : ConsensusStore -> ConsensusBlockNumber -> ValueOption ConsensusRecord := fun (store : ConsensusStore) (number : ConsensusBlockNumber) =>
+  listFind ConsensusRecord ConsensusRecords seqConsensusRecordOps (fun (record : ConsensusRecord) => consensusBlockNumberEqual number (consensusRecordNumber record)) (consensusStoreRecords store)
+def consensusStoreRecordByDigest : ConsensusStore -> OutputDigest -> ValueOption ConsensusRecord := fun (store : ConsensusStore) (digest : OutputDigest) =>
+  listFind ConsensusRecord ConsensusRecords seqConsensusRecordOps (fun (record : ConsensusRecord) => outputDigestEqual digest (consensusRecordDigest record)) (seqConsensusRecordReverse (consensusStoreRecords store))
+def consensusStoreFile : ConsensusStore -> ConsensusRecord -> ConsensusStore := fun (store : ConsensusStore) (record : ConsensusRecord) =>
+  let fields : prod (Epoch, ConsensusBlockNumber, OutputDigest, ConsensusBlockNumber, ConsensusRecords) := consensusStoreFields store in
+  consensusStore fields.0 fields.1 fields.2 fields.3 (listAppend ConsensusRecord ConsensusRecords seqConsensusRecordOps fields.4 (consensusRecordsCons record consensusRecordsNil))
+def consensusStoreAppend : ConsensusStore -> ConsensusRecord -> sum (ConsensusStoreError, ConsensusStore) := fun (store : ConsensusStore) (record : ConsensusRecord) =>
+  let expected : ConsensusBlockNumber := consensusStoreExpectedNext store in
+  let got : ConsensusBlockNumber := consensusRecordNumber record in
+  case (consensusBlockNumberEqual got expected) with
+  | 0 (unit : prod ()) => inj 0 of 2 (consensusStoreNotNext expected got)
+  | 1 (unit : prod ()) =>
+    let expectedLink : OutputDigest := consensusStoreExpectedParent store in
+    let gotLink : OutputDigest := consensusRecordParent record in
+    case (outputDigestEqual expectedLink gotLink) with
+    | 0 (unit : prod ()) => inj 0 of 2 (consensusStoreBrokenChain expectedLink gotLink)
+    | 1 (unit : prod ()) => inj 1 of 2 (consensusStoreFile store record)
+def consensusStoreReceive : ConsensusStore -> ConsensusRecord -> sum (ConsensusStoreError, ConsensusStore) := fun (store : ConsensusStore) (record : ConsensusRecord) =>
+  case (epochEqual (consensusRecordEpoch record) (consensusStoreEpoch store)) with
+  | 0 (unit : prod ()) => inj 0 of 2 (consensusStoreWrongEpoch (consensusStoreEpoch store) (consensusRecordEpoch record))
+  | 1 (unit : prod ()) =>
+    case (consensusStoreLookup store (consensusRecordNumber record)) with
+    | 0 (unit : prod ()) => consensusStoreAppend store record
+    | 1 (stored : ConsensusRecord) =>
+      case (outputDigestEqual (consensusRecordDigest stored) (consensusRecordDigest record)) with
+      | 1 (unit : prod ()) => inj 1 of 2 store
+      | 0 (unit : prod ()) => inj 0 of 2 (consensusStoreConflictingRecord (consensusRecordNumber record) (consensusRecordDigest stored) (consensusRecordDigest record))
+def consensusStoreOpenEpoch : ConsensusStore -> Epoch -> sum (ConsensusStoreError, ConsensusStore) := fun (store : ConsensusStore) (epoch : Epoch) =>
+  case (natLt (epochNat (consensusStoreEpoch store)) (epochNat epoch)) with
+  | 0 (unit : prod ()) => inj 0 of 2 (consensusStoreEpochNotAdvanced (consensusStoreEpoch store) epoch)
+  | 1 (unit : prod ()) =>
+    let anchor : ConsensusBlockNumber := case (consensusStoreLatestReceived store) with
+      | 0 (unit : prod ()) => (consensusStoreFields store).3
+      | 1 (record : ConsensusRecord) => consensusRecordNumber record in
+    inj 1 of 2 (consensusStore epoch (consensusStoreExpectedNext store) (consensusStoreExpectedParent store) anchor (consensusStoreRecords store))
+def consensusStoreDiagnose : ConsensusStore -> ConsensusBlockNumber -> ConsensusStoreMiss := fun (store : ConsensusStore) (asked : ConsensusBlockNumber) =>
+  let bound : ConsensusBlockNumber := consensusStoreExpectedNext store in
+  case (consensusStoreEarliest store) with
+  | 0 (unit : prod ()) => consensusStoreAboveTip bound asked
+  | 1 (lowest : ConsensusBlockNumber) =>
+    case (natLt (consensusBlockNumberNat asked) (consensusBlockNumberNat lowest)) with
+    | 1 (unit : prod ()) => consensusStoreBelowRetained lowest asked
+    | 0 (unit : prod ()) =>
+      case (natLt (consensusBlockNumberNat asked) (consensusBlockNumberNat bound)) with
+      | 0 (unit : prod ()) => consensusStoreAboveTip bound asked
+      | 1 (unit : prod ()) => consensusStoreBroken (replayHole asked)
+def consensusStoreRecordAt : ConsensusStore -> ConsensusBlockNumber -> sum (ConsensusStoreMiss, ConsensusRecord) := fun (store : ConsensusStore) (number : ConsensusBlockNumber) =>
+  case (consensusStoreLookup store number) with
+  | 0 (unit : prod ()) => inj 0 of 2 (consensusStoreDiagnose store number)
+  | 1 (record : ConsensusRecord) => inj 1 of 2 record
+def consensusStoreFetch : ConsensusStore -> ConsensusBlockNumber -> ValueOption (prod (ConsensusBlock, Batches)) := fun (store : ConsensusStore) (number : ConsensusBlockNumber) =>
+  case (consensusStoreLookup store number) with
+  | 0 (unit : prod ()) => valueNone (prod (ConsensusBlock, Batches))
+  | 1 (record : ConsensusRecord) => valueSome (prod (ConsensusBlock, Batches)) (consensusRecordFields record)
+def consensusStoreCollectAbove : ConsensusStore -> ConsensusBlockNumber -> OutputDigest -> sum (ConsensusStoreMiss, Replay) := fun (store : ConsensusStore) (after : ConsensusBlockNumber) (parent : OutputDigest) =>
+  let ceiling : ConsensusBlockNumber := case (consensusStoreLatestReceived store) with
+    | 0 (unit : prod ()) => (consensusStoreFields store).3
+    | 1 (record : ConsensusRecord) => consensusRecordNumber record in
+  case (replayCollect after parent ceiling (consensusStoreFetch store)) with
+  | 0 (error : ReplayBreak) => inj 0 of 2 (consensusStoreBroken error)
+  | 1 (replay : Replay) => inj 1 of 2 replay
+def consensusStoreGap : ConsensusStore -> ValueOption ConsensusBlock -> sum (ConsensusStoreMiss, Replay) := fun (store : ConsensusStore) (after : ValueOption ConsensusBlock) =>
+  case after with
+  | 0 (unit : prod ()) => consensusStoreCollectAbove store (consensusStoreFields store).3 (consensusStoreEpochParent store)
+  | 1 (block : ConsensusBlock) =>
+    case (consensusStoreRecordAt store (consensusBlockNumberOf block)) with
+    | 0 (error : ConsensusStoreMiss) => inj 0 of 2 error
+    | 1 (stored : ConsensusRecord) =>
+      case (outputDigestEqual (consensusRecordDigest stored) (consensusBlockDigest block)) with
+      | 0 (unit : prod ()) => inj 0 of 2 (consensusStoreForked (consensusBlockNumberOf block) (consensusRecordDigest stored) (consensusBlockDigest block))
+      | 1 (unit : prod ()) => consensusStoreCollectAbove store (consensusBlockNumberOf block) (consensusBlockDigest block)

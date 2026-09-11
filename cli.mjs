@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import { loadFoundation } from './runtime.mjs';
+import { runSimulatorCli } from './sim-cli.mjs';
 
 const usage = `telcoin-kanon (partial simulation port)
 Usage:
+  telcoin-kanon simulate [--validators N] [--seed S] [--until-s T]
   telcoin-kanon bcs encode <u8|u16|u32|u64|uleb> <decimal>
   telcoin-kanon bcs decode <u8|u16|u32|u64|uleb|bool|bytes|option-u8|fixed3|sized3> <hex>
   telcoin-kanon scalar <round|epoch|workerId|timestamp|stake|duration|baseFee|leaderRound> <decimal>
@@ -21,6 +23,8 @@ const inspectors = { batch: 'apiBatchInspect', 'sealed-batch': 'apiSealedBatchIn
 const args = process.argv.slice(2);
 if (args.length === 1 && args[0] === '--help') {
   process.stdout.write(usage);
+} else if (args[0] === 'simulate') {
+  await runSimulatorCli(args.slice(1));
 } else {
   const [command, operation, kind, input] = args;
   const integerKind = Object.hasOwn(integerKinds, kind) ? integerKinds[kind] : undefined;

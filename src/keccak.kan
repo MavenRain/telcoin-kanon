@@ -1,0 +1,37 @@
+-- Legacy Keccak-256 uses suffix 0x01, as required by Ethereum and tn_keccak.
+def keccakRender : KeccakState -> Bytes := fun (state : KeccakState) =>
+  append (bcsEncodeU64 state.0) (append (bcsEncodeU64 state.1) (append (bcsEncodeU64 state.2) (bcsEncodeU64 state.3)))
+def rec keccakPadZeros : Bytes -> Nat -> Bytes -> Bytes := fun (fuel : Bytes) (remaining : Nat) (reversed : Bytes) =>
+  match fuel as self in Bytes return Bytes with
+  | bytesNil => reverse (bytesCons 128 reversed)
+  | bytesCons head tail =>
+    case (natEq remaining 0) with
+    | 1 (unit : prod ()) => reverse (bytesCons 128 reversed)
+    | 0 (unit : prod ()) => keccakPadZeros tail (natSub remaining 1) (bytesCons 0 reversed)
+def keccakPad : Nat -> Bytes -> Bytes := fun (length : Nat) (reversed : Bytes) =>
+  case (natEq length 135) with
+  | 1 (unit : prod ()) => reverse (bytesCons 129 reversed)
+  | 0 (unit : prod ()) => keccakPadZeros (append fuel64 (append fuel64 fuel8)) (natSub 134 length) (bytesCons 1 reversed)
+def rec keccakScan : Bytes -> Nat -> Bytes -> KeccakState -> Bytes :=
+  fun (input : Bytes) (length : Nat) (reversed : Bytes) (state : KeccakState) =>
+    match input as self in Bytes return Bytes with
+    | bytesNil => keccakRender (keccakAbsorb state (keccakPad length reversed))
+    | bytesCons head tail =>
+      case (natEq length 135) with
+      | 0 (unit : prod ()) => keccakScan tail (natAdd length 1) (bytesCons head reversed) state
+      | 1 (unit : prod ()) => keccakScan tail 0 bytesNil (keccakAbsorb state (reverse (bytesCons head reversed)))
+def keccak256 : Bytes -> Bytes := fun (input : Bytes) => keccakScan input 0 bytesNil keccakZero
+mu Keccak : Type 0 :=
+| keccakValue (bytes : Bytes) : Keccak
+def keccakDigest : Bytes -> Keccak := fun (input : Bytes) => keccakValue (keccak256 input)
+def keccakBytes : Keccak -> Bytes := fun (value : Keccak) =>
+  match value as self in Keccak return Bytes with
+  | keccakValue bytes => bytes
+def keccakOfStoredBytes : Bytes -> ValueOption Keccak := fun (bytes : Bytes) =>
+  case (natEq (bytesLength bytes) 32) with
+  | 0 (unit : prod ()) => valueNone Keccak
+  | 1 (unit : prod ()) => valueSome Keccak (keccakValue bytes)
+def keccakEmpty : Keccak := keccakDigest bytesNil
+def keccakHex : Keccak -> Bytes := fun (value : Keccak) => bytesHex (keccakBytes value)
+def keccakEqual : Keccak -> Keccak -> Bool := fun (a : Keccak) (b : Keccak) => bytesEqual (keccakBytes a) (keccakBytes b)
+def hash32OfKeccak : Keccak -> Hash32 := fun (value : Keccak) => hash32Value (keccakBytes value)

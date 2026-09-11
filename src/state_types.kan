@@ -1,0 +1,31 @@
+mu Nonce : Type 0 :=
+| nonceValue (count : Nat) : Nonce
+mu Bytecode : Type 0 :=
+| bytecodeValue (bytes : Bytes) : Bytecode
+mu DeploymentError : Type 0 :=
+| deploymentReservedPrefix : DeploymentError
+| deploymentTooLarge (length : Nat) : DeploymentError
+mu Delegation : Type 0 :=
+| delegationValue (target : Address) : Delegation
+mu DelegationDecodeError : Type 0 :=
+| delegationInvalidLength (length : Nat) : DelegationDecodeError
+| delegationUnsupportedVersion (version : Nat) : DelegationDecodeError
+mu CodeClass : Type 0 :=
+| codeCodeless : CodeClass
+| codeContract : CodeClass
+| codeDelegated (delegation : Delegation) : CodeClass
+| codeUndecodable (error : DelegationDecodeError) : CodeClass
+mu DelegationAssignment : Type 0 :=
+| delegationAssign (delegation : Delegation) : DelegationAssignment
+| delegationRevoke : DelegationAssignment
+def Storage : Type 0 := StorageSlots
+def Account : Type 0 := prod (Nonce, U256, Storage, Bytecode)
+def GenesisAccount : Type 0 := prod (Nonce, U256, ValueOption Bytes, Storage)
+mu GenesisAllocError : Type 0 :=
+| genesisStorageWithoutCode (address : Address) : GenesisAllocError
+| genesisMalformedDelegation (address : Address) (error : DelegationDecodeError) : GenesisAllocError
+def Transfer : Type 0 := prod (Address, Address, U256, Nonce)
+mu TransferError : Type 0 :=
+| transferNonceMismatch (expected : Nonce) (actual : Nonce) : TransferError
+| transferInsufficientBalance (balance : U256) (amount : U256) : TransferError
+| transferBalanceOverflow : TransferError

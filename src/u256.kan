@@ -1,0 +1,106 @@
+-- Canonical unsigned words use arbitrary-precision Nat internally and wrap at 256 bits.
+def fuel128 : Bytes := append fuel64 fuel64
+def fuel256 : Bytes := append fuel128 fuel128
+def fuel512 : Bytes := append fuel256 fuel256
+def u256Modulus : Nat := 115792089237316195423570985008687907853269984665640564039457584007913129639936
+def u256Maximum : Nat := natSub u256Modulus 1
+def u256HighBit : Nat := 57896044618658097711785492504343953926634992332820282019728792003956564819968
+def u256Powers : Powers := powersBuild fuel256 1 1 powersNil
+def divide256 : Nat -> Nat -> DivResult := fun (n : Nat) (d : Nat) => divideScan (powersBuild fuel256 d 1 powersNil) n 0
+def divide512 : Nat -> Nat -> DivResult := fun (n : Nat) (d : Nat) => divideScan (powersBuild fuel512 d 1 powersNil) n 0
+def u256Low : Nat -> Nat := fun (n : Nat) => divRemainder (divide256 n u256Modulus)
+mu U256 : Type 0 :=
+| u256Value (bits : Nat) : U256
+def u256Nat : U256 -> Nat := fun (value : U256) => match value as self in U256 return Nat with | u256Value bits => bits
+def u256Zero : U256 := u256Value 0
+def u256One : U256 := u256Value 1
+def u256Max : U256 := u256Value u256Maximum
+def u256OfNat : Nat -> ValueOption U256 := fun (value : Nat) =>
+  case (natLt value u256Modulus) with | 0 (unit : prod ()) => valueNone U256 | 1 (unit : prod ()) => valueSome U256 (u256Value value)
+def u256OfHostInt : HostInt -> ValueOption U256 := fun (value : HostInt) =>
+  match value as self in HostInt return ValueOption U256 with
+  | hostIntNegative magnitude => valueNone U256
+  | hostIntPositive n => valueSome U256 (u256Value n)
+def u256ToHostNat : U256 -> ValueOption Nat := fun (value : U256) =>
+  case (natLt hostIntMax (u256Nat value)) with | 1 (unit : prod ()) => valueNone Nat | 0 (unit : prod ()) => valueSome Nat (u256Nat value)
+def u256Equal : U256 -> U256 -> Bool := fun (a : U256) (b : U256) => natEq (u256Nat a) (u256Nat b)
+def u256IsZero : U256 -> Bool := fun (value : U256) => u256Equal value u256Zero
+def u256Compare : U256 -> U256 -> Ordering := fun (a : U256) (b : U256) =>
+  case (u256Equal a b) with | 1 (unit : prod ()) => orderEqual
+  | 0 (unit : prod ()) => case (natLt (u256Nat a) (u256Nat b)) with | 1 (unit : prod ()) => orderLess | 0 (unit : prod ()) => orderGreater
+def u256AddCarry : U256 -> U256 -> prod (U256, Nat) := fun (a : U256) (b : U256) =>
+  let total : Nat := natAdd (u256Nat a) (u256Nat b) in
+  case (natLt total u256Modulus) with
+  | 1 (unit : prod ()) => tuple (u256Value total, 0)
+  | 0 (unit : prod ()) => tuple (u256Value (natSub total u256Modulus), 1)
+def u256SubBorrow : U256 -> U256 -> prod (U256, Nat) := fun (a : U256) (b : U256) =>
+  case (natLt (u256Nat a) (u256Nat b)) with
+  | 1 (unit : prod ()) => tuple (u256Value (natSub (natAdd (u256Nat a) u256Modulus) (u256Nat b)), 1)
+  | 0 (unit : prod ()) => tuple (u256Value (natSub (u256Nat a) (u256Nat b)), 0)
+def u256Add : U256 -> U256 -> U256 := fun (a : U256) (b : U256) => (u256AddCarry a b).0
+def u256Sub : U256 -> U256 -> U256 := fun (a : U256) (b : U256) => (u256SubBorrow a b).0
+def u256Checked : prod (U256, Nat) -> ValueOption U256 := fun (result : prod (U256, Nat)) =>
+  case (natEq result.1 0) with | 0 (unit : prod ()) => valueNone U256 | 1 (unit : prod ()) => valueSome U256 result.0
+def u256CheckedAdd : U256 -> U256 -> ValueOption U256 := fun (a : U256) (b : U256) => u256Checked (u256AddCarry a b)
+def u256CheckedSub : U256 -> U256 -> ValueOption U256 := fun (a : U256) (b : U256) => u256Checked (u256SubBorrow a b)
+def u256Mul : U256 -> U256 -> U256 := fun (a : U256) (b : U256) => u256Value (u256Low (natMul (u256Nat a) (u256Nat b)))
+def u256Divide : U256 -> U256 -> ValueOption (prod (U256, U256)) := fun (a : U256) (b : U256) =>
+  case (u256IsZero b) with | 1 (unit : prod ()) => valueNone (prod (U256, U256))
+  | 0 (unit : prod ()) => let result : DivResult := divide256 (u256Nat a) (u256Nat b) in
+    valueSome (prod (U256, U256)) (tuple (u256Value (divQuotient result), u256Value (divRemainder result)))
+def u256Div : U256 -> U256 -> ValueOption U256 := fun (a : U256) (b : U256) =>
+  case (u256Divide a b) with | 0 (unit : prod ()) => valueNone U256 | 1 (result : prod (U256, U256)) => valueSome U256 result.0
+def u256Rem : U256 -> U256 -> ValueOption U256 := fun (a : U256) (b : U256) =>
+  case (u256Divide a b) with | 0 (unit : prod ()) => valueNone U256 | 1 (result : prod (U256, U256)) => valueSome U256 result.1
+def u256ReduceWide : Nat -> U256 -> ValueOption U256 := fun (wide : Nat) (modulus : U256) =>
+  case (u256IsZero modulus) with | 1 (unit : prod ()) => valueNone U256
+  | 0 (unit : prod ()) => valueSome U256 (u256Value (divRemainder (divide512 wide (u256Nat modulus))))
+def u256AddMod : U256 -> U256 -> U256 -> ValueOption U256 := fun (a : U256) (b : U256) (modulus : U256) => u256ReduceWide (natAdd (u256Nat a) (u256Nat b)) modulus
+def u256MulMod : U256 -> U256 -> U256 -> ValueOption U256 := fun (a : U256) (b : U256) (modulus : U256) => u256ReduceWide (natMul (u256Nat a) (u256Nat b)) modulus
+def u256Xor : U256 -> U256 -> U256 := fun (a : U256) (b : U256) => u256Value (wordXorScan u256Powers (u256Nat a) (u256Nat b) 0)
+def u256And : U256 -> U256 -> U256 := fun (a : U256) (b : U256) =>
+  u256Value (divQuotient (divide256 (natSub (natAdd (u256Nat a) (u256Nat b)) (u256Nat (u256Xor a b))) 2))
+def u256Or : U256 -> U256 -> U256 := fun (a : U256) (b : U256) => u256Value (natSub (natAdd (u256Nat a) (u256Nat b)) (u256Nat (u256And a b)))
+def u256Not : U256 -> U256 := fun (a : U256) => u256Value (natSub u256Maximum (u256Nat a))
+def u256TwoPowNat : Nat -> Nat := fun (n : Nat) =>
+  let result : prod (Nat, Nat) := stepsFold (prod (Nat, Nat)) steps32 (fun (acc : prod (Nat, Nat)) => boolNat (natEq acc.0 n))
+    (fun (acc : prod (Nat, Nat)) => tuple (natAdd acc.0 1, natMul acc.1 2)) (tuple (0, 1)) in result.1
+def u256TwoPow : HostInt -> U256 := fun (n : HostInt) => match n as self in HostInt return U256 with
+  | hostIntNegative magnitude => u256Zero
+  | hostIntPositive count => case (natLt count 256) with | 0 (unit : prod ()) => u256Zero | 1 (unit : prod ()) => u256Value (u256TwoPowNat count)
+def u256OfByte : HostInt -> U256 := fun (n : HostInt) => match n as self in HostInt return U256 with
+  | hostIntPositive value => u256Value (remainder64 value 256)
+  | hostIntNegative magnitude => u256Value (remainder64 (natSub 256 (remainder64 magnitude 256)) 256)
+def u256Shl : U256 -> U256 -> U256 := fun (value : U256) (shift : U256) =>
+  case (natLt (u256Nat shift) 256) with | 0 (unit : prod ()) => u256Zero
+  | 1 (unit : prod ()) => u256Value (u256Low (natMul (u256Nat value) (u256TwoPowNat (u256Nat shift))))
+def u256Shr : U256 -> U256 -> U256 := fun (value : U256) (shift : U256) =>
+  case (natLt (u256Nat shift) 256) with | 0 (unit : prod ()) => u256Zero
+  | 1 (unit : prod ()) => u256Value (divQuotient (divide256 (u256Nat value) (u256TwoPowNat (u256Nat shift))))
+def u256Pow : U256 -> U256 -> U256 := fun (base : U256) (exponent : U256) =>
+  let result : prod (U256, U256, Nat) := stepsFold (prod (U256, U256, Nat)) steps32
+    (fun (acc : prod (U256, U256, Nat)) => boolNat (natEq acc.2 0))
+    (fun (acc : prod (U256, U256, Nat)) => let half : DivResult := divide256 acc.2 2 in
+      let product : U256 := case (natEq (divRemainder half) 0) with | 1 (unit : prod ()) => acc.0 | 0 (unit : prod ()) => u256Mul acc.0 acc.1 in
+      tuple (product, u256Mul acc.1 acc.1, divQuotient half)) (tuple (u256One, base, u256Nat exponent)) in result.0
+def rec u256ReadBe : Bytes -> Nat -> Nat := fun (bytes : Bytes) (acc : Nat) =>
+  match bytes as self in Bytes return Nat with | bytesNil => acc | bytesCons byte tail => u256ReadBe tail (natAdd (natMul acc 256) byte)
+def u256OfBeBytes : Bytes -> ValueOption U256 := fun (bytes : Bytes) =>
+  case (natEq (bytesLength bytes) 32) with | 0 (unit : prod ()) => valueNone U256 | 1 (unit : prod ()) => valueSome U256 (u256Value (u256ReadBe bytes 0))
+def rec u256WriteBeScan : Bytes -> Nat -> Bytes -> Bytes := fun (fuel : Bytes) (value : Nat) (acc : Bytes) =>
+  match fuel as self in Bytes return Bytes with | bytesNil => acc
+  | bytesCons head tail => let divided : DivResult := divide256 value 256 in u256WriteBeScan tail (divQuotient divided) (bytesCons (divRemainder divided) acc)
+def u256ToBeBytes : U256 -> Bytes := fun (value : U256) => u256WriteBeScan fuel32 (u256Nat value) bytesNil
+def u256Hex : U256 -> Bytes := fun (value : U256) => bytesHex (u256ToBeBytes value)
+def u256OfU64Bits : Nat -> U256 := fun (bits : Nat) => u256Value (wordLow64 bits)
+def u256HexNibble : Nat -> NatOption := fun (byte : Nat) =>
+  case (boolAnd (natLt 47 byte) (natLt byte 58)) with | 1 (unit : prod ()) => natSome (natSub byte 48)
+  | 0 (unit : prod ()) => case (boolAnd (natLt 96 byte) (natLt byte 103)) with | 1 (unit : prod ()) => natSome (natSub byte 87)
+    | 0 (unit : prod ()) => case (boolAnd (natLt 64 byte) (natLt byte 71)) with | 1 (unit : prod ()) => natSome (natSub byte 55) | 0 (unit : prod ()) => natNone
+def rec u256HexScan : Bytes -> Nat -> ValueOption U256 := fun (text : Bytes) (acc : Nat) =>
+  match text as self in Bytes return ValueOption U256 with | bytesNil => valueSome U256 (u256Value acc)
+  | bytesCons head tail => match (u256HexNibble head) as parsed in NatOption return ValueOption U256 with
+    | natNone => valueNone U256 | natSome n => u256HexScan tail (natAdd (natMul acc 16) n)
+def u256OfHex : Bytes -> ValueOption U256 := fun (text : Bytes) =>
+  case (natEq (bytesLength text) 64) with | 0 (unit : prod ()) => valueNone U256 | 1 (unit : prod ()) => u256HexScan text 0
+def u256Codec : Codec U256 := codecRefine Bytes U256 u256OfBeBytes u256ToBeBytes (codecFixedBytes 32)

@@ -1,0 +1,135 @@
+def executionWith : (0 A : Type 0) -> Codec A -> Bytes -> (A -> Bytes) -> Bytes := fun (0 A : Type 0) (codec : Codec A) (raw : Bytes) (render : A -> Bytes) =>
+  case (codecDecode A codec raw) with
+  | 0 (error : BcsError) => append b"error:" (bcsErrorText error)
+  | 1 (decoded : prod (A, BcsReader)) => render decoded.0
+def executionBlockText : ConsensusBlock -> Bytes := fun (block : ConsensusBlock) =>
+  append (bytesHex (codecWrite ConsensusBlock consensusBlockCodec block)) (append b":" (append (outputDigestHex (consensusBlockDigest block)) (append b":" (bytesHex (consensusBlockPreimage block)))))
+def execution_genesis : Bytes := append (outputDigestHex consensusBlockGenesisParent) (append b":" (executionBlockText (consensusBlockCreate outputDigestZero consensusBlockDefaultSubDag consensusBlockNumberGenesis)))
+def execution_block : Bytes -> Bytes := fun (raw : Bytes) => executionWith ConsensusBlock consensusBlockCodec raw executionBlockText
+def execution_number : Bytes -> Bytes := fun (raw : Bytes) => executionWith ConsensusBlockNumber consensusBlockNumberCodec raw
+  (fun (number : ConsensusBlockNumber) => append (consensusBlockNumberText number) (append b":" (consensusBlockNumberText (consensusBlockNumberSucc number))))
+def executionBlocks : SubDags -> ConsensusBlocks := fun (values : SubDags) =>
+  let result : prod (ConsensusChain, ConsensusBlocks) := listFoldLeft SubDag SubDags (prod (ConsensusChain, ConsensusBlocks)) seqSubDagOps
+    (fun (acc : prod (ConsensusChain, ConsensusBlocks)) (value : SubDag) =>
+      let next : prod (ConsensusChain, ConsensusBlock) := consensusChainAppend acc.0 value in tuple (next.0, consensusBlocksCons next.1 acc.1))
+    (tuple (consensusChainGenesis, consensusBlocksNil)) values in seqConsensusBlockReverse result.1
+def execution_chain : Bytes -> Bytes := fun (raw : Bytes) => executionWith SubDags (codecList SubDag SubDags seqSubDagOps subDagCodec) raw
+  (fun (values : SubDags) => consensusJoin ConsensusBlock ConsensusBlocks seqConsensusBlockOps executionBlockText b";" (executionBlocks values))
+def execution_noop : Bytes -> Bytes := fun (raw : Bytes) => executionWith SubDags (codecList SubDag SubDags seqSubDagOps subDagCodec) raw
+  (fun (values : SubDags) =>
+    let result : prod (ConsensusChain, ConsensusBlocks) := listFoldLeft SubDag SubDags (prod (ConsensusChain, ConsensusBlocks)) seqSubDagOps
+      (fun (acc : prod (ConsensusChain, ConsensusBlocks)) (value : SubDag) =>
+        case (noopEngineExecute acc.0 value) with
+        | 0 (impossible : Nothing) => absurd impossible
+        | 1 (next : prod (ConsensusChain, ConsensusBlocks)) => tuple (next.0, listAppend ConsensusBlock ConsensusBlocks seqConsensusBlockOps acc.1 next.1))
+      (tuple (consensusChainGenesis, consensusBlocksNil)) values in
+    append (consensusBlockNumberText (consensusChainNumber result.0)) (append b":" (consensusJoin ConsensusBlock ConsensusBlocks seqConsensusBlockOps executionBlockText b";" result.1)))
+def executionRecordText : ConsensusRecord -> Bytes := fun (record : ConsensusRecord) =>
+  append (outputDigestHex (consensusRecordDigest record)) (append b":" (bytesHex (codecWrite Batches (codecList Batch Batches seqBatchOps batchCodec) (consensusRecordBodies record))))
+def execution_record : Bytes -> Bytes -> Bytes := fun (blockRaw : Bytes) (bodiesRaw : Bytes) =>
+  executionWith ConsensusBlock consensusBlockCodec blockRaw (fun (block : ConsensusBlock) => executionWith Batches (codecList Batch Batches seqBatchOps batchCodec) bodiesRaw (fun (bodies : Batches) =>
+    case (consensusRecordOfWire (tuple (block, bodies))) with
+    | 0 (error : ConsensusRecordError) => append b"error:" (consensusRecordErrorText error)
+    | 1 (record : ConsensusRecord) => executionRecordText record))
+def executionReplayText : Replay -> Bytes := fun (replay : Replay) =>
+  let last : Bytes := case (replayLast replay) with
+    | 0 (unit : prod ()) => b"none"
+    | 1 (block : ConsensusBlock) => outputDigestHex (consensusBlockDigest block) in
+  let blocks : Bytes := consensusJoin ConsensusBlock ConsensusBlocks seqConsensusBlockOps (fun (block : ConsensusBlock) => outputDigestHex (consensusBlockDigest block)) b"," (replayBlocks replay) in
+  let subdags : Bytes := consensusJoin SubDag SubDags seqSubDagOps (fun (value : SubDag) => subDagDigestHex (subDagDigest value)) b"," (replaySubDags replay) in
+  let bodies : Bytes := bytesHex (codecWrite Batches (codecList Batch Batches seqBatchOps batchCodec) (replayBodies replay)) in
+  append (consensusBlockNumberText (replayAfter replay)) (append b"/" (append (consensusBlockNumberText (replayUpto replay))
+    (append b"/" (append (decimal64 (replayLength replay)) (append b"/" (append (decimal64 (boolNat (replayIsEmpty replay)))
+      (append b"/" (append blocks (append b"/" (append subdags (append b"/" (append bodies (append b"/" last))))))))))))
+  )
+def executionStoreText : ConsensusStore -> Bytes := fun (store : ConsensusStore) =>
+  let earliest : Bytes := case (consensusStoreEarliest store) with
+    | 0 (unit : prod ()) => b"none"
+    | 1 (number : ConsensusBlockNumber) => consensusBlockNumberText number in
+  let latest : Bytes := case (consensusStoreLatestReceived store) with
+    | 0 (unit : prod ()) => b"none"
+    | 1 (record : ConsensusRecord) => executionRecordText record in
+  append (epochShow (consensusStoreEpoch store)) (append b"/" (append (consensusBlockNumberText (consensusStoreEpochStart store))
+    (append b"/" (append (outputDigestHex (consensusStoreEpochParent store)) (append b"/" (append (consensusBlockNumberText (consensusStoreExpectedNext store))
+      (append b"/" (append (decimal64 (consensusStoreCardinal store)) (append b"/" (append earliest (append b"/" latest))))))))))
+  )
+def executionBlockAt : ConsensusBlocks -> Nat -> ValueOption ConsensusBlock := fun (blocks : ConsensusBlocks) (index : Nat) =>
+  listFind ConsensusBlock ConsensusBlocks seqConsensusBlockOps (fun (block : ConsensusBlock) => natEq (consensusBlockNumberNat (consensusBlockNumberOf block)) (natAdd index 1)) blocks
+def executionAlterParent : ConsensusBlock -> ConsensusBlock := fun (block : ConsensusBlock) => consensusBlockCreate outputDigestZero (consensusBlockSubDag block) (consensusBlockNumberOf block)
+def executionStoreReceive : ConsensusStore -> ConsensusBlock -> Batches -> prod (ConsensusStore, Bytes) := fun (store : ConsensusStore) (block : ConsensusBlock) (bodies : Batches) =>
+  case (consensusRecordOfWire (tuple (block, bodies))) with
+  | 0 (error : ConsensusRecordError) => tuple (store, append b"body:" (consensusRecordErrorText error))
+  | 1 (record : ConsensusRecord) =>
+    case (consensusStoreReceive store record) with
+    | 0 (error : ConsensusStoreError) => tuple (store, append b"error:" (consensusStoreErrorText error))
+    | 1 (next : ConsensusStore) => tuple (next, b"ok")
+def executionGapText : sum (ConsensusStoreMiss, Replay) -> Bytes := fun (result : sum (ConsensusStoreMiss, Replay)) =>
+  case result with
+  | 0 (error : ConsensusStoreMiss) => append b"miss:" (consensusStoreMissText error)
+  | 1 (replay : Replay) => executionReplayText replay
+def executionStoreAction : ConsensusBlocks -> Batches -> ConsensusStore -> prod (Nat, Nat) -> prod (ConsensusStore, Bytes) :=
+  fun (blocks : ConsensusBlocks) (bodies : Batches) (store : ConsensusStore) (action : prod (Nat, Nat)) =>
+    case (natEq action.0 1) with
+    | 1 (unit : prod ()) =>
+      (case (consensusStoreOpenEpoch store (epochValue action.1)) with
+      | 0 (error : ConsensusStoreError) => tuple (store, append b"error:" (consensusStoreErrorText error))
+      | 1 (next : ConsensusStore) => tuple (next, b"ok"))
+    | 0 (unit : prod ()) =>
+      case (natEq action.0 2) with
+      | 1 (unit : prod ()) =>
+        (case (consensusStoreRecordAt store (consensusBlockNumber action.1)) with
+        | 0 (error : ConsensusStoreMiss) => tuple (store, append b"miss:" (consensusStoreMissText error))
+        | 1 (record : ConsensusRecord) => tuple (store, executionRecordText record))
+      | 0 (unit : prod ()) =>
+        case (natEq action.0 4) with
+        | 1 (unit : prod ()) => tuple (store, executionGapText (consensusStoreGap store (valueNone ConsensusBlock)))
+        | 0 (unit : prod ()) =>
+          case (executionBlockAt blocks action.1) with
+          | 0 (unit : prod ()) => tuple (store, b"bad index")
+          | 1 (original : ConsensusBlock) =>
+            let block : ConsensusBlock := case (boolOr (natEq action.0 6) (natEq action.0 7)) with
+              | 0 (unit : prod ()) => original
+              | 1 (unit : prod ()) => executionAlterParent original in
+            case (boolOr (natEq action.0 0) (natEq action.0 6)) with
+            | 1 (unit : prod ()) => executionStoreReceive store block bodies
+            | 0 (unit : prod ()) =>
+              case (natEq action.0 3) with
+              | 0 (unit : prod ()) => tuple (store, executionGapText (consensusStoreGap store (valueSome ConsensusBlock block)))
+              | 1 (unit : prod ()) =>
+                case (consensusStoreRecordByDigest store (consensusBlockDigest block)) with
+                | 0 (unit : prod ()) => tuple (store, b"none")
+                | 1 (record : ConsensusRecord) => tuple (store, executionRecordText record)
+def execution_store : Bytes -> Bytes -> Bytes -> Bytes := fun (raw : Bytes) (bodiesRaw : Bytes) (actionsRaw : Bytes) =>
+  executionWith SubDags (codecList SubDag SubDags seqSubDagOps subDagCodec) raw (fun (values : SubDags) =>
+    executionWith Batches (codecList Batch Batches seqBatchOps batchCodec) bodiesRaw (fun (bodies : Batches) =>
+      executionWith NatPairs (codecList (prod (Nat, Nat)) NatPairs seqNatPairOps (codecPair Nat Nat codecU8 codecU32)) actionsRaw (fun (actions : NatPairs) =>
+        let blocks : ConsensusBlocks := executionBlocks values in
+        let result : prod (ConsensusStore, Bytes) := listFoldLeft (prod (Nat, Nat)) NatPairs (prod (ConsensusStore, Bytes)) seqNatPairOps
+          (fun (acc : prod (ConsensusStore, Bytes)) (action : prod (Nat, Nat)) =>
+            let next : prod (ConsensusStore, Bytes) := executionStoreAction blocks bodies acc.0 action in
+            tuple (next.0, append acc.1 (append b";" (append next.1 (append b"|" (executionStoreText next.0))))))
+          (tuple (consensusStoreCreate epochZero consensusBlockNumberGenesis consensusBlockGenesisParent, bytesNil)) actions in append b"trace:" (drop result.1 1))))
+def execution_replay : Bytes -> Nat -> Nat -> Nat -> Nat -> Bytes := fun (raw : Bytes) (after : Nat) (upto : Nat) (mode : Nat) (index : Nat) =>
+  executionWith SubDags (codecList SubDag SubDags seqSubDagOps subDagCodec) raw (fun (values : SubDags) =>
+    let blocks : ConsensusBlocks := executionBlocks values in
+    let prior : ValueOption ConsensusBlock := case (natEq after 0) with
+      | 1 (unit : prod ()) => valueNone ConsensusBlock
+      | 0 (unit : prod ()) => executionBlockAt blocks (natSub after 1) in
+    let parent : OutputDigest := case prior with
+      | 0 (unit : prod ()) => consensusBlockGenesisParent
+      | 1 (block : ConsensusBlock) => consensusBlockDigest block in
+    let fetch : ConsensusBlockNumber -> ValueOption (prod (ConsensusBlock, Batches)) := fun (number : ConsensusBlockNumber) =>
+      let position : Nat := natSub (consensusBlockNumberNat number) 1 in
+      case (boolAnd (natEq mode 1) (natEq index position)) with
+      | 1 (unit : prod ()) => valueNone (prod (ConsensusBlock, Batches))
+      | 0 (unit : prod ()) =>
+        case (executionBlockAt blocks position) with
+        | 0 (unit : prod ()) => valueNone (prod (ConsensusBlock, Batches))
+        | 1 (original : ConsensusBlock) =>
+          let block : ConsensusBlock := case (boolAnd (natEq mode 2) (natEq index position)) with
+            | 0 (unit : prod ()) => original
+            | 1 (unit : prod ()) => executionAlterParent original in
+          valueSome (prod (ConsensusBlock, Batches)) (tuple (block, batchesNil)) in
+    case (replayCollect (consensusBlockNumber after) parent (consensusBlockNumber upto) fetch) with
+    | 0 (error : ReplayBreak) => append b"error:" (replayBreakText error)
+    | 1 (replay : Replay) => executionReplayText replay)

@@ -1,0 +1,49 @@
+mu VoteAggregator : Type 0 :=
+| voteAggregatorValue (seen : AuthorityIds) (voters : AuthorityIds) (votes : Votes) : VoteAggregator
+def voteAggregatorEmpty : VoteAggregator := voteAggregatorValue authorityIdsNil authorityIdsNil votesNil
+def voteAggregatorFields : VoteAggregator -> prod (AuthorityIds, AuthorityIds, Votes) := fun (state : VoteAggregator) =>
+  match state as self in VoteAggregator return prod (AuthorityIds, AuthorityIds, Votes) with
+  | voteAggregatorValue seen voters votes => tuple (seen, voters, votes)
+def voteAggregatorVoters : VoteAggregator -> AuthorityIds := fun (state : VoteAggregator) => (voteAggregatorFields state).1
+def VoteAggregation : Type 0 := sum (CertificateError, ValueOption Certificate)
+def voteAggregatorAdd : VoteAggregator -> Committee -> Header -> Vote -> prod (VoteAggregator, VoteAggregation) :=
+  fun (state : VoteAggregator) (committee : Committee) (header : Header) (vote : Vote) =>
+    let f : prod (AuthorityIds, AuthorityIds, Votes) := voteAggregatorFields state in
+    let author : AuthorityId := voteAuthor vote in
+    case (signerContains f.0 author) with
+    | 1 (unit : prod ()) => tuple (state, inj 0 of 2 certificateDuplicateVoter)
+    | 0 (unit : prod ()) =>
+      let seen : AuthorityIds := canonicalSigners (authorityIdsCons author f.0) in
+      match (certificateCheckVote committee header authorityIdsNil vote) as checked in CertificateValidation return prod (VoteAggregator, VoteAggregation) with
+      | certificateRejected error => tuple (voteAggregatorValue seen f.1 f.2, inj 0 of 2 error)
+      | certificateAccepted =>
+        let voters : AuthorityIds := canonicalSigners (authorityIdsCons author f.1) in
+        let votes : Votes := votesCons vote f.2 in
+        let updated : VoteAggregator := voteAggregatorValue seen voters votes in
+        case (committeeReachesQuorum committee (committeeStakeOf committee voters)) with
+        | 0 (unit : prod ()) => tuple (updated, inj 1 of 2 (valueNone Certificate))
+        | 1 (unit : prod ()) =>
+          case (certificateAssemble committee header votes) with
+          | 0 (error : CertificateError) => tuple (updated, inj 0 of 2 error)
+          | 1 (certificate : Certificate) => tuple (updated, inj 1 of 2 (valueSome Certificate certificate))
+mu ParentAggregator : Type 0 :=
+| parentAggregatorValue (seen : AuthorityIds) (pending : Certificates) : ParentAggregator
+def parentAggregatorEmpty : ParentAggregator := parentAggregatorValue authorityIdsNil certificatesNil
+def parentAggregatorFields : ParentAggregator -> prod (AuthorityIds, Certificates) := fun (state : ParentAggregator) =>
+  match state as self in ParentAggregator return prod (AuthorityIds, Certificates) with
+  | parentAggregatorValue seen pending => tuple (seen, pending)
+def parentAggregatorPending : ParentAggregator -> Certificates := fun (state : ParentAggregator) => seqCertificateReverse (parentAggregatorFields state).1
+def parentAggregatorReachedQuorum : ParentAggregator -> Committee -> Bool := fun (state : ParentAggregator) (committee : Committee) =>
+  committeeReachesQuorum committee (committeeStakeOf committee (parentAggregatorFields state).0)
+def ParentRelease : Type 0 := ValueOption (Nonempty Certificate Certificates)
+def parentAggregatorAdd : ParentAggregator -> Committee -> Certificate -> prod (ParentAggregator, ParentRelease) :=
+  fun (state : ParentAggregator) (committee : Committee) (certificate : Certificate) =>
+    let fields : prod (AuthorityIds, Certificates) := parentAggregatorFields state in
+    let origin : AuthorityId := certificateOrigin certificate in
+    case (signerContains fields.0 origin) with
+    | 1 (unit : prod ()) => tuple (state, valueNone (Nonempty Certificate Certificates))
+    | 0 (unit : prod ()) =>
+      let seen : AuthorityIds := canonicalSigners (authorityIdsCons origin fields.0) in
+      case (committeeReachesQuorum committee (committeeStakeOf committee seen)) with
+      | 0 (unit : prod ()) => tuple (parentAggregatorValue seen (certificatesCons certificate fields.1), valueNone (Nonempty Certificate Certificates))
+      | 1 (unit : prod ()) => tuple (parentAggregatorValue seen certificatesNil, valueSome (Nonempty Certificate Certificates) (tuple (certificate, fields.1)))

@@ -1,0 +1,81 @@
+def proposerWorkerCodec : Codec WorkerId := codecIso Nat WorkerId (fun (value : Nat) => workerIdValue value) workerIdNat codecU32
+def proposerActionText : ProposerAction -> Bytes := fun (action : ProposerAction) =>
+  match action as self in ProposerAction return Bytes with
+  | proposerAckDigest => b"a"
+  | proposerBroadcastHeader header => append b"h" (bytesHex (codecWrite Header headerCodec header))
+  | proposerArmTimer kind generation delay =>
+    let prefix : Bytes := match kind as self in ProposerTimer return Bytes with
+      | proposerMinDelay => b"min:"
+      | proposerMaxDelay => b"max:" in
+    append prefix (append (decimal64 generation) (append b":" (decimal64 (durationNat delay))))
+def proposerTestText : Proposer -> ProposerActions -> Bytes := fun (state : Proposer) (actions : ProposerActions) =>
+  let last : Bytes := case (proposerLastProposed state) with
+    | 0 (unit : prod ()) => b"none"
+    | 1 (header : Header) => bytesHex (codecWrite Header headerCodec header) in
+  append (roundShow (proposerRound state)) (append b"/" (append
+    (bytesHex (codecWrite BatchWorkers (codecList (prod (BatchDigest, WorkerId)) BatchWorkers seqBatchWorkerOps (codecPair BatchDigest WorkerId batchDigestCodec proposerWorkerCodec)) (proposerPendingDigests state)))
+    (append b"/" (append (bytesHex (codecWrite Nats (codecList Nat Nats seqNatOps codecU32) (proposerProposedRounds state)))
+      (append b"/" (append last (append b"/" (consensusJoin ProposerAction ProposerActions seqProposerActionOps proposerActionText b"," actions))))))))
+def proposerTestEvent : Proposer -> Bytes -> sum (BcsError, prod (Proposer, ProposerActions)) := fun (state : Proposer) (raw : Bytes) =>
+  case (codecDecode (prod (Nat, Timestamp, Bytes)) (codecTriple Nat Timestamp Bytes codecU8 timestampCodec codecBytes) raw) with
+  | 0 (error : BcsError) => inj 0 of 2 error
+  | 1 (decoded : prod (prod (Nat, Timestamp, Bytes), BcsReader)) =>
+    let event : prod (Nat, Timestamp, Bytes) := decoded.0 in
+    case (natEq event.0 0) with
+    | 1 (unit : prod ()) =>
+      (case (codecDecode (prod (BatchDigest, WorkerId)) (codecPair BatchDigest WorkerId batchDigestCodec proposerWorkerCodec) event.2) with
+      | 0 (error : BcsError) => inj 0 of 2 error
+      | 1 (payload : prod (prod (BatchDigest, WorkerId), BcsReader)) => inj 1 of 2 (proposerStep state event.1 (proposerOurDigest payload.0.0 payload.0.1)))
+    | 0 (unit : prod ()) =>
+      case (natEq event.0 1) with
+      | 1 (unit : prod ()) =>
+        (case (codecDecode (prod (Round, Headers)) (codecPair Round Headers roundCodec (codecList Header Headers seqHeaderOps headerCodec)) event.2) with
+        | 0 (error : BcsError) => inj 0 of 2 error
+        | 1 (payload : prod (prod (Round, Headers), BcsReader)) =>
+          let certificates : Certificates := listMapInto Header Headers Certificate Certificates seqHeaderOps seqCertificateOps
+            (fun (header : Header) => certificateValue header authorityIdsNil certificateGenesisState) payload.0.1 in
+          inj 1 of 2 (proposerStep state event.1 (proposerParents certificates payload.0.0)))
+      | 0 (unit : prod ()) =>
+        case (natLt event.0 4) with
+        | 1 (unit : prod ()) =>
+          (case (codecDecode Nat codecU32 event.2) with
+          | 0 (error : BcsError) => inj 0 of 2 error
+          | 1 (payload : prod (Nat, BcsReader)) =>
+            let kind : ProposerTimer := case (natEq event.0 2) with
+              | 0 (unit : prod ()) => proposerMaxDelay
+              | 1 (unit : prod ()) => proposerMinDelay in
+            inj 1 of 2 (proposerStep state event.1 (proposerTimerFired kind payload.0)))
+        | 0 (unit : prod ()) =>
+          case (natEq event.0 4) with
+          | 1 (unit : prod ()) =>
+            (case (codecDecode Nats (codecList Nat Nats seqNatOps codecU32) event.2) with
+            | 0 (error : BcsError) => inj 0 of 2 error
+            | 1 (payload : prod (Nats, BcsReader)) => inj 1 of 2 (proposerStep state event.1 (proposerCommittedHeaders payload.0)))
+          | 0 (unit : prod ()) =>
+            case (codecDecode ReputationScores reputationCodec event.2) with
+            | 0 (error : BcsError) => inj 0 of 2 error
+            | 1 (payload : prod (ReputationScores, BcsReader)) =>
+              let old : LeaderSchedule := (proposerSettings state).3 in
+              let schedule : LeaderSchedule := case (leaderNoteFinalScores old (leaderRoundValue (roundValue 2)) payload.0) with
+                | 0 (unit : prod ()) => old
+                | 1 (value : LeaderSchedule) => value in
+              inj 1 of 2 (tuple (proposerUpdateSchedule state schedule, proposerActionsNil))
+def commit_proposer : ByteStrings -> Nat -> Bytes -> Bytes -> Bytes := fun (roster : ByteStrings) (round : Nat) (lastRaw : Bytes) (eventsRaw : Bytes) =>
+  match (cryptoCommittee roster) as self in CommitteeResult return Bytes with
+  | committeeError error => b"bad committee"
+  | committeeOk committee =>
+    case (codecDecode (ValueOption Header) (codecOption Header headerCodec) lastRaw) with
+    | 0 (error : BcsError) => bcsErrorText error
+    | 1 (last : prod (ValueOption Header, BcsReader)) =>
+      case (codecDecode ByteStrings (codecList Bytes ByteStrings seqBytesOps codecBytes) eventsRaw) with
+      | 0 (error : BcsError) => bcsErrorText error
+      | 1 (events : prod (ByteStrings, BcsReader)) =>
+        let initial : prod (Proposer, ProposerActions) := proposerRecover (tuple (durationValue 500, durationValue 1000, 2, 2)) committee
+          (authorityIdOfPublicKey (secretKeyPublic (secretKeyDerive 1))) (leaderScheduleCreate committee leaderThresholdDefault)
+          (certificateGenesis committee) timestampZero (roundValue round) last.0 in
+        let result : prod (Proposer, Bytes) := listFoldLeft Bytes ByteStrings (prod (Proposer, Bytes)) seqBytesOps
+          (fun (acc : prod (Proposer, Bytes)) (raw : Bytes) =>
+            case (proposerTestEvent acc.0 raw) with
+            | 0 (error : BcsError) => tuple (acc.0, append acc.1 (append b";error:" (bcsErrorText error)))
+            | 1 (next : prod (Proposer, ProposerActions)) => tuple (next.0, append acc.1 (append b";" (proposerTestText next.0 next.1))))
+          (tuple (initial.0, proposerTestText initial.0 initial.1)) events.0 in result.1

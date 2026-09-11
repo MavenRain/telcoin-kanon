@@ -1,0 +1,25 @@
+-- Times are milliseconds; node timestamps are coarsened to whole seconds.
+def SimBatchPlan : Type 0 := prod (Nat, Nat, WorkerId, Epoch, BaseFee, AuthorityId -> Nat -> ByteStrings)
+def simBatchPlan : Nat -> Duration -> WorkerId -> Epoch -> BaseFee -> (AuthorityId -> Nat -> ByteStrings) -> SimBatchPlan :=
+  fun (count : Nat) (period : Duration) (worker : WorkerId) (epoch : Epoch) (fee : BaseFee) (transactions : AuthorityId -> Nat -> ByteStrings) =>
+    tuple (count, durationNat period, worker, epoch, fee, transactions)
+def SimConfig : Type 0 := prod (Nat, Nat, Nat, Nat, Nat, AuthorityIds, Nat, ValueOption SimBatchPlan)
+def simConfig : Duration -> Duration -> Duration -> Nat -> Nat -> AuthorityIds -> Nat -> ValueOption SimBatchPlan -> SimConfig :=
+  fun (lo : Duration) (hi : Duration) (horizon : Duration) (maxSteps : Nat) (seed : Nat) (crashed : AuthorityIds) (drops : Nat) (batches : ValueOption SimBatchPlan) =>
+    tuple (durationNat lo, durationNat hi, durationNat horizon, maxSteps, seed, seqAuthorityIdUniq authorityIdCompare (seqAuthorityIdSort authorityIdCompare crashed), choose (natLt drops 1000) drops 1000, batches)
+def SimNetwork : Type 0 := prod (Certificates, SimQueue, Nat, Nat, Prng, Prng)
+def SimProgress : Type 0 := prod (SimNodes, SimLogs, Batches, Nat, ValueOption (prod (AuthorityId, NodeError)))
+def Simulator : Type 0 := prod (prod (Committee, SimConfig), SimNetwork, SimProgress)
+mu SimAgreement : Type 0 :=
+| simAgree (common : Nat) : SimAgreement
+| simDiverge (left : AuthorityId) (right : AuthorityId) (index : Nat) : SimAgreement
+def simCommittee : Simulator -> Committee := fun (state : Simulator) => state.0.0
+def simSettings : Simulator -> SimConfig := fun (state : Simulator) => state.0.1
+def simClock : Simulator -> Nat := fun (state : Simulator) => state.1.2
+def simSteps : Simulator -> Nat := fun (state : Simulator) => state.2.3
+def simElapsed : Simulator -> Duration := fun (state : Simulator) => durationValue (simClock state)
+def simError : Simulator -> ValueOption (prod (AuthorityId, NodeError)) := fun (state : Simulator) => state.2.4
+def simBatchBodies : Simulator -> Batches := fun (state : Simulator) => seqBatchReverse state.2.2
+def simIsCrashed : Simulator -> AuthorityId -> Bool := fun (state : Simulator) (id : AuthorityId) =>
+  optionIsSome AuthorityId (listFind AuthorityId AuthorityIds seqAuthorityIdOps (authorityIdEqual id) (simSettings state).5)
+def simTimestamp : Nat -> Timestamp := fun (ms : Nat) => timestampValue (quotient64 ms 1000)
