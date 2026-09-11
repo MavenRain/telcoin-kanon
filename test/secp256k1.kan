@@ -1,0 +1,16 @@
+def secpTestNatText : Nat -> Bytes := fun (value : Nat) => append b"some:" (bytesHex (u256ToBeBytes (u256Value value)))
+def secpTestOptionalText : ValueOption Bytes -> Bytes := fun (value : ValueOption Bytes) => case value with
+  | 0 (unit : prod ()) => b"none" | 1 (bytes : Bytes) => append b"some:" (bytesHex bytes)
+def evm_test_modular256 : Nat -> Bytes -> Bytes -> Bytes -> Bytes := fun (op : Nat) (m : Bytes) (x : Bytes) (y : Bytes) =>
+  let modulus : Nat := u256ReadBe m 0 in let raw : Nat := u256ReadBe x 0 in
+  let a : Nat := modular256Reduce modulus raw in let b : Nat := modular256Read modulus y 0 in
+  case (natEq op 0) with | 1 (unit : prod ()) => secpTestNatText a
+  | 0 (unit : prod ()) => case (natEq op 1) with | 1 (unit : prod ()) => secpTestNatText (modular256Add modulus a b)
+  | 0 (unit : prod ()) => case (natEq op 2) with | 1 (unit : prod ()) => secpTestNatText (modular256Sub modulus a b)
+  | 0 (unit : prod ()) => case (natEq op 3) with | 1 (unit : prod ()) => secpTestNatText (modular256Mul modulus a b)
+  | 0 (unit : prod ()) => case (natEq op 4) with | 1 (unit : prod ()) => (case (modular256Inverse modulus a) with
+    | 0 (unit : prod ()) => b"none" | 1 (inverse : Nat) => secpTestNatText inverse)
+  | 0 (unit : prod ()) => secpTestNatText (modular256Power modulus a y)
+def evm_test_secp_recover : Bytes -> Bytes -> Bytes -> Bytes -> ValueOption Bytes := fun (message : Bytes) (id : Bytes) (r : Bytes) (s : Bytes) =>
+  case (hostIntParse id) with | 0 (unit : prod ()) => valueNone Bytes | 1 (recoveryId : HostInt) => secpRecover message recoveryId r s
+def evm_test_secp_high : Bytes -> Nat := fun (s : Bytes) => boolNat (secpSIsHigh s)

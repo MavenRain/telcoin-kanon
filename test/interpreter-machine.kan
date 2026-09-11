@@ -1,0 +1,46 @@
+def machineTestWordsCodec : Codec Words := codecList U256 Words seqWordOps u256Codec
+def machineTestOutcome : EvmOutcome -> Bytes := fun (outcome : EvmOutcome) => match outcome as self in EvmOutcome return Bytes with
+    | evmStopped gas effects => evmOutcomeText outcome
+    | evmReturned output gas effects => envTestField (evmOutcomeText outcome) (bytesHex output)
+    | evmReverted output gas => envTestField (evmOutcomeText outcome) (bytesHex output)
+    | evmFailed error => evmOutcomeText outcome
+def machineTestTransition : Nat -> EvmTransition -> Bytes := fun (memoryLength : Nat) (transition : EvmTransition) => match transition as self in EvmTransition return Bytes with
+  | evmHalt outcome => machineTestOutcome outcome
+  | evmEnter env code gas effects depth resume => b"unexpected-frame-request"
+  | evmContinue machine => envTestField b"continue" (envTestField (hostIntText machine.0)
+    (envTestField (bytesHex (codecWrite Words machineTestWordsCodec (stackToList machine.1)))
+      (envTestField (hostIntText (gasAmount machine.3)) (envTestField (decimal64 (memoryWords machine.2))
+        (bytesHex (memorySlice machine.2 (hostIntPositive 0) memoryLength))))))
+def machineTestBody : Nat -> Nat -> EvmCode -> EvmMachine -> EvmTransition := fun (op : Nat) (width : Nat) (code : EvmCode) (machine : EvmMachine) =>
+  case (natEq op 0) with | 1 (unit : prod ()) => interpreterUnary aluNot machine
+  | 0 (unit : prod ()) => case (natEq op 1) with | 1 (unit : prod ()) => interpreterBinary aluSub machine
+  | 0 (unit : prod ()) => case (natEq op 2) with | 1 (unit : prod ()) => interpreterTernary aluAddmod machine
+  | 0 (unit : prod ()) => case (natEq op 3) with | 1 (unit : prod ()) => interpreterExponentiate machine
+  | 0 (unit : prod ()) => case (natEq op 4) with | 1 (unit : prod ()) => interpreterMload machine
+  | 0 (unit : prod ()) => case (natEq op 5) with | 1 (unit : prod ()) => interpreterMstore 32 memoryStoreWord machine
+  | 0 (unit : prod ()) => case (natEq op 6) with | 1 (unit : prod ()) => interpreterMstore 1 interpreterStoreLowByte machine
+  | 0 (unit : prod ()) => case (natEq op 7) with | 1 (unit : prod ()) => interpreterJump code machine
+  | 0 (unit : prod ()) => case (natEq op 8) with | 1 (unit : prod ()) => interpreterJumpi code machine
+  | 0 (unit : prod ()) => case (natEq op 9) with | 1 (unit : prod ()) => interpreterPushImmediate code (pushBytesValue width) machine
+  | 0 (unit : prod ()) => case (natEq op 10) with | 1 (unit : prod ()) => interpreterHaltWithOutput (fun (output : Bytes) (gas : Gas) => evmReturned output gas machine.4) machine
+  | 0 (unit : prod ()) => case (natEq op 11) with | 1 (unit : prod ()) => interpreterHaltWithOutput (fun (output : Bytes) (gas : Gas) => evmReverted output gas) machine
+  | 0 (unit : prod ()) => case (natEq op 12) with | 1 (unit : prod ()) => interpreterCopyFromData (evmCodeWindow code) machine
+  | 0 (unit : prod ()) => case (natEq op 13) with | 1 (unit : prod ()) => interpreterMcopy machine
+  | 0 (unit : prod ()) => case (natEq op 14) with | 1 (unit : prod ()) => interpreterDiscard machine
+  | 0 (unit : prod ()) => interpreterPush u256Zero machine
+def machineTestRun : Nat -> Nat -> EvmStack -> Gas -> EvmCode -> HostInt -> Bytes -> Nat -> EvmTransition :=
+  fun (op : Nat) (width : Nat) (stack : EvmStack) (gas : Gas) (code : EvmCode) (pc : HostInt) (memoryRaw : Bytes) (paid : Nat) =>
+    let machine : EvmMachine := tuple (pc, stack, memoryExpand paid (memoryStoreBytes memoryEmpty (hostIntPositive 0) memoryRaw), gas, effectsStart worldStateEmpty accessEmpty, returnDataValue bytesNil) in
+    machineTestBody op width code machine
+def MachineTestResult : Type 0 := sum (Bytes, EvmTransition)
+def machineTestResultText : Nat -> MachineTestResult -> Bytes := fun (memoryLength : Nat) (result : MachineTestResult) => case result with
+  | 0 (error : Bytes) => error | 1 (transition : EvmTransition) => machineTestTransition memoryLength transition
+def evm_test_machine : Nat -> Nat -> Bytes -> Bytes -> Bytes -> Bytes -> Bytes -> Nat -> MachineTestResult :=
+  fun (op : Nat) (width : Nat) (stackRaw : Bytes) (gasRaw : Bytes) (codeRaw : Bytes) (pcRaw : Bytes) (memoryRaw : Bytes) (paid : Nat) =>
+    case (codecDecode Words machineTestWordsCodec stackRaw) with
+    | 0 (error : BcsError) => inj 0 of 2 (append b"error:" (bcsErrorText error))
+    | 1 (decoded : prod (Words, BcsReader)) => case (stackOfList decoded.0) with | 0 (unit : prod ()) => inj 0 of 2 b"none-stack"
+      | 1 (stack : EvmStack) => case (hostIntParse gasRaw) with | 0 (unit : prod ()) => inj 0 of 2 b"error:bad int" | 1 (amount : HostInt) =>
+      case (gasOfHostInt amount) with | 0 (unit : prod ()) => inj 0 of 2 b"none-gas" | 1 (gas : Gas) =>
+      case (hostIntParse pcRaw) with | 0 (unit : prod ()) => inj 0 of 2 b"error:bad int" | 1 (pc : HostInt) =>
+      inj 1 of 2 (machineTestRun op width stack gas (evmCodeOfBytes codeRaw) pc memoryRaw paid)

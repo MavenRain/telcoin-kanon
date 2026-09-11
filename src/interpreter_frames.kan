@@ -1,0 +1,52 @@
+def interpreterReachWindow : EvmMachine -> U256 -> U256 -> InterpreterResult (prod (EvmMachine, Nat, Nat)) :=
+  fun (machine : EvmMachine) (offsetWord : U256) (lengthWord : U256) => interpreterBind Nat (prod (EvmMachine, Nat, Nat)) (interpreterExtent lengthWord)
+    (fun (length : Nat) => case (natEq length 0) with | 1 (unit : prod ()) => inj 1 of 2 (tuple (machine, 0, 0))
+      | 0 (unit : prod ()) => interpreterBind Nat (prod (EvmMachine, Nat, Nat)) (interpreterExtent offsetWord) (fun (offset : Nat) =>
+        interpreterBind (prod (EvmMemory, Gas)) (prod (EvmMachine, Nat, Nat)) (interpreterReach machine offset length) (fun (reached : prod (EvmMemory, Gas)) =>
+          inj 1 of 2 (tuple (tuple (machine.0, machine.1, reached.0, reached.1, machine.4, machine.5), offset, length)))))
+def interpreterMemoryWindows : EvmMachine -> InterpreterResult (prod (EvmMachine, Nat, Nat, Nat, Nat)) := fun (machine : EvmMachine) =>
+  interpreterBind (prod (U256, U256, EvmStack)) (prod (EvmMachine, Nat, Nat, Nat, Nat)) (interpreterStackResult (prod (U256, U256, EvmStack)) (stackPop2 machine.1))
+    (fun (input : prod (U256, U256, EvmStack)) => interpreterBind (prod (U256, U256, EvmStack)) (prod (EvmMachine, Nat, Nat, Nat, Nat))
+      (interpreterStackResult (prod (U256, U256, EvmStack)) (stackPop2 input.2)) (fun (output : prod (U256, U256, EvmStack)) =>
+        interpreterBind (prod (EvmMachine, Nat, Nat)) (prod (EvmMachine, Nat, Nat, Nat, Nat)) (interpreterReachWindow (machineWithStack machine output.2) input.0 input.1)
+          (fun (inWindow : prod (EvmMachine, Nat, Nat)) => interpreterBind (prod (EvmMachine, Nat, Nat)) (prod (EvmMachine, Nat, Nat, Nat, Nat))
+            (interpreterReachWindow inWindow.0 output.0 output.1) (fun (outWindow : prod (EvmMachine, Nat, Nat)) =>
+              inj 1 of 2 (tuple (outWindow.0, inWindow.1, inWindow.2, outWindow.1, outWindow.2))))))
+def interpreterFinishWritten : EvmMachine -> Nat -> Nat -> Bytes -> Gas -> EvmEffects -> U256 -> EvmTransition :=
+  fun (base : EvmMachine) (outOff : Nat) (outLen : Nat) (output : Bytes) (gas : Gas) (effects : EvmEffects) (pushed : U256) =>
+    let targetLength : Nat := minNat outLen (bytesLength output) in interpreterTransition
+      (interpreterBind (prod (EvmMemory, Gas)) EvmMachine (interpreterReach (machineWithGas base gas) outOff targetLength)
+        (fun (reached : prod (EvmMemory, Gas)) => interpreterBind EvmStack EvmMachine (interpreterStackResult EvmStack (stackPush pushed base.1))
+          (fun (stack : EvmStack) => inj 1 of 2 (tuple (machineNextPc base, stack, memoryStoreBytes reached.0 (hostIntPositive outOff) (take targetLength output),
+            reached.1, effects, returnDataValue output)))))
+def interpreterPushZero : EvmMachine -> Gas -> EvmTransition := fun (base : EvmMachine) (gas : Gas) => interpreterTransition
+  (interpreterBind EvmStack EvmMachine (interpreterStackResult EvmStack (stackPush u256Zero base.1))
+    (fun (stack : EvmStack) => inj 1 of 2 (tuple (machineNextPc base, stack, base.2, gas, base.4, returnDataValue bytesNil))))
+def interpreterMergeCall : EvmMachine -> Nat -> Nat -> EvmOutcome -> EvmTransition := fun (base : EvmMachine) (outOff : Nat) (outLen : Nat) (outcome : EvmOutcome) =>
+  match outcome as self in EvmOutcome return EvmTransition with
+  | evmStopped left effects => interpreterFinishWritten base outOff outLen bytesNil (gasGiveBack (gasAmount left) base.3) effects u256One
+  | evmReturned output left effects => interpreterFinishWritten base outOff outLen output (gasGiveBack (gasAmount left) base.3) effects u256One
+  | evmReverted output left => interpreterFinishWritten base outOff outLen output (gasGiveBack (gasAmount left) base.3) base.4 u256Zero
+  | evmFailed error => interpreterPushZero base base.3
+def interpreterDepositCode : EvmMachine -> Address -> MutabilityPermit -> EvmEffects -> Bytes -> Gas -> EvmEffects -> EvmTransition :=
+  fun (base : EvmMachine) (created : Address) (permit : MutabilityPermit) (warmed : EvmEffects) (output : Bytes) (left : Gas) (effects : EvmEffects) =>
+    case (bytecodeValidateDeployment output) with | 0 (error : DeploymentError) => interpreterPushZero (machineWithEffects base warmed) base.3
+    | 1 (unit : prod ()) => case (gasCharge (gasCodeDepositCost (hostIntPositive (bytesLength output))) left) with
+      | 0 (unit : prod ()) => interpreterPushZero (machineWithEffects base warmed) base.3
+      | 1 (paid : Gas) => interpreterTransition (interpreterBind EvmStack EvmMachine (interpreterStackResult EvmStack (stackPush (addressToWord created) base.1))
+        (fun (stack : EvmStack) => inj 1 of 2 (tuple (machineNextPc base, stack, base.2, gasGiveBack (gasAmount paid) base.3,
+          effectsDeployCode effects permit created output, returnDataValue bytesNil))))
+def interpreterMergeCreation : EvmMachine -> Address -> MutabilityPermit -> EvmEffects -> EvmOutcome -> EvmTransition :=
+  fun (base : EvmMachine) (created : Address) (permit : MutabilityPermit) (warmed : EvmEffects) (outcome : EvmOutcome) =>
+    match outcome as self in EvmOutcome return EvmTransition with
+    | evmStopped left effects => interpreterDepositCode base created permit warmed bytesNil left effects
+    | evmReturned output left effects => interpreterDepositCode base created permit warmed output left effects
+    | evmReverted output left => interpreterTransition (interpreterBind EvmStack EvmMachine (interpreterStackResult EvmStack (stackPush u256Zero base.1))
+      (fun (stack : EvmStack) => inj 1 of 2 (tuple (machineNextPc base, stack, base.2, gasGiveBack (gasAmount left) base.3, warmed, returnDataValue output))))
+    | evmFailed error => interpreterPushZero (machineWithEffects base warmed) base.3
+def interpreterResume : EvmResume -> EvmOutcome -> EvmTransition := fun (resume : EvmResume) (outcome : EvmOutcome) => match resume as self in EvmResume return EvmTransition with
+  | evmResumeCall base offset length => interpreterMergeCall base offset length outcome
+  | evmResumeCreation base created permit warmed => interpreterMergeCreation base created permit warmed outcome
+def interpreterNotActivatedAt : EvmSpec -> Opcode -> Bool := fun (spec : EvmSpec) (opcode : Opcode) =>
+  let byte : Nat := opcodeEncode opcode in boolAnd (boolNot (evmSpecEnabled spec evmCancun))
+    (boolOr (natEq byte 73) (boolOr (natEq byte 74) (boolOr (natEq byte 92) (boolOr (natEq byte 93) (natEq byte 94)))))

@@ -97,8 +97,63 @@ passed (`.kanon-exec/run-QW9HwB`). The artifact has 102 production source files,
 9,936 nonempty source lines, 386,765 Wasm bytes, 65 exports and zero imports, SHA-256
 `e01234f057725de96f0dc7bbd3e6cf41d6afbdb5ae806df4f185e9c6430c86d5`
 (`.kanon-exec/run-umsQcC`). Source inventory and generated-source checks passed
-(`.kanon-exec/run-uZYIuU` and `.kanon-exec/run-iLhTvI`). The expanded 146-group
-combined invocation has not yet run; the scoped evidence above does not replace it.
+(`.kanon-exec/run-uZYIuU` and `.kanon-exec/run-iLhTvI`). The expanded combined
+invocation passed all 146 groups at commit `1b739137b13c1ae2993d7a154a48d368ee055182`
+in a detached checkout. It exited 0 after 2,619.6 seconds, including the full
+production build and public CLI tests. Its capture is
+`/private/tmp/telcoin-kanon-validation-1b73913/.kanon-exec/run-9ZBu9o`.
+
+## Interpreter and secp256k1 continuation
+
+The new suites pass 17 groups with 3,036 comparisons against the pinned OCaml
+implementation. They are included in the expanded 163-group `npm test` command.
+
+| Scope | Evidence |
+| --- | --- |
+| Instruction bodies | 885 rows covering stack limits, arithmetic operand order, EXP charging, jumps, truncated PUSH, memory, return/revert and overlapping copies. |
+| Stateful instructions | 1,533 rows covering warmth and account access, storage sentry/refunds, transient storage, logs, static guards, return-data bounds and fork-specific SELFDESTRUCT. |
+| Complete frames | 274 rows covering bytecode programs, activation and gas precedence, calls, delegated code, creation, code deposit, complete account/storage snapshots and the 1,024 nested-call limit. |
+| secp256k1 and modular arithmetic | 344 rows covering wide products, inverse rejection, exponent bytes, actual OCaml-generated signatures, malformed scalars and high-S classification. |
+
+The instruction/state suites passed together after the frame-runner change
+(`.kanon-exec/run-WEKFyn`). Complete-frame comparisons passed in
+`.kanon-exec/run-o6uxUB`; secp256k1 passed in `.kanon-exec/run-Ms73JK`.
+After isolating concurrent fixture builds and retaining artifacts by content hash,
+the secp256k1 suite passed again in `.kanon-exec/run-YUghez` (344 rows).
+
+The complete production build passed in `.kanon-exec/run-JWk0aQ`, checking
+109 source files with 10,573 nonempty lines. The resulting Wasm is 420,522 bytes,
+with 65 exports and no imports. Its SHA-256 is
+`573239e7af24ebfb855be84e03a408516ee10cd15e4cd1279d0347e81e647877`.
+Metrics were recorded in `.kanon-exec/run-JnQ7kM`. The public exports remain
+the existing foundation and simulator API; the new interpreter is exercised
+through scoped test reactors until the default precompile binding is complete.
+The frame fixtures target ordinary accounts. They refuse reserved precompile
+addresses; complete precompile implementations and the default binding remain
+outstanding. The OCaml oracle retains the actual source precompile module.
+
+Two failures were caught and fixed before publication. MSTORE8 initially used
+a 64-bit remainder operation on a 256-bit word; it now reduces the full word.
+The initial recursive frame runner exhausted the host stack before the EVM depth
+limit. The runner now stores parent contexts and return state in a continuation
+list, and the permanent depth test reaches the source limit with default Node
+stack settings. No compiler primitive or larger host stack was added.
+
+The large fixture formatters initially hit the compiler's 600-second timeout.
+Execution and formatting now cross the Wasm boundary as opaque values, and the
+128-byte diagnostic memory window is passed at runtime. The same bytes and
+assertions are checked without unrolling that window during compilation. The
+compiler timeout is unchanged. Fixture Wasm files and source manifests are kept
+in `build/test-artifacts`; the harness also includes the failing input when Wasm
+throws. Tests still compile fresh, hash-checked OCaml source.
+
+Modular division builds only the quotient powers needed for its numerator.
+This preserves full-width reduction and makes the Euclidean inverse practical
+without changing signature semantics. Source inventory and generated-source
+checks passed (`.kanon-exec/run-W4Eh7K` and `.kanon-exec/run-3pW7qG`).
+
+The 146-group combined run above remains the evidence for the published parent;
+the expanded 163-group combined invocation has not yet run.
 
 ## Initial foundation audit
 

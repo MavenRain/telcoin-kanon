@@ -1,0 +1,130 @@
+mu PrecompileOutcome : Type 0 :=
+| precompileSucceeded (gasUsed : HostInt) (output : Bytes) : PrecompileOutcome
+| precompileRejected : PrecompileOutcome
+| notAPrecompile : PrecompileOutcome
+def PrecompileInvoke : Type 0 := Address -> Bytes -> HostInt -> PrecompileOutcome
+def EvmSubframe : Type 0 := EvmEnv -> EvmCode -> Gas -> EvmEffects -> EvmCallDepth -> EvmResume -> EvmTransition
+def interpreterChargeMachine : Nat -> EvmMachine -> InterpreterResult EvmMachine := fun (cost : Nat) (machine : EvmMachine) =>
+  interpreterBind Gas EvmMachine (interpreterCharged (hostIntPositive cost) machine.3) (fun (gas : Gas) => inj 1 of 2 (machineWithGas machine gas))
+def interpreterResolveCall : EvmMachine -> Address -> U256 -> Bool -> InterpreterResult (prod (EvmMachine, EvmCode)) :=
+  fun (machine : EvmMachine) (to : Address) (value : U256) (plain : Bool) =>
+    let loaded : EffectLoad Account := effectsExtAccount machine.4 to in
+    interpreterBind EvmMachine (prod (EvmMachine, EvmCode)) (interpreterChargeMachine (gasAccountAccess loaded.1) (machineWithEffects machine loaded.2))
+      (fun (accessPaid : EvmMachine) => interpreterBind EvmMachine (prod (EvmMachine, EvmCode)) (interpreterChargeMachine (gasCallValueCost value) accessPaid)
+        (fun (valuePaid : EvmMachine) =>
+          let cost : Nat := case (boolAnd plain (accountIsEmpty loaded.0)) with | 1 (unit : prod ()) => gasCallNewAccountCost value | 0 (unit : prod ()) => 0 in
+          interpreterBind EvmMachine (prod (EvmMachine, EvmCode)) (interpreterChargeMachine cost valuePaid) (fun (creationPaid : EvmMachine) =>
+            let resolved : CallTarget := callTargetResolve creationPaid.4 loaded.0 in
+            interpreterBind EvmMachine (prod (EvmMachine, EvmCode)) (interpreterChargeMachine (callTargetSurcharge resolved) (machineWithEffects creationPaid (callTargetEffects resolved)))
+              (fun (resolvedPaid : EvmMachine) => inj 1 of 2 (tuple (resolvedPaid, callTargetCode resolved))))))
+def interpreterInvokeCall : PrecompileInvoke -> EvmSubframe -> EvmEnv -> EvmCode -> EvmCallDepth -> Address -> EvmCall -> Gas -> EvmEffects -> EvmResume -> EvmTransition :=
+  fun (precompile : PrecompileInvoke) (runChild : EvmSubframe) (env : EvmEnv) (code : EvmCode) (depth : EvmCallDepth)
+    (to : Address) (call : EvmCall) (forwarded : Gas) (effects : EvmEffects) (resume : EvmResume) =>
+    match (precompile to (evmDataBytes (evmCallData call)) (gasAmount forwarded)) as result in PrecompileOutcome return EvmTransition with
+    | precompileSucceeded used output => (case (gasCharge used forwarded) with
+      | 0 (unit : prod ()) => interpreterResume resume (evmFailed evmOutOfGas) | 1 (left : Gas) => interpreterResume resume (evmReturned output left effects))
+    | precompileRejected => interpreterResume resume (evmFailed evmOutOfGas)
+    | notAPrecompile => runChild (evmEnvWithCall env call) code forwarded effects depth resume
+def interpreterDoCall : PrecompileInvoke -> EvmSubframe -> EvmEnv -> EvmCallDepth -> EvmMachine -> U256 -> Address -> U256 -> U256 -> Bool -> Address -> Address -> Mutability -> EvmTransition :=
+  fun (precompile : PrecompileInvoke) (runChild : EvmSubframe) (env : EvmEnv) (depth : EvmCallDepth) (machine : EvmMachine)
+    (requested : U256) (to : Address) (childValue : U256) (transferValue : U256) (plain : Bool) (subTarget : Address) (subCaller : Address) (mode : Mutability) =>
+    case (interpreterMemoryWindows machine) with | 0 (error : InterpreterError) => evmHalt (evmFailed error)
+    | 1 (windows : prod (EvmMachine, Nat, Nat, Nat, Nat)) =>
+      case (interpreterResolveCall windows.0 to transferValue plain) with | 0 (error : InterpreterError) => evmHalt (evmFailed error)
+      | 1 (resolved : prod (EvmMachine, EvmCode)) =>
+        let cg : CallGas := gasCallGas requested resolved.0.3 transferValue in
+        case (interpreterCharged (gasAmount cg.0) resolved.0.3) with | 0 (error : InterpreterError) => evmHalt (evmFailed error)
+        | 1 (gas : Gas) => let base : EvmMachine := machineWithGas resolved.0 gas in
+          let refuse : EvmTransition := interpreterPushZero base (gasGiveBack (gasAmount cg.1) gas) in
+          let effects : ValueOption EvmEffects := case (u256IsZero transferValue) with
+            | 1 (unit : prod ()) => valueSome EvmEffects base.4
+            | 0 (unit : prod ()) => effectsTransfer base.4 (interpreterExecuting env) subTarget transferValue in
+          let childDepth : EvmCallDepth := evmCallDepthSucc depth in
+          case (evmCallDepthWithinLimit childDepth) with | 0 (unit : prod ()) => refuse
+          | 1 (unit : prod ()) => case effects with | 0 (unit : prod ()) => refuse
+            | 1 (subEffects : EvmEffects) =>
+              let input : Bytes := memorySlice base.2 (hostIntPositive windows.1) windows.2 in
+              let call : EvmCall := evmCallMake subTarget subCaller childValue (evmDataValue input) mode in
+              interpreterInvokeCall precompile runChild env resolved.1 childDepth to call cg.1 subEffects (evmResumeCall base windows.3 windows.4)
+mu EvmCallKind : Type 0 :=
+| evmPlainCall : EvmCallKind
+| evmCallcode : EvmCallKind
+| evmDelegatecall : EvmCallKind
+| evmStaticcall : EvmCallKind
+def interpreterCallOperands : PrecompileInvoke -> EvmSubframe -> EvmCallKind -> EvmEnv -> EvmCallDepth -> EvmMachine -> U256 -> Address -> EvmTransition :=
+  fun (precompile : PrecompileInvoke) (runChild : EvmSubframe) (kind : EvmCallKind) (env : EvmEnv) (depth : EvmCallDepth)
+    (machine : EvmMachine) (requested : U256) (to : Address) =>
+    let current : EvmCall := evmEnvCall env in let executing : Address := evmCallTarget current in
+    match kind as self in EvmCallKind return EvmTransition with
+    | evmPlainCall => (case (interpreterStackResult (prod (U256, EvmStack)) (stackPop machine.1)) with
+      | 0 (error : InterpreterError) => evmHalt (evmFailed error)
+      | 1 (popped : prod (U256, EvmStack)) =>
+        let forbidden : Bool := match (evmCallMutability current) as mode in Mutability return Bool with
+          | evmMutable => natEq 0 1 | evmStatic => boolNot (u256IsZero popped.0) in
+        case forbidden with | 1 (unit : prod ()) => evmHalt (evmFailed evmCallInsideStatic)
+        | 0 (unit : prod ()) => interpreterDoCall precompile runChild env depth (machineWithStack machine popped.1) requested to popped.0 popped.0 (natEq 0 0) to executing (evmCallMutability current))
+    | evmCallcode => (case (interpreterStackResult (prod (U256, EvmStack)) (stackPop machine.1)) with
+      | 0 (error : InterpreterError) => evmHalt (evmFailed error)
+      | 1 (popped : prod (U256, EvmStack)) => interpreterDoCall precompile runChild env depth (machineWithStack machine popped.1) requested to popped.0 popped.0 (natEq 0 1) executing executing (evmCallMutability current))
+    | evmDelegatecall => interpreterDoCall precompile runChild env depth machine requested to (evmCallValue current) u256Zero (natEq 0 1) executing (evmCallCaller current) (evmCallMutability current)
+    | evmStaticcall => interpreterDoCall precompile runChild env depth machine requested to u256Zero u256Zero (natEq 0 1) to executing evmStatic
+def interpreterCallOp : PrecompileInvoke -> EvmSubframe -> EvmCallKind -> EvmEnv -> EvmCallDepth -> EvmMachine -> EvmTransition :=
+  fun (precompile : PrecompileInvoke) (runChild : EvmSubframe) (kind : EvmCallKind) (env : EvmEnv) (depth : EvmCallDepth) (machine : EvmMachine) =>
+    case (interpreterStackResult (prod (U256, U256, EvmStack)) (stackPop2 machine.1)) with
+    | 0 (error : InterpreterError) => evmHalt (evmFailed error)
+    | 1 (popped : prod (U256, U256, EvmStack)) => interpreterCallOperands precompile runChild kind env depth (machineWithStack machine popped.2) popped.0 (addressOfWord popped.1)
+def interpreterReadInitcode : EvmMachine -> U256 -> U256 -> InterpreterResult (prod (EvmMachine, Bytes)) :=
+  fun (machine : EvmMachine) (offsetWord : U256) (lengthWord : U256) =>
+    interpreterBind Nat (prod (EvmMachine, Bytes)) (interpreterExtent lengthWord) (fun (length : Nat) =>
+      case (natEq length 0) with | 1 (unit : prod ()) => inj 1 of 2 (tuple (machine, bytesNil))
+      | 0 (unit : prod ()) => case (natLt 49152 length) with | 1 (unit : prod ()) => inj 0 of 2 evmInitcodeTooLarge
+        | 0 (unit : prod ()) => interpreterBind EvmMachine (prod (EvmMachine, Bytes)) (interpreterChargeMachine (gasInitcodeCost (hostIntPositive length)) machine)
+          (fun (charged : EvmMachine) => interpreterBind Nat (prod (EvmMachine, Bytes)) (interpreterExtent offsetWord) (fun (offset : Nat) =>
+            interpreterBind (prod (EvmMemory, Gas)) (prod (EvmMachine, Bytes)) (interpreterReach charged offset length)
+              (fun (reached : prod (EvmMemory, Gas)) => inj 1 of 2 (tuple (
+                tuple (machine.0, machine.1, reached.0, reached.1, machine.4, machine.5), memorySlice reached.0 (hostIntPositive offset) length))))))
+def interpreterCreateChild : EvmSubframe -> EvmEnv -> EvmCallDepth -> EvmMachine -> MutabilityPermit -> U256 -> ContractAddressScheme -> Bytes -> Gas -> EvmTransition :=
+  fun (runChild : EvmSubframe) (env : EvmEnv) (depth : EvmCallDepth) (machine : EvmMachine) (permit : MutabilityPermit)
+    (value : U256) (scheme : ContractAddressScheme) (initCode : Bytes) (forwarded : Gas) =>
+    let creator : Address := interpreterExecuting env in let loaded : prod (Account, EvmEffects) := effectsSelfAccount machine.4 creator in
+    let base : EvmMachine := machineWithEffects machine loaded.1 in let childDepth : EvmCallDepth := evmCallDepthSucc depth in
+    let refuse : EvmTransition := interpreterPushZero base (gasGiveBack (gasAmount forwarded) base.3) in
+    case (evmCallDepthWithinLimit childDepth) with | 0 (unit : prod ()) => refuse
+    | 1 (unit : prod ()) => case (natLt (u256Nat (accountBalance loaded.0)) (u256Nat value)) with | 1 (unit : prod ()) => refuse
+      | 0 (unit : prod ()) => case (effectsBumpNonce base.4 creator) with | 0 (unit : prod ()) => refuse
+        | 1 (bumped : EvmEffects) =>
+          let actualScheme : ContractAddressScheme := match scheme as self in ContractAddressScheme return ContractAddressScheme with
+            | contractFromNonce ignored => contractFromNonce (accountNonce loaded.0)
+            | contractFromSalt salt code => contractFromSalt salt code in
+          let created : Address := contractAddressDerive creator actualScheme in
+          let target : EffectLoad Account := effectsExtAccount bumped created in let warmed : EvmEffects := target.2 in
+          case (accountIsOccupied target.0) with | 1 (unit : prod ()) => interpreterPushZero (machineWithEffects base warmed) base.3
+          | 0 (unit : prod ()) => case (effectsBeginCreation warmed permit creator created value) with
+            | 0 (unit : prod ()) => interpreterPushZero (machineWithEffects base warmed) base.3
+            | 1 (effects : EvmEffects) =>
+              let call : EvmCall := evmCallMake created creator value (evmDataValue bytesNil) (evmCallMutability (evmEnvCall env)) in
+              runChild (evmEnvWithCall env call) (evmCodeOfBytes initCode) forwarded effects childDepth (evmResumeCreation base created permit warmed)
+def interpreterCreateWithSalt : EvmSubframe -> Bool -> EvmEnv -> EvmCallDepth -> EvmMachine -> MutabilityPermit -> U256 -> Bytes -> U256 -> EvmTransition :=
+  fun (runChild : EvmSubframe) (salted : Bool) (env : EvmEnv) (depth : EvmCallDepth) (machine : EvmMachine) (permit : MutabilityPermit)
+    (value : U256) (initCode : Bytes) (salt : U256) =>
+    case (interpreterChargeMachine (gasCreateCost salted (hostIntPositive (bytesLength initCode))) machine) with
+    | 0 (error : InterpreterError) => evmHalt (evmFailed error)
+    | 1 (charged : EvmMachine) => let cg : CallGas := gasCreateGas charged.3 in
+      case (interpreterCharged (gasAmount cg.0) charged.3) with | 0 (error : InterpreterError) => evmHalt (evmFailed error)
+      | 1 (gas : Gas) =>
+        let scheme : ContractAddressScheme := case salted with | 0 (unit : prod ()) => contractFromNonce nonceZero
+          | 1 (unit : prod ()) => contractFromSalt salt initCode in
+        interpreterCreateChild runChild env depth (machineWithGas charged gas) permit value scheme initCode cg.1
+def interpreterCreateOp : EvmSubframe -> Bool -> EvmEnv -> EvmCallDepth -> EvmMachine -> EvmTransition :=
+  fun (runChild : EvmSubframe) (salted : Bool) (env : EvmEnv) (depth : EvmCallDepth) (machine : EvmMachine) =>
+    case (interpreterPermitted env) with | 0 (error : InterpreterError) => evmHalt (evmFailed error)
+    | 1 (permit : MutabilityPermit) => case (interpreterStackResult (prod (U256, U256, U256, EvmStack)) (stackPop3 machine.1)) with
+      | 0 (error : InterpreterError) => evmHalt (evmFailed error)
+      | 1 (popped : prod (U256, U256, U256, EvmStack)) =>
+        case (interpreterReadInitcode (machineWithStack machine popped.3) popped.1 popped.2) with
+        | 0 (error : InterpreterError) => evmHalt (evmFailed error)
+        | 1 (read : prod (EvmMachine, Bytes)) => case salted with
+          | 0 (unit : prod ()) => interpreterCreateWithSalt runChild salted env depth read.0 permit popped.0 read.1 u256Zero
+          | 1 (unit : prod ()) => case (interpreterStackResult (prod (U256, EvmStack)) (stackPop read.0.1)) with
+            | 0 (error : InterpreterError) => evmHalt (evmFailed error)
+            | 1 (salt : prod (U256, EvmStack)) => interpreterCreateWithSalt runChild salted env depth (machineWithStack read.0 salt.1) permit popped.0 read.1 salt.0

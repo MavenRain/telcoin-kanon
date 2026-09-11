@@ -1,0 +1,38 @@
+-- Moduli and residues are below 2^256, and products are below 2^512.
+-- Stop building quotient powers once they exceed the numerator. This is
+-- especially useful for the small quotients in the Euclidean algorithm.
+-- Internal precondition: the divisor is positive.
+def modular256Divide : Nat -> Nat -> DivResult := fun (numerator : Nat) (divisor : Nat) =>
+  let powers : prod (Nat, Nat, Powers) := stepsFold (prod (Nat, Nat, Powers)) steps32
+    (fun (state : prod (Nat, Nat, Powers)) => boolNat (boolOr (natEq state.0 0) (natLt numerator state.0)))
+    (fun (state : prod (Nat, Nat, Powers)) => tuple (natMul state.0 2, natMul state.1 2, powersCons state.0 state.1 state.2))
+    (tuple (divisor, 1, powersNil)) in divideScan powers.2 numerator 0
+def modular256Reduce : Nat -> Nat -> Nat := fun (modulus : Nat) (value : Nat) => divRemainder (modular256Divide value modulus)
+def modular256Add : Nat -> Nat -> Nat -> Nat := fun (modulus : Nat) (a : Nat) (b : Nat) => modular256Reduce modulus (natAdd a b)
+def modular256Sub : Nat -> Nat -> Nat -> Nat := fun (modulus : Nat) (a : Nat) (b : Nat) =>
+  case (natLt a b) with | 1 (unit : prod ()) => natSub modulus (natSub b a) | 0 (unit : prod ()) => natSub a b
+def modular256Mul : Nat -> Nat -> Nat -> Nat := fun (modulus : Nat) (a : Nat) (b : Nat) => modular256Reduce modulus (natMul a b)
+def rec modular256Read : Nat -> Bytes -> Nat -> Nat := fun (modulus : Nat) (bytes : Bytes) (acc : Nat) => match bytes as self in Bytes return Nat with
+  | bytesNil => acc | bytesCons byte tail => modular256Read modulus tail (modular256Reduce modulus (natAdd (natMul acc 256) byte))
+def modular256Inverse : Nat -> Nat -> ValueOption Nat := fun (modulus : Nat) (value : Nat) =>
+  let result : prod (Nat, Nat, Nat, Nat) := stepsFold (prod (Nat, Nat, Nat, Nat)) steps32
+    (fun (state : prod (Nat, Nat, Nat, Nat)) => boolNat (natEq state.1 0))
+    (fun (state : prod (Nat, Nat, Nat, Nat)) =>
+      let division : DivResult := modular256Divide state.0 state.1 in
+      tuple (state.1, divRemainder division, state.3, modular256Sub modulus state.2 (modular256Mul modulus (divQuotient division) state.3)))
+    (tuple (modulus, modular256Reduce modulus value, 0, 1)) in
+  case (natEq result.0 1) with | 1 (unit : prod ()) => valueSome Nat result.2 | 0 (unit : prod ()) => valueNone Nat
+def powerByte : (0 A : Type 0) -> (A -> A -> A) -> A -> A -> Nat -> A :=
+  fun (0 A : Type 0) (multiply : A -> A -> A) (base : A) (acc : A) (byte : Nat) =>
+    let result : prod (Nat, Nat, A) := stepsFold (prod (Nat, Nat, A)) steps32
+      (fun (state : prod (Nat, Nat, A)) => boolNat (natEq state.0 8))
+      (fun (state : prod (Nat, Nat, A)) => let squared : A := multiply state.2 state.2 in
+        case (natLt state.1 128) with
+        | 1 (unit : prod ()) => tuple (natAdd state.0 1, natMul state.1 2, squared)
+        | 0 (unit : prod ()) => tuple (natAdd state.0 1, natMul (natSub state.1 128) 2, multiply squared base))
+      (tuple (0, byte, acc)) in result.2
+def rec powerBytes : (0 A : Type 0) -> (A -> A -> A) -> A -> A -> Bytes -> A :=
+  fun (0 A : Type 0) (multiply : A -> A -> A) (base : A) (acc : A) (exponent : Bytes) => match exponent as self in Bytes return A with
+    | bytesNil => acc | bytesCons byte tail => powerBytes A multiply base (powerByte A multiply base acc byte) tail
+def modular256Power : Nat -> Nat -> Bytes -> Nat := fun (modulus : Nat) (base : Nat) (exponent : Bytes) =>
+  powerBytes Nat (fun (a : Nat) (b : Nat) => modular256Mul modulus a b) (modular256Reduce modulus base) (modular256Reduce modulus 1) exponent

@@ -1,0 +1,33 @@
+-- These frame tests call ordinary account 16. Reserved addresses are refused
+-- by this fixture until their real precompile implementations are connected.
+def runTestPrecompile : PrecompileInvoke := fun (address : Address) (input : Bytes) (gas : HostInt) =>
+  let number : Nat := u256Nat (addressToWord address) in case (boolAnd (natLt 0 number) (natLt number 10)) with
+    | 1 (unit : prod ()) => precompileRejected | 0 (unit : prod ()) => notAPrecompile
+def rec runTestStorage : StorageSlots -> Bytes := fun (slots : StorageSlots) => match slots as self in StorageSlots return Bytes with
+  | storageSlotsNil => bytesNil | storageSlotsCons head tail => append (u256Hex head.0) (append b"=" (append (u256Hex head.1) (append b"," (runTestStorage tail))))
+def rec runTestWorld : WorldAccounts -> Bytes := fun (accounts : WorldAccounts) => match accounts as self in WorldAccounts return Bytes with
+  | worldAccountsNil => bytesNil | worldAccountsCons head tail => append (bytesHex (addressBytes head.0)) (append b"="
+    (append (effectsTestAccount head.1) (append b"/" (append (runTestStorage (accountStorage head.1)) (append b";" (runTestWorld tail))))))
+def runTestEffectsText : EvmEffects -> Bytes := fun (effects : EvmEffects) => append (runTestWorld (worldStateAccounts effects.0)) (append b"|transient:"
+  (envTestField (u256Hex (effectsTransientLoad effects (effectsTestAddress 16) u256One)) (u256Hex (effectsTransientLoad effects (effectsTestAddress 17) u256One))))
+def runTestOutcome : Nat -> EvmOutcome -> Bytes := fun (memoryLength : Nat) (outcome : EvmOutcome) =>
+  let world : Bytes := match outcome as self in EvmOutcome return Bytes with
+    | evmStopped left effects => runTestEffectsText effects | evmReturned output left effects => runTestEffectsText effects
+    | evmReverted output left => b"discarded" | evmFailed error => b"discarded" in
+  append (stateTestTransition memoryLength (evmHalt outcome)) (append b"|world:" world)
+def runTestEffects : Bytes -> Nat -> EvmEffects := fun (childCode : Bytes) (delegated : Nat) =>
+  let base : EvmEffects := stateTestEffects 0 0 in let callee : Address := effectsTestAddress 16 in let delegate : Address := effectsTestAddress 17 in
+  let installed : EvmEffects := effectsDeployCode base mutabilityPermitValue delegate childCode in
+  let code : Bytes := case (natEq delegated 0) with | 1 (unit : prod ()) => childCode
+    | 0 (unit : prod ()) => append b"\xef\x01\x00" (addressBytes delegate) in
+  effectsDeployCode installed mutabilityPermitValue callee code
+def runTestExecute : EvmEnv -> Bytes -> Gas -> EvmEffects -> EvmOutcome := fun (env : EvmEnv) (code : Bytes) (gas : Gas) (effects : EvmEffects) =>
+  interpreterRunWithPrecompiles runTestPrecompile env (evmCodeOfBytes code) gas effects
+def RunTestResult : Type 0 := sum (Bytes, EvmOutcome)
+def runTestResultText : Nat -> RunTestResult -> Bytes := fun (memoryLength : Nat) (result : RunTestResult) => case result with
+  | 0 (error : Bytes) => error | 1 (outcome : EvmOutcome) => runTestOutcome memoryLength outcome
+def evm_test_interpreter_run : Bytes -> Bytes -> Nat -> Nat -> Bytes -> Nat -> RunTestResult :=
+  fun (code : Bytes) (rawGas : Bytes) (fork : Nat) (mode : Nat) (childCode : Bytes) (delegated : Nat) =>
+    case (hostIntParse rawGas) with | 0 (unit : prod ()) => inj 0 of 2 b"error:bad int"
+    | 1 (amount : HostInt) => case (gasOfHostInt amount) with | 0 (unit : prod ()) => inj 0 of 2 b"none-gas"
+      | 1 (gas : Gas) => inj 1 of 2 (runTestExecute (stateTestEnv fork mode) code gas (runTestEffects childCode delegated))

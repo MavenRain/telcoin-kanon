@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { after } from 'node:test';
@@ -55,13 +55,19 @@ export async function harness({ name, sources, modules, oracle, fixtures, export
   const { directory, runOracle } = compileOracle({ name, sources, modules, oracle, extraAliases, packages, sortModules });
   const wasm = join(directory, `${name}.wasm`);
   build(wasm, ['emptyBytes', 'consBytes', 'bytesEmpty', 'bytesHead', 'bytesTail', 'seqBytesEmpty', 'seqBytesCons', ...exports], fixtures.map(path => resolve(project, path)));
-  const { instance } = await WebAssembly.instantiate(readFileSync(wasm), {});
+  const bytes = readFileSync(wasm);
+  const artifactDirectory = resolve(project, 'build/test-artifacts');
+  mkdirSync(artifactDirectory, { recursive: true });
+  const retained = join(artifactDirectory, `${name}-${createHash('sha256').update(bytes).digest('hex')}.wasm`);
+  copyFileSync(wasm, retained);
+  copyFileSync(`${wasm}.sources.json`, `${retained}.sources.json`);
+  const { instance } = await WebAssembly.instantiate(bytes, {});
   const e = instance.exports;
   const { toBytes, fromBytes } = byteAdapter(e);
   let count = 0;
   after(() => console.log(`${name} OCaml differential rows: ${count}`));
   return {
-    e, toBytes, text: value => fromBytes(value).toString('utf8'), raw: hex => toBytes(Buffer.from(hex, 'hex')),
+    e, toBytes, runOracle, text: value => fromBytes(value).toString('utf8'), raw: hex => toBytes(Buffer.from(hex, 'hex')),
     seeds(csv) {
       let value = e.seqBytesEmpty();
       for (const seed of (csv === 'empty' ? [] : csv.split(',')).reverse()) value = e.seqBytesCons(toBytes(seed), value);
@@ -74,7 +80,10 @@ export async function harness({ name, sources, modules, oracle, fixtures, export
       assert.equal(expected.length, rows.length);
       for (const [i, row] of rows.entries()) {
         if (requireSuccess) assert.ok(!expected[i].startsWith('error:'), `OCaml rejected a positive fixture: ${row.join(' ')}`);
-        assert.equal(evaluate(row), expected[i], row.join(' '));
+        let actual;
+        try { actual = evaluate(row); }
+        catch (cause) { throw new Error(`Wasm rejected fixture: ${row.join(' ')}`, { cause }); }
+        assert.equal(actual, expected[i], row.join(' '));
       }
       count += rows.length;
     },

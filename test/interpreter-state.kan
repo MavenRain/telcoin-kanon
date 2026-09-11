@@ -1,0 +1,65 @@
+def stateTestEnv : Nat -> Nat -> EvmEnv := fun (fork : Nat) (mode : Nat) =>
+  let a : Address := effectsTestAddress 1 in let b : Address := effectsTestAddress 2 in
+  let block : EvmBlock := evmBlockMakeAtSpec (envTestSpec fork) a (u256Value 10) (u256Value 11) (u256Value 12) (u256Value 1000000)
+    (u256Value 14) b (u256Value 15) evmConsensusBlobGasprice blockHashesEmpty in
+  let mutability : Mutability := case (natEq mode 0) with | 1 (unit : prod ()) => evmMutable | 0 (unit : prod ()) => evmStatic in
+  evmEnvMake block (evmTxMake b (u256Value 21) txAccessEntriesNil) (evmCallMake a b (u256Value 22) (evmDataValue b"abc") mutability)
+def stateTestEffects : Nat -> Nat -> EvmEffects := fun (warm : Nat) (phase : Nat) =>
+  let a : Address := effectsTestAddress 1 in let b : Address := effectsTestAddress 2 in
+  let world : WorldState := worldStateSetStorage (worldStateSetAccount worldStateEmpty a (accountMake nonceZero (u256Value 8))) a u256One (u256Value 9) in
+  let addresses : Addresses := case (natEq warm 0) with | 1 (unit : prod ()) => addressesNil | 0 (unit : prod ()) => addressesCons a addressesNil in
+  let slots : AddressSlots := case (natEq warm 2) with | 1 (unit : prod ()) => addressSlotsCons (tuple (a, u256One)) addressSlotsNil | 0 (unit : prod ()) => addressSlotsNil in
+  let initial : EvmEffects := effectsStart world (accessOfTransaction addresses slots) in
+  let prepared : EvmEffects := case (natEq phase 2) with
+    | 1 (unit : prod ()) => (case (effectsBeginCreation initial mutabilityPermitValue b a u256Zero) with
+      | 0 (unit : prod ()) => initial | 1 (created : EvmEffects) => created)
+    | 0 (unit : prod ()) => case (natEq phase 1) with
+      | 1 (unit : prod ()) => effectsCommitStore (effectsPlanStore initial mutabilityPermitValue a u256One (u256Value 3))
+      | 0 (unit : prod ()) => initial in
+  effectsTransientStore (effectsDeployCode prepared mutabilityPermitValue a b"\x60\x01") mutabilityPermitValue a u256One (u256Value 5)
+def stateTestTopics : Nat -> TopicCount := fun (count : Nat) =>
+  case (natEq count 0) with | 1 (unit : prod ()) => topicZero
+  | 0 (unit : prod ()) => case (natEq count 1) with | 1 (unit : prod ()) => topicOne
+  | 0 (unit : prod ()) => case (natEq count 2) with | 1 (unit : prod ()) => topicTwo
+  | 0 (unit : prod ()) => case (natEq count 3) with | 1 (unit : prod ()) => topicThree | 0 (unit : prod ()) => topicFour
+def stateTestBody : Nat -> Nat -> EvmEnv -> EvmMachine -> EvmTransition := fun (op : Nat) (count : Nat) (env : EvmEnv) (machine : EvmMachine) =>
+  case (natEq op 0) with | 1 (unit : prod ()) => interpreterBalance machine
+  | 0 (unit : prod ()) => case (natEq op 1) with | 1 (unit : prod ()) => interpreterSload env machine
+  | 0 (unit : prod ()) => case (natEq op 2) with | 1 (unit : prod ()) => interpreterSelfbalance env machine
+  | 0 (unit : prod ()) => case (natEq op 3) with | 1 (unit : prod ()) => interpreterExtcodesize machine
+  | 0 (unit : prod ()) => case (natEq op 4) with | 1 (unit : prod ()) => interpreterExtcodehash machine
+  | 0 (unit : prod ()) => case (natEq op 5) with | 1 (unit : prod ()) => interpreterExtcodecopy machine
+  | 0 (unit : prod ()) => case (natEq op 6) with | 1 (unit : prod ()) => interpreterKeccak machine
+  | 0 (unit : prod ()) => case (natEq op 7) with | 1 (unit : prod ()) => interpreterLog (stateTestTopics count) env machine
+  | 0 (unit : prod ()) => case (natEq op 8) with | 1 (unit : prod ()) => interpreterTload env machine
+  | 0 (unit : prod ()) => case (natEq op 9) with | 1 (unit : prod ()) => interpreterTstore env machine
+  | 0 (unit : prod ()) => case (natEq op 10) with | 1 (unit : prod ()) => interpreterSstore env machine
+  | 0 (unit : prod ()) => case (natEq op 11) with | 1 (unit : prod ()) => interpreterReturndatacopy machine
+  | 0 (unit : prod ()) => case (natEq op 12) with | 1 (unit : prod ()) => interpreterBlockhash env machine
+  | 0 (unit : prod ()) => interpreterSelfdestruct env machine
+def rec stateTestLogs : EvmLogs -> Bytes := fun (logs : EvmLogs) => match logs as self in EvmLogs return Bytes with
+  | evmLogsNil => bytesNil | evmLogsCons head tail => append (evmLogText head) (append b";" (stateTestLogs tail))
+def stateTestEffectsText : EvmEffects -> Bytes := fun (effects : EvmEffects) => append (effectsTestSummary effects) (append b"|logs:" (stateTestLogs (logJournalToList effects.4)))
+def stateTestTransition : Nat -> EvmTransition -> Bytes := fun (memoryLength : Nat) (transition : EvmTransition) =>
+  let effects : Bytes := match transition as self in EvmTransition return Bytes with
+    | evmContinue machine => stateTestEffectsText machine.4
+    | evmEnter env code gas effects depth resume => b"unexpected-frame-request"
+    | evmHalt outcome => (match outcome as self in EvmOutcome return Bytes with
+      | evmStopped left effects => stateTestEffectsText effects | evmReturned output left effects => stateTestEffectsText effects
+      | evmReverted output left => b"discarded" | evmFailed error => b"discarded") in
+  append (machineTestTransition memoryLength transition) (append b"|effects:" effects)
+def stateTestRun : Nat -> Nat -> EvmEnv -> EvmStack -> Gas -> EvmEffects -> Bytes -> Bytes -> EvmTransition :=
+  fun (op : Nat) (count : Nat) (env : EvmEnv) (stack : EvmStack) (gas : Gas) (effects : EvmEffects) (returned : Bytes) (memory : Bytes) =>
+    stateTestBody op count env (tuple (hostIntPositive 0, stack, memoryStoreBytes memoryEmpty (hostIntPositive 0) memory, gas, effects, returnDataValue returned))
+def StateTestResult : Type 0 := sum (Bytes, EvmTransition)
+def stateTestResultText : Nat -> StateTestResult -> Bytes := fun (memoryLength : Nat) (result : StateTestResult) => case result with
+  | 0 (error : Bytes) => error | 1 (transition : EvmTransition) => stateTestTransition memoryLength transition
+def evm_test_interpreter_state : Nat -> Nat -> Bytes -> Bytes -> Nat -> Nat -> Nat -> Nat -> Bytes -> Bytes -> StateTestResult :=
+  fun (op : Nat) (count : Nat) (rawStack : Bytes) (rawGas : Bytes) (fork : Nat) (mode : Nat) (warm : Nat) (phase : Nat) (returned : Bytes) (memory : Bytes) =>
+    case (codecDecode Words machineTestWordsCodec rawStack) with
+    | 0 (error : BcsError) => inj 0 of 2 (append b"error:" (bcsErrorText error))
+    | 1 (decoded : prod (Words, BcsReader)) => case (stackOfList decoded.0) with
+      | 0 (unit : prod ()) => inj 0 of 2 b"none-stack" | 1 (stack : EvmStack) => case (hostIntParse rawGas) with
+        | 0 (unit : prod ()) => inj 0 of 2 b"error:bad int" | 1 (amount : HostInt) => case (gasOfHostInt amount) with
+          | 0 (unit : prod ()) => inj 0 of 2 b"none-gas" | 1 (gas : Gas) =>
+            inj 1 of 2 (stateTestRun op count (stateTestEnv fork mode) stack gas (stateTestEffects warm phase) returned memory)

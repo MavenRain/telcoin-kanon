@@ -1,0 +1,126 @@
+def InterpreterResult : Type 0 -> Type 0 := fun (A : Type 0) => sum (InterpreterError, A)
+def interpreterBind : (0 A : Type 0) -> (0 B : Type 0) -> InterpreterResult A -> (A -> InterpreterResult B) -> InterpreterResult B :=
+  fun (0 A : Type 0) (0 B : Type 0) (result : InterpreterResult A) (next : A -> InterpreterResult B) => case result with
+    | 0 (error : InterpreterError) => inj 0 of 2 error | 1 (value : A) => next value
+def interpreterStackResult : (0 A : Type 0) -> sum (StackError, A) -> InterpreterResult A := fun (0 A : Type 0) (result : sum (StackError, A)) => case result with
+  | 0 (error : StackError) => (match error as self in StackError return InterpreterResult A with
+    | stackUnderflow => inj 0 of 2 evmStackUnderflow | stackOverflow => inj 0 of 2 evmStackOverflow)
+  | 1 (value : A) => inj 1 of 2 value
+def interpreterExtent : U256 -> InterpreterResult Nat := fun (word : U256) => case (u256ToHostNat word) with
+  | 0 (unit : prod ()) => inj 0 of 2 evmOffsetTooLarge | 1 (n : Nat) => inj 1 of 2 n
+def interpreterSaturatingInt : U256 -> Nat := fun (word : U256) => minNat (u256Nat word) 4611686018427387903
+def interpreterLowByte : U256 -> Nat := fun (word : U256) => divRemainder (divide256 (u256Nat word) 256)
+def interpreterStoreLowByte : EvmMemory -> HostInt -> U256 -> EvmMemory := fun (memory : EvmMemory) (offset : HostInt) (word : U256) =>
+  memoryStoreByte memory offset (hostIntPositive (interpreterLowByte word))
+def interpreterCharged : HostInt -> Gas -> InterpreterResult Gas := fun (cost : HostInt) (gas : Gas) => case (gasCharge cost gas) with
+  | 0 (unit : prod ()) => inj 0 of 2 evmOutOfGas | 1 (remaining : Gas) => inj 1 of 2 remaining
+def EvmMachine : Type 0 := prod (HostInt, EvmStack, EvmMemory, Gas, EvmEffects, ReturnData)
+mu EvmResume : Type 0 :=
+| evmResumeCall (base : EvmMachine) (outputOffset : Nat) (outputLength : Nat) : EvmResume
+| evmResumeCreation (base : EvmMachine) (created : Address) (permit : MutabilityPermit) (warmed : EvmEffects) : EvmResume
+mu EvmTransition : Type 0 :=
+| evmContinue (machine : EvmMachine) : EvmTransition
+| evmHalt (outcome : EvmOutcome) : EvmTransition
+| evmEnter (env : EvmEnv) (code : EvmCode) (gas : Gas) (effects : EvmEffects) (depth : EvmCallDepth) (resume : EvmResume) : EvmTransition
+def interpreterTransition : InterpreterResult EvmMachine -> EvmTransition := fun (result : InterpreterResult EvmMachine) => case result with
+  | 0 (error : InterpreterError) => evmHalt (evmFailed error) | 1 (machine : EvmMachine) => evmContinue machine
+def machineNextPc : EvmMachine -> HostInt := fun (machine : EvmMachine) => hostIntAdd machine.0 (hostIntPositive 1)
+def machineWithStack : EvmMachine -> EvmStack -> EvmMachine := fun (machine : EvmMachine) (stack : EvmStack) => tuple (machine.0, stack, machine.2, machine.3, machine.4, machine.5)
+def machineWithGas : EvmMachine -> Gas -> EvmMachine := fun (machine : EvmMachine) (gas : Gas) => tuple (machine.0, machine.1, machine.2, gas, machine.4, machine.5)
+def machineWithEffects : EvmMachine -> EvmEffects -> EvmMachine := fun (machine : EvmMachine) (effects : EvmEffects) => tuple (machine.0, machine.1, machine.2, machine.3, effects, machine.5)
+def machineAdvance : EvmMachine -> EvmMachine := fun (machine : EvmMachine) => tuple (machineNextPc machine, machine.1, machine.2, machine.3, machine.4, machine.5)
+def interpreterReach : EvmMachine -> Nat -> Nat -> InterpreterResult (prod (EvmMemory, Gas)) := fun (machine : EvmMachine) (offset : Nat) (length : Nat) =>
+  case (memoryWordsNeeded (hostIntPositive offset) (hostIntPositive length)) with | 0 (unit : prod ()) => inj 0 of 2 evmOffsetTooLarge
+  | 1 (needed : Nat) => case (gasMemoryExpansion (hostIntPositive (memoryWords machine.2)) (hostIntPositive needed)) with
+    | 0 (unit : prod ()) => inj 0 of 2 evmOutOfGas | 1 (cost : Nat) => case (gasCharge (hostIntPositive cost) machine.3) with
+      | 0 (unit : prod ()) => inj 0 of 2 evmOutOfGas | 1 (gas : Gas) => inj 1 of 2 (tuple (memoryExpand needed machine.2, gas))
+def interpreterStackStep : EvmMachine -> InterpreterResult EvmStack -> EvmTransition := fun (machine : EvmMachine) (result : InterpreterResult EvmStack) =>
+  interpreterTransition (interpreterBind EvmStack EvmMachine result (fun (stack : EvmStack) => inj 1 of 2 (machineAdvance (machineWithStack machine stack))))
+def interpreterPush : U256 -> EvmMachine -> EvmTransition := fun (word : U256) (machine : EvmMachine) =>
+  interpreterStackStep machine (interpreterStackResult EvmStack (stackPush word machine.1))
+def interpreterUnary : (U256 -> U256) -> EvmMachine -> EvmTransition := fun (f : U256 -> U256) (machine : EvmMachine) =>
+  interpreterStackStep machine (interpreterBind (prod (U256, EvmStack)) EvmStack (interpreterStackResult (prod (U256, EvmStack)) (stackPop machine.1))
+    (fun (popped : prod (U256, EvmStack)) => interpreterStackResult EvmStack (stackPush (f popped.0) popped.1)))
+def interpreterBinary : (U256 -> U256 -> U256) -> EvmMachine -> EvmTransition := fun (f : U256 -> U256 -> U256) (machine : EvmMachine) =>
+  interpreterStackStep machine (interpreterBind (prod (U256, U256, EvmStack)) EvmStack (interpreterStackResult (prod (U256, U256, EvmStack)) (stackPop2 machine.1))
+    (fun (popped : prod (U256, U256, EvmStack)) => interpreterStackResult EvmStack (stackPush (f popped.0 popped.1) popped.2)))
+def interpreterTernary : (U256 -> U256 -> U256 -> U256) -> EvmMachine -> EvmTransition := fun (f : U256 -> U256 -> U256 -> U256) (machine : EvmMachine) =>
+  interpreterStackStep machine (interpreterBind (prod (U256, U256, U256, EvmStack)) EvmStack (interpreterStackResult (prod (U256, U256, U256, EvmStack)) (stackPop3 machine.1))
+    (fun (popped : prod (U256, U256, U256, EvmStack)) => interpreterStackResult EvmStack (stackPush (f popped.0 popped.1 popped.2) popped.3)))
+def interpreterDiscard : EvmMachine -> EvmTransition := fun (machine : EvmMachine) => interpreterStackStep machine
+  (interpreterBind (prod (U256, EvmStack)) EvmStack (interpreterStackResult (prod (U256, EvmStack)) (stackPop machine.1)) (fun (popped : prod (U256, EvmStack)) => inj 1 of 2 popped.1))
+def interpreterWithStack : (EvmStack -> sum (StackError, EvmStack)) -> EvmMachine -> EvmTransition := fun (f : EvmStack -> sum (StackError, EvmStack)) (machine : EvmMachine) =>
+  interpreterStackStep machine (interpreterStackResult EvmStack (f machine.1))
+def interpreterExponentiate : EvmMachine -> EvmTransition := fun (machine : EvmMachine) => interpreterTransition
+  (interpreterBind (prod (U256, U256, EvmStack)) EvmMachine (interpreterStackResult (prod (U256, U256, EvmStack)) (stackPop2 machine.1))
+    (fun (popped : prod (U256, U256, EvmStack)) => interpreterBind Gas EvmMachine (interpreterCharged (hostIntPositive (gasExpDynamic popped.1)) machine.3)
+      (fun (gas : Gas) => interpreterBind EvmStack EvmMachine (interpreterStackResult EvmStack (stackPush (aluExp popped.0 popped.1) popped.2))
+        (fun (stack : EvmStack) => inj 1 of 2 (machineAdvance (machineWithGas (machineWithStack machine stack) gas))))))
+def interpreterMload : EvmMachine -> EvmTransition := fun (machine : EvmMachine) => interpreterTransition
+  (interpreterBind (prod (U256, EvmStack)) EvmMachine (interpreterStackResult (prod (U256, EvmStack)) (stackPop machine.1))
+    (fun (popped : prod (U256, EvmStack)) => interpreterBind Nat EvmMachine (interpreterExtent popped.0) (fun (offset : Nat) =>
+      interpreterBind (prod (EvmMemory, Gas)) EvmMachine (interpreterReach machine offset 32) (fun (reached : prod (EvmMemory, Gas)) =>
+        interpreterBind EvmStack EvmMachine (interpreterStackResult EvmStack (stackPush (memoryLoadWord reached.0 (hostIntPositive offset)) popped.1))
+          (fun (stack : EvmStack) => inj 1 of 2 (tuple (machineNextPc machine, stack, reached.0, reached.1, machine.4, machine.5)))))))
+def interpreterMstore : Nat -> (EvmMemory -> HostInt -> U256 -> EvmMemory) -> EvmMachine -> EvmTransition :=
+  fun (length : Nat) (write : EvmMemory -> HostInt -> U256 -> EvmMemory) (machine : EvmMachine) => interpreterTransition
+    (interpreterBind (prod (U256, U256, EvmStack)) EvmMachine (interpreterStackResult (prod (U256, U256, EvmStack)) (stackPop2 machine.1))
+      (fun (popped : prod (U256, U256, EvmStack)) => interpreterBind Nat EvmMachine (interpreterExtent popped.0) (fun (offset : Nat) =>
+        interpreterBind (prod (EvmMemory, Gas)) EvmMachine (interpreterReach machine offset length) (fun (reached : prod (EvmMemory, Gas)) =>
+          inj 1 of 2 (tuple (machineNextPc machine, popped.2, write reached.0 (hostIntPositive offset) popped.1, reached.1, machine.4, machine.5))))))
+def interpreterJumpTo : EvmCode -> EvmMachine -> U256 -> EvmTransition := fun (code : EvmCode) (machine : EvmMachine) (destination : U256) =>
+  case (u256ToHostNat destination) with | 0 (unit : prod ()) => evmHalt (evmFailed evmInvalidJump)
+  | 1 (offset : Nat) => case (evmCodeIsValidJumpdest code (hostIntPositive offset)) with | 0 (unit : prod ()) => evmHalt (evmFailed evmInvalidJump)
+    | 1 (unit : prod ()) => evmContinue (tuple (hostIntPositive offset, machine.1, machine.2, machine.3, machine.4, machine.5))
+def interpreterJump : EvmCode -> EvmMachine -> EvmTransition := fun (code : EvmCode) (machine : EvmMachine) =>
+  case (interpreterStackResult (prod (U256, EvmStack)) (stackPop machine.1)) with | 0 (error : InterpreterError) => evmHalt (evmFailed error)
+  | 1 (popped : prod (U256, EvmStack)) => interpreterJumpTo code (machineWithStack machine popped.1) popped.0
+def interpreterJumpi : EvmCode -> EvmMachine -> EvmTransition := fun (code : EvmCode) (machine : EvmMachine) =>
+  case (interpreterStackResult (prod (U256, U256, EvmStack)) (stackPop2 machine.1)) with | 0 (error : InterpreterError) => evmHalt (evmFailed error)
+  | 1 (popped : prod (U256, U256, EvmStack)) => case (u256IsZero popped.1) with
+    | 1 (unit : prod ()) => evmContinue (machineAdvance (machineWithStack machine popped.2))
+    | 0 (unit : prod ()) => interpreterJumpTo code (machineWithStack machine popped.2) popped.0
+def interpreterImmediateBytes : EvmCode -> HostInt -> Nat -> Bytes := fun (code : EvmCode) (pc : HostInt) (width : Nat) =>
+  let state : prod (Nat, Bytes) := stepsFold (prod (Nat, Bytes)) steps32 (fun (state : prod (Nat, Bytes)) => boolNat (natEq state.0 width))
+    (fun (state : prod (Nat, Bytes)) => tuple (natAdd state.0 1, bytesCons (evmCodeByteAt code (hostIntAdd pc (hostIntPositive (natAdd state.0 1)))) state.1)) (tuple (0, bytesNil)) in reverse state.1
+def interpreterPushImmediate : EvmCode -> PushBytes -> EvmMachine -> EvmTransition := fun (code : EvmCode) (width : PushBytes) (machine : EvmMachine) =>
+  let count : Nat := pushBytesNat width in let word : U256 := u256Value (u256ReadBe (interpreterImmediateBytes code machine.0 count) 0) in
+  interpreterTransition (interpreterBind EvmStack EvmMachine (interpreterStackResult EvmStack (stackPush word machine.1))
+    (fun (stack : EvmStack) => inj 1 of 2 (tuple (hostIntAdd (machineNextPc machine) (hostIntPositive count), stack, machine.2, machine.3, machine.4, machine.5))))
+def interpreterReachData : EvmMachine -> U256 -> U256 -> (Nat -> Gas -> InterpreterResult Gas) -> InterpreterResult (prod (Bytes, EvmMemory, Gas)) :=
+  fun (machine : EvmMachine) (offsetWord : U256) (lengthWord : U256) (price : Nat -> Gas -> InterpreterResult Gas) =>
+    interpreterBind Nat (prod (Bytes, EvmMemory, Gas)) (interpreterExtent lengthWord) (fun (length : Nat) =>
+      interpreterBind Gas (prod (Bytes, EvmMemory, Gas)) (price length machine.3) (fun (gas : Gas) => case (natEq length 0) with
+        | 1 (unit : prod ()) => inj 1 of 2 (tuple (bytesNil, machine.2, gas))
+        | 0 (unit : prod ()) => interpreterBind Nat (prod (Bytes, EvmMemory, Gas)) (interpreterExtent offsetWord) (fun (offset : Nat) =>
+          interpreterBind (prod (EvmMemory, Gas)) (prod (Bytes, EvmMemory, Gas)) (interpreterReach (machineWithGas machine gas) offset length)
+            (fun (reached : prod (EvmMemory, Gas)) => inj 1 of 2 (tuple (memorySlice reached.0 (hostIntPositive offset) length, reached.0, reached.1))))))
+def interpreterHaltWithOutput : (Bytes -> Gas -> EvmOutcome) -> EvmMachine -> EvmTransition := fun (build : Bytes -> Gas -> EvmOutcome) (machine : EvmMachine) =>
+  case (interpreterBind (prod (U256, U256, EvmStack)) (prod (Bytes, EvmMemory, Gas)) (interpreterStackResult (prod (U256, U256, EvmStack)) (stackPop2 machine.1))
+    (fun (popped : prod (U256, U256, EvmStack)) => interpreterReachData machine popped.0 popped.1 (fun (length : Nat) (gas : Gas) => inj 1 of 2 gas))) with
+    | 0 (error : InterpreterError) => evmHalt (evmFailed error) | 1 (reached : prod (Bytes, EvmMemory, Gas)) => evmHalt (build reached.0 reached.2)
+mu EvmCopyPlan : Type 0 :=
+| evmCopyNothing (machine : EvmMachine) : EvmCopyPlan
+| evmCopyTo (machine : EvmMachine) (dest : Nat) (source : U256) (length : Nat) : EvmCopyPlan
+| evmCopyFailed (error : InterpreterError) : EvmCopyPlan
+def interpreterPlanCopy : EvmMachine -> EvmCopyPlan := fun (machine : EvmMachine) =>
+  case (interpreterBind (prod (U256, U256, U256, EvmStack)) EvmCopyPlan (interpreterStackResult (prod (U256, U256, U256, EvmStack)) (stackPop3 machine.1))
+    (fun (popped : prod (U256, U256, U256, EvmStack)) => interpreterBind Nat EvmCopyPlan (interpreterExtent popped.2) (fun (length : Nat) =>
+      interpreterBind Gas EvmCopyPlan (interpreterCharged (hostIntPositive (gasCopyCost (hostIntPositive length))) machine.3) (fun (gas : Gas) =>
+        let charged : EvmMachine := machineWithGas (machineWithStack machine popped.3) gas in case (natEq length 0) with
+          | 1 (unit : prod ()) => inj 1 of 2 (evmCopyNothing charged)
+          | 0 (unit : prod ()) => interpreterBind Nat EvmCopyPlan (interpreterExtent popped.0) (fun (dest : Nat) => inj 1 of 2 (evmCopyTo charged dest popped.1 length)))))) with
+    | 0 (error : InterpreterError) => evmCopyFailed error | 1 (plan : EvmCopyPlan) => plan
+def interpreterFinishCopy : EvmMachine -> Nat -> Nat -> Nat -> (EvmMemory -> Bytes) -> EvmTransition :=
+  fun (machine : EvmMachine) (dest : Nat) (length : Nat) (reachAt : Nat) (bytes : EvmMemory -> Bytes) => interpreterTransition
+    (interpreterBind (prod (EvmMemory, Gas)) EvmMachine (interpreterReach machine reachAt length) (fun (reached : prod (EvmMemory, Gas)) =>
+      inj 1 of 2 (tuple (machineNextPc machine, machine.1, memoryStoreBytes reached.0 (hostIntPositive dest) (bytes reached.0), reached.1, machine.4, machine.5))))
+def interpreterCopyFromData : EvmData -> EvmMachine -> EvmTransition := fun (data : EvmData) (machine : EvmMachine) => match (interpreterPlanCopy machine) as plan in EvmCopyPlan return EvmTransition with
+  | evmCopyFailed error => evmHalt (evmFailed error)
+  | evmCopyNothing machine => evmContinue (machineAdvance machine)
+  | evmCopyTo machine dest source length => interpreterFinishCopy machine dest length dest (fun (memory : EvmMemory) => evmDataRead data source length)
+def interpreterMcopy : EvmMachine -> EvmTransition := fun (machine : EvmMachine) => match (interpreterPlanCopy machine) as plan in EvmCopyPlan return EvmTransition with
+  | evmCopyFailed error => evmHalt (evmFailed error)
+  | evmCopyNothing machine => evmContinue (machineAdvance machine)
+  | evmCopyTo machine dest source length => case (interpreterExtent source) with | 0 (error : InterpreterError) => evmHalt (evmFailed error)
+    | 1 (src : Nat) => interpreterFinishCopy machine dest length (maxNat dest src) (fun (memory : EvmMemory) => memorySlice memory (hostIntPositive src) length)

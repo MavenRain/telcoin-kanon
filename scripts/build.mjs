@@ -16,10 +16,10 @@ export const sources = ['core', 'nat64', 'scalars', 'bcs', 'codec', 'fixed', 'sc
   'bullshark', 'proposer_types', 'machine_collections', 'proposer', 'node_types', 'node_collections', 'node',
   'consensus_block', 'consensus_chain', 'consensus_record', 'execution_collections', 'engine', 'replay', 'consensus_store',
   'sim_collections', 'sim_types', 'sim', 'sim_service', 'u256', 'storage_collections', 'state_types', 'state_collections', 'state',
-  'alu', 'evm_types', 'opcode', 'host_int_ops', 'evm_collections', 'evm_enums', 'evm_stack', 'access', 'evm_memory', 'gas', 'evm_data', 'transient',
+  'alu', 'evm_types', 'opcode', 'host_int_ops', 'modular256', 'secp256k1', 'evm_collections', 'evm_enums', 'evm_stack', 'access', 'evm_memory', 'gas', 'evm_data', 'transient',
   'rlp_types', 'rlp_collections', 'rlp', 'nibbles', 'trie_collections', 'trie_node', 'trie', 'evm_log', 'log_collections', 'log_journal',
   'evm_spec', 'env_collections', 'block_hashes', 'lifecycle', 'env', 'effects', 'execution_primitives', 'fork_schedule',
-  'withdrawal', 'block_collections', 'state_roots', 'bloom', 'block_context', 'interpreter_types', 'receipt', 'receipt_collections', 'receipt_roots', 'api', 'service'].map(name => resolve(project, `src/${name}.kan`));
+  'withdrawal', 'block_collections', 'state_roots', 'bloom', 'block_context', 'interpreter_types', 'interpreter_machine', 'interpreter_state', 'interpreter_frames', 'interpreter_calls', 'interpreter', 'receipt', 'receipt_collections', 'receipt_roots', 'api', 'service'].map(name => resolve(project, `src/${name}.kan`));
 export function build(output, exports, extraSources = []) {
   const hash = createHash('sha256').update(readFileSync(compiler)).digest('hex');
   if (hash !== lock.toolchain.compilerSha256) throw new Error('Compiler differs from source-lock.json. Review and repin before building.');

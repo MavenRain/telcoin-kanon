@@ -1,0 +1,103 @@
+def interpreterResultTransition : InterpreterResult EvmTransition -> EvmTransition := fun (result : InterpreterResult EvmTransition) => case result with
+  | 0 (error : InterpreterError) => evmHalt (evmFailed error) | 1 (transition : EvmTransition) => transition
+def interpreterExecuting : EvmEnv -> Address := fun (env : EvmEnv) => evmCallTarget (evmEnvCall env)
+def interpreterPermitted : EvmEnv -> InterpreterResult MutabilityPermit := fun (env : EvmEnv) => case (mutabilityPermit (evmCallMutability (evmEnvCall env))) with
+  | 0 (unit : prod ()) => inj 0 of 2 evmStaticStateChange | 1 (permit : MutabilityPermit) => inj 1 of 2 permit
+def interpreterLoadAndCharge : (Warmth -> Nat) -> EffectLoad U256 -> EvmMachine -> InterpreterResult EvmMachine :=
+  fun (surcharge : Warmth -> Nat) (load : EffectLoad U256) (machine : EvmMachine) =>
+    interpreterBind Gas EvmMachine (interpreterCharged (hostIntPositive (surcharge load.1)) machine.3) (fun (gas : Gas) =>
+      interpreterBind EvmStack EvmMachine (interpreterStackResult EvmStack (stackPush load.0 machine.1)) (fun (stack : EvmStack) =>
+        inj 1 of 2 (tuple (machineNextPc machine, stack, machine.2, gas, load.2, machine.5))))
+def interpreterBalance : EvmMachine -> EvmTransition := fun (machine : EvmMachine) => interpreterTransition
+  (interpreterBind (prod (U256, EvmStack)) EvmMachine (interpreterStackResult (prod (U256, EvmStack)) (stackPop machine.1))
+    (fun (popped : prod (U256, EvmStack)) => interpreterLoadAndCharge gasAccountAccess (effectsBalance machine.4 (addressOfWord popped.0)) (machineWithStack machine popped.1)))
+def interpreterSload : EvmEnv -> EvmMachine -> EvmTransition := fun (env : EvmEnv) (machine : EvmMachine) => interpreterTransition
+  (interpreterBind (prod (U256, EvmStack)) EvmMachine (interpreterStackResult (prod (U256, EvmStack)) (stackPop machine.1))
+    (fun (popped : prod (U256, EvmStack)) => interpreterLoadAndCharge gasStorageAccess (effectsStorage machine.4 (interpreterExecuting env) popped.0) (machineWithStack machine popped.1)))
+def interpreterSelfbalance : EvmEnv -> EvmMachine -> EvmTransition := fun (env : EvmEnv) (machine : EvmMachine) =>
+  let loaded : prod (U256, EvmEffects) := effectsSelfBalance machine.4 (interpreterExecuting env) in interpreterPush loaded.0 (machineWithEffects machine loaded.1)
+def interpreterAccountProjection : (Account -> U256) -> EffectLoad Account -> EvmMachine -> InterpreterResult EvmMachine :=
+  fun (project : Account -> U256) (load : EffectLoad Account) (machine : EvmMachine) =>
+    interpreterBind Gas EvmMachine (interpreterCharged (hostIntPositive (gasAccountAccess load.1)) machine.3) (fun (gas : Gas) =>
+      interpreterBind EvmStack EvmMachine (interpreterStackResult EvmStack (stackPush (project load.0) machine.1)) (fun (stack : EvmStack) =>
+        inj 1 of 2 (tuple (machineNextPc machine, stack, machine.2, gas, load.2, machine.5))))
+def interpreterExtcodesize : EvmMachine -> EvmTransition := fun (machine : EvmMachine) => interpreterTransition
+  (interpreterBind (prod (U256, EvmStack)) EvmMachine (interpreterStackResult (prod (U256, EvmStack)) (stackPop machine.1))
+    (fun (popped : prod (U256, EvmStack)) => interpreterAccountProjection (fun (account : Account) => u256Value (accountCodeLength account))
+      (effectsExtAccount machine.4 (addressOfWord popped.0)) (machineWithStack machine popped.1)))
+def interpreterExtcodehash : EvmMachine -> EvmTransition := fun (machine : EvmMachine) => interpreterTransition
+  (interpreterBind (prod (U256, EvmStack)) EvmMachine (interpreterStackResult (prod (U256, EvmStack)) (stackPop machine.1))
+    (fun (popped : prod (U256, EvmStack)) => interpreterAccountProjection (fun (account : Account) => case (accountIsEmpty account) with
+      | 1 (unit : prod ()) => u256Zero | 0 (unit : prod ()) => u256Value (u256ReadBe (keccakBytes (accountCodeHash account)) 0))
+      (effectsExtAccount machine.4 (addressOfWord popped.0)) (machineWithStack machine popped.1)))
+def interpreterChargeExtAccount : EvmMachine -> Address -> InterpreterResult (prod (Account, EvmMachine)) := fun (machine : EvmMachine) (address : Address) =>
+  let load : EffectLoad Account := effectsExtAccount machine.4 address in interpreterBind Gas (prod (Account, EvmMachine))
+    (interpreterCharged (hostIntPositive (gasAccountAccess load.1)) machine.3) (fun (gas : Gas) => inj 1 of 2 (tuple (load.0, machineWithEffects (machineWithGas machine gas) load.2)))
+def interpreterExtcodecopy : EvmMachine -> EvmTransition := fun (machine : EvmMachine) => interpreterResultTransition
+  (interpreterBind (prod (U256, EvmStack)) EvmTransition (interpreterStackResult (prod (U256, EvmStack)) (stackPop machine.1))
+    (fun (popped : prod (U256, EvmStack)) => let address : Address := addressOfWord popped.0 in
+      match (interpreterPlanCopy (machineWithStack machine popped.1)) as plan in EvmCopyPlan return InterpreterResult EvmTransition with
+      | evmCopyFailed error => inj 0 of 2 error
+      | evmCopyNothing machine => interpreterBind (prod (Account, EvmMachine)) EvmTransition (interpreterChargeExtAccount machine address)
+        (fun (charged : prod (Account, EvmMachine)) => inj 1 of 2 (evmContinue (machineAdvance charged.1)))
+      | evmCopyTo machine dest source length => interpreterBind (prod (EvmMemory, Gas)) EvmTransition (interpreterReach machine dest length)
+        (fun (reached : prod (EvmMemory, Gas)) => interpreterBind (prod (Account, EvmMachine)) EvmTransition
+          (interpreterChargeExtAccount (tuple (machine.0, machine.1, reached.0, reached.1, machine.4, machine.5)) address)
+          (fun (charged : prod (Account, EvmMachine)) => let current : EvmMachine := charged.1 in inj 1 of 2 (evmContinue
+            (tuple (machineNextPc current, current.1, memoryStoreBytes current.2 (hostIntPositive dest) (evmDataRead (evmDataValue (accountCode charged.0)) source length), current.3, current.4, current.5)))))))
+def interpreterKeccak : EvmMachine -> EvmTransition := fun (machine : EvmMachine) => interpreterTransition
+  (interpreterBind (prod (U256, U256, EvmStack)) EvmMachine (interpreterStackResult (prod (U256, U256, EvmStack)) (stackPop2 machine.1))
+    (fun (popped : prod (U256, U256, EvmStack)) => interpreterBind (prod (Bytes, EvmMemory, Gas)) EvmMachine
+      (interpreterReachData machine popped.0 popped.1 (fun (length : Nat) (gas : Gas) => interpreterCharged (hostIntPositive (gasKeccakWordCost (hostIntPositive length))) gas))
+      (fun (reached : prod (Bytes, EvmMemory, Gas)) => interpreterBind EvmStack EvmMachine
+        (interpreterStackResult EvmStack (stackPush (u256Value (u256ReadBe (keccak256 reached.0) 0)) popped.2))
+        (fun (stack : EvmStack) => inj 1 of 2 (tuple (machineNextPc machine, stack, reached.1, reached.2, machine.4, machine.5))))))
+def interpreterLog : TopicCount -> EvmEnv -> EvmMachine -> EvmTransition := fun (arity : TopicCount) (env : EvmEnv) (machine : EvmMachine) => interpreterTransition
+  (interpreterBind MutabilityPermit EvmMachine (interpreterPermitted env) (fun (permit : MutabilityPermit) =>
+    interpreterBind (prod (U256, U256, EvmStack)) EvmMachine (interpreterStackResult (prod (U256, U256, EvmStack)) (stackPop2 machine.1))
+      (fun (popped : prod (U256, U256, EvmStack)) => interpreterBind (prod (Bytes, EvmMemory, Gas)) EvmMachine
+        (interpreterReachData machine popped.0 popped.1 (fun (length : Nat) (gas : Gas) => case (gasLogDynamic arity (hostIntPositive length)) with
+          | 0 (unit : prod ()) => inj 0 of 2 evmOutOfGas | 1 (cost : Nat) => interpreterCharged (hostIntPositive cost) gas))
+        (fun (reached : prod (Bytes, EvmMemory, Gas)) => interpreterBind (prod (EvmTopics, EvmStack)) EvmMachine
+          (evmTopicsCollect EvmStack InterpreterError arity (fun (stack : EvmStack) => interpreterStackResult (prod (U256, EvmStack)) (stackPop stack)) popped.2)
+          (fun (topics : prod (EvmTopics, EvmStack)) => inj 1 of 2 (tuple (machineNextPc machine, topics.1, reached.1, reached.2,
+            effectsLog machine.4 permit (tuple (interpreterExecuting env, topics.0, reached.0)), machine.5)))))))
+def interpreterTload : EvmEnv -> EvmMachine -> EvmTransition := fun (env : EvmEnv) (machine : EvmMachine) => interpreterUnary
+  (fun (slot : U256) => effectsTransientLoad machine.4 (interpreterExecuting env) slot) machine
+def interpreterTstore : EvmEnv -> EvmMachine -> EvmTransition := fun (env : EvmEnv) (machine : EvmMachine) => interpreterTransition
+  (interpreterBind MutabilityPermit EvmMachine (interpreterPermitted env) (fun (permit : MutabilityPermit) =>
+    interpreterBind (prod (U256, U256, EvmStack)) EvmMachine (interpreterStackResult (prod (U256, U256, EvmStack)) (stackPop2 machine.1))
+      (fun (popped : prod (U256, U256, EvmStack)) => inj 1 of 2 (tuple (machineNextPc machine, popped.2, machine.2, machine.3,
+        effectsTransientStore machine.4 permit (interpreterExecuting env) popped.0 popped.1, machine.5)))))
+def interpreterSstoreEntry : Gas -> InterpreterResult Gas := fun (gas : Gas) => case (gasSstoreEntry gas) with
+  | 0 (error : SstoreEntryError) => (match error as self in SstoreEntryError return InterpreterResult Gas with
+    | sstoreReentrancySentry => inj 0 of 2 evmReentrancySentry | sstoreInsufficient => inj 0 of 2 evmOutOfGas)
+  | 1 (entered : Gas) => inj 1 of 2 entered
+def interpreterSstore : EvmEnv -> EvmMachine -> EvmTransition := fun (env : EvmEnv) (machine : EvmMachine) => interpreterTransition
+  (interpreterBind MutabilityPermit EvmMachine (interpreterPermitted env) (fun (permit : MutabilityPermit) =>
+    interpreterBind (prod (U256, U256, EvmStack)) EvmMachine (interpreterStackResult (prod (U256, U256, EvmStack)) (stackPop2 machine.1))
+      (fun (popped : prod (U256, U256, EvmStack)) => interpreterBind Gas EvmMachine (interpreterSstoreEntry machine.3) (fun (entered : Gas) =>
+        let planned : EffectLoad SstoreState := effectsPlanStore machine.4 permit (interpreterExecuting env) popped.0 popped.1 in
+        interpreterBind Gas EvmMachine (interpreterCharged (hostIntPositive (gasSstoreDynamic planned.1 planned.0)) entered)
+          (fun (gas : Gas) => inj 1 of 2 (tuple (machineNextPc machine, popped.2, machine.2, gas, effectsCommitStore planned, machine.5)))))))
+def interpreterReturndatacopy : EvmMachine -> EvmTransition := fun (machine : EvmMachine) => interpreterResultTransition
+  (interpreterBind (prod (U256, U256, U256, EvmStack)) EvmTransition (interpreterStackResult (prod (U256, U256, U256, EvmStack)) (stackPop3 machine.1))
+    (fun (popped : prod (U256, U256, U256, EvmStack)) => interpreterBind Nat EvmTransition (interpreterExtent popped.2) (fun (length : Nat) =>
+      case (returnDataRead machine.5 (interpreterSaturatingInt popped.1) length) with | 0 (unit : prod ()) => inj 0 of 2 evmOutOfOffset
+      | 1 (bytes : Bytes) => interpreterBind Gas EvmTransition (interpreterCharged (hostIntPositive (gasCopyVerylowCost (hostIntPositive length))) machine.3)
+        (fun (gas : Gas) => let charged : EvmMachine := machineWithGas (machineWithStack machine popped.3) gas in case (natEq length 0) with
+          | 1 (unit : prod ()) => inj 1 of 2 (evmContinue (machineAdvance charged))
+          | 0 (unit : prod ()) => interpreterBind Nat EvmTransition (interpreterExtent popped.0) (fun (dest : Nat) =>
+            interpreterBind (prod (EvmMemory, Gas)) EvmTransition (interpreterReach charged dest length) (fun (reached : prod (EvmMemory, Gas)) =>
+              inj 1 of 2 (evmContinue (tuple (machineNextPc charged, charged.1, memoryStoreBytes reached.0 (hostIntPositive dest) bytes, reached.1, charged.4, charged.5)))))))))
+def interpreterBlockhash : EvmEnv -> EvmMachine -> EvmTransition := fun (env : EvmEnv) (machine : EvmMachine) => interpreterUnary
+  (fun (requested : U256) => blockHashesLookup (evmBlockHashes (evmEnvBlock env)) (evmBlockNumber (evmEnvBlock env)) requested) machine
+def interpreterSelfdestruct : EvmEnv -> EvmMachine -> EvmTransition := fun (env : EvmEnv) (machine : EvmMachine) => interpreterResultTransition
+  (interpreterBind MutabilityPermit EvmTransition (interpreterPermitted env) (fun (permit : MutabilityPermit) =>
+    interpreterBind (prod (U256, EvmStack)) EvmTransition (interpreterStackResult (prod (U256, EvmStack)) (stackPop machine.1))
+      (fun (popped : prod (U256, EvmStack)) => interpreterBind Gas EvmTransition (interpreterCharged (hostIntPositive 5000) machine.3) (fun (gas : Gas) =>
+        let plan : EffectLoad Destruction := effectsPlanDestruction machine.4 (interpreterExecuting env) (addressOfWord popped.0) in
+        interpreterBind Gas EvmTransition (interpreterCharged (hostIntPositive (gasSelfdestructDynamic (destructionHadValue plan.0) plan.0.3 plan.1)) gas)
+          (fun (gas : Gas) => case (effectsCommitDestruction plan permit (evmBlockSpec (evmEnvBlock env))) with
+            | 0 (unit : prod ()) => inj 1 of 2 (evmHalt (evmFailed evmBalanceOverflow))
+            | 1 (effects : EvmEffects) => inj 1 of 2 (evmHalt (evmStopped gas effects)))))))

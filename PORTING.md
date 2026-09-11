@@ -14,8 +14,8 @@ not a claim of complete module parity.
 | 1 | Complete tn_std, tn_codec and tn_types. Add general codecs, scalars, SplitMix64, digests, authorities, committees, batches and anchors. Match vectors and constructor rejections. | Value and codec behavior tested. General Round/Authority Map/Set APIs remain. |
 | 2 | Port tn_vertex and tn_consensus pure state machines, plus deterministic tn_sim and the CLI. Compare complete seeded output transcripts. | Consensus, node composition, seeded simulator and public simulator CLI tested within the configuration bounds recorded below. |
 | 3 | Timing, consensus recovery and tn_execution. Compare durable-before-action transitions, restart transcripts and consensus-chain hashes. | Pure execution, replay, reference store and consensus recovery tested. Durable shells remain. |
-| 4 | tn_state and EVM ALU/interpreter, then environment, access/refund, storage, calls, creation and transaction execution. Preserve full U256 arithmetic, gas, rollback and fork-specific outcomes. | Account state, EVM primitives, environments, effect snapshots, creation/destruction effects, fork schedules and execution helpers tested. Interpreter and transaction execution remain. |
-| 5 | RLP, Keccak, trie/state roots, transaction envelopes, signatures and source-supported precompiles. Reuse existing golden fixtures; compare acceptance, output, gas and errors separately. | RLP, Keccak, tries, account/state roots, withdrawals, blooms and receipt encoding/roots tested. Signed envelopes and precompiles remain. |
+| 4 | tn_state and EVM ALU/interpreter, then environment, access/refund, storage, calls, creation and transaction execution. Preserve full U256 arithmetic, gas, rollback and fork-specific outcomes. | Account state, EVM primitives, environments, instruction execution, calls, creation, rollback and fork schedules tested. Complete precompile binding and transaction execution remain. |
+| 5 | RLP, Keccak, trie/state roots, transaction envelopes, signatures and source-supported precompiles. Reuse existing golden fixtures; compare acceptance, output, gas and errors separately. | RLP, Keccak, tries, account/state roots, withdrawals, blooms, receipt encoding/roots and secp256k1 recovery tested. Signed envelopes and precompiles remain. |
 | 6 | Batch validation, executed blocks, engine, driver, registry and epoch transitions. Compare complete committed/executed output and checkpoint consistency. | Planned |
 | 7 | Durable file framing, logs, locks and checkpoints. Audit the host's fsync, atomic replacement, locking and recovery guarantees before porting the IO shell. Test interrupted writes and restart behavior. | Planned |
 | 8 | tn_network and Snappy pure codecs through chunk 44, then integrate source-supported crypto implementations and shells. Compare wire vectors, canonicality, corruption and size-limit cases. | Planned |
@@ -175,7 +175,7 @@ safety or liveness for every possible schedule.
 | lib/evm/gas_penalty.ml | Ported: fixed-point penalty with wide intermediates, src/evm_spec.kan; boundary comparisons against OCaml/Zarith |
 | lib/evm/hash32.ml | Pending |
 | lib/evm/hex.ml | Pending |
-| lib/evm/interpreter.ml | Partial: error and outcome types, src/interpreter_types.kan. Execution remains pending. |
+| lib/evm/interpreter.ml | Partial: instruction bodies, dispatch, calls, creation and an explicit frame runner, src/interpreter*.kan; OCaml comparisons. Complete precompile binding remains. |
 | lib/evm/intrinsic.ml | Ported: token costs, wire-list charges and floor gas, src/execution_primitives.kan; authorization count passed explicitly and compared with OCaml |
 | lib/evm/lifecycle.ml | Ported: created and destroyed address sets, src/lifecycle.kan; effect trace comparisons |
 | lib/evm/log.ml | Ported: typed topic arities, generic atomic collection, log values and rendering, src/evm_log.kan; OCaml comparisons |
@@ -191,7 +191,7 @@ safety or liveness for every possible schedule.
 | lib/evm/registry_abi.ml | Pending |
 | lib/evm/return_data.ml | Ported: strict copy bounds including zero-length windows, src/evm_log.kan; OCaml comparisons |
 | lib/evm/rewards_counter.ml | Pending |
-| lib/evm/secp256k1.ml | Pending |
+| lib/evm/secp256k1.ml | Ported: affine arithmetic, unsigned scalar admission, recovery parity and high-S classification, src/modular256.kan and src/secp256k1.kan; OCaml-generated signatures and field comparisons |
 | lib/evm/spec.ml | Ported: fork ordering and activation checks, src/evm_spec.kan; OCaml comparisons |
 | lib/evm/sstore_state.ml | Ported: original, present and updated storage classification, src/evm_types.kan; all transition classes compared with OCaml |
 | lib/evm/stack.ml | Ported: bounded immutable stack, atomic pops, DUP and SWAP, src/evm_stack.kan; boundary comparisons against OCaml |

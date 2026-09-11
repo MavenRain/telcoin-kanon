@@ -16,8 +16,10 @@ withdrawals, blooms, RLP, Merkle-Patricia state roots, receipts and receipt root
 are also implemented. Protocol behavior runs in Kanon compiled to WasmGC.
 JavaScript transports bytes and supplies the CLI and test harness.
 
-The EVM interpreter, transaction execution and encoding, execution driver,
-production crypto, durability and networking remain. The source has 178 implementation modules
+The interpreter includes instruction dispatch, calls, creation and rollback, with
+an explicit precompile interface. Secp256k1 recovery is also implemented.
+Precompiles, transaction execution and encoding, the execution driver,
+production consensus crypto, durability and networking remain. The source has 178 implementation modules
 across 25 libraries. [PORTING.md](PORTING.md) records module coverage and the
 next acceptance target. [VALIDATION.md](VALIDATION.md) records tested behavior.
 

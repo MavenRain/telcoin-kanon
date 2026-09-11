@@ -1,0 +1,53 @@
+def secpPrime : Nat := 115792089237316195423570985008687907853269984665640564039457584007908834671663
+def secpOrder : Nat := 115792089237316195423570985008687907852837564279074904382605163141518161494337
+def secpGeneratorX : Nat := 55066263022277343669578718895168534326250603453777594175500187360389116729240
+def secpGeneratorY : Nat := 32670510020758816978083085130507043184471273380659243275938904335757337482424
+def secpAdd : Nat -> Nat -> Nat := fun (a : Nat) (b : Nat) => modular256Add secpPrime a b
+def secpSub : Nat -> Nat -> Nat := fun (a : Nat) (b : Nat) => modular256Sub secpPrime a b
+def secpMul : Nat -> Nat -> Nat := fun (a : Nat) (b : Nat) => modular256Mul secpPrime a b
+mu SecpPoint : Type 0 :=
+| secpInfinity : SecpPoint
+| secpAffine (x : Nat) (y : Nat) : SecpPoint
+def secpGenerator : SecpPoint := secpAffine secpGeneratorX secpGeneratorY
+def secpPointDouble : SecpPoint -> SecpPoint := fun (point : SecpPoint) => match point as self in SecpPoint return SecpPoint with
+  | secpInfinity => secpInfinity
+  | secpAffine x y => case (modular256Inverse secpPrime (secpMul 2 y)) with
+    | 0 (unit : prod ()) => secpInfinity | 1 (inverse : Nat) =>
+      let slope : Nat := secpMul (secpMul 3 (secpMul x x)) inverse in let x3 : Nat := secpSub (secpMul slope slope) (secpMul 2 x) in
+      secpAffine x3 (secpSub (secpMul slope (secpSub x x3)) y)
+def secpPointAdd : SecpPoint -> SecpPoint -> SecpPoint := fun (a : SecpPoint) (b : SecpPoint) => match a as self in SecpPoint return SecpPoint with
+  | secpInfinity => b
+  | secpAffine x1 y1 => match b as self in SecpPoint return SecpPoint with
+    | secpInfinity => a
+    | secpAffine x2 y2 => case (natEq x1 x2) with
+      | 1 (unit : prod ()) => (case (natEq y1 y2) with | 1 (unit : prod ()) => secpPointDouble a | 0 (unit : prod ()) => secpInfinity)
+      | 0 (unit : prod ()) => case (modular256Inverse secpPrime (secpSub x2 x1)) with
+        | 0 (unit : prod ()) => secpInfinity | 1 (inverse : Nat) =>
+          let slope : Nat := secpMul (secpSub y2 y1) inverse in let x3 : Nat := secpSub (secpSub (secpMul slope slope) x1) x2 in
+          secpAffine x3 (secpSub (secpMul slope (secpSub x1 x3)) y1)
+def secpPointMultiply : Nat -> SecpPoint -> SecpPoint := fun (scalar : Nat) (point : SecpPoint) =>
+  powerBytes SecpPoint secpPointAdd point secpInfinity (u256ToBeBytes (u256Value scalar))
+def secpSqrt : Nat -> ValueOption Nat := fun (value : Nat) =>
+  let exponent : Nat := divQuotient (divide256 (natAdd secpPrime 1) 4) in
+  let candidate : Nat := modular256Power secpPrime value (u256ToBeBytes (u256Value exponent)) in
+  case (natEq (secpMul candidate candidate) (modular256Reduce secpPrime value)) with
+    | 1 (unit : prod ()) => valueSome Nat candidate | 0 (unit : prod ()) => valueNone Nat
+def secpSIsHigh : Bytes -> Bool := fun (s : Bytes) => natLt (divQuotient (divide256 secpOrder 2)) (u256ReadBe s 0)
+def secpRecover : Bytes -> HostInt -> Bytes -> Bytes -> ValueOption Bytes :=
+  fun (message : Bytes) (recoveryId : HostInt) (rBytes : Bytes) (sBytes : Bytes) =>
+    let r : Nat := u256ReadBe rBytes 0 in let s : Nat := u256ReadBe sBytes 0 in
+    case (boolAnd (boolAnd (natLt 0 r) (natLt r secpOrder)) (boolAnd (natLt 0 s) (natLt s secpOrder))) with
+      | 0 (unit : prod ()) => valueNone Bytes
+      | 1 (unit : prod ()) => case (secpSqrt (secpAdd (secpMul (secpMul r r) r) 7)) with
+        | 0 (unit : prod ()) => valueNone Bytes | 1 (root : Nat) =>
+          let rootParity : Nat := divRemainder (divide256 root 2) in
+          let wantedParity : Nat := remainder64 (hostIntBits recoveryId) 2 in
+          let y : Nat := case (natEq rootParity wantedParity) with | 1 (unit : prod ()) => root | 0 (unit : prod ()) => secpSub 0 root in
+          case (modular256Inverse secpOrder r) with | 0 (unit : prod ()) => valueNone Bytes
+          | 1 (inverse : Nat) =>
+            let z : Nat := modular256Read secpOrder message 0 in
+            let u1 : Nat := modular256Mul secpOrder (modular256Sub secpOrder 0 z) inverse in
+            let u2 : Nat := modular256Mul secpOrder s inverse in
+            match (secpPointAdd (secpPointMultiply u1 secpGenerator) (secpPointMultiply u2 (secpAffine r y))) as point in SecpPoint return ValueOption Bytes with
+            | secpInfinity => valueNone Bytes
+            | secpAffine x y => valueSome Bytes (append (u256ToBeBytes (u256Value x)) (u256ToBeBytes (u256Value y)))

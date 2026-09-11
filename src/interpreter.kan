@@ -1,0 +1,135 @@
+def interpreterWordOfInt : HostInt -> U256 := fun (value : HostInt) => case (u256OfHostInt value) with
+  | 0 (unit : prod ()) => u256Zero | 1 (word : U256) => word
+def interpreterExecute : PrecompileInvoke -> EvmSubframe -> EvmEnv -> EvmCode -> EvmCallDepth -> Opcode -> EvmMachine -> EvmTransition :=
+  fun (precompile : PrecompileInvoke) (runChild : EvmSubframe) (env : EvmEnv) (code : EvmCode) (depth : EvmCallDepth) (opcode : Opcode) (machine : EvmMachine) =>
+    match opcode as self in Opcode return EvmTransition with
+    | opStop => evmHalt (evmStopped machine.3 machine.4)
+    | opAdd => interpreterBinary aluAdd machine
+    | opMul => interpreterBinary aluMul machine
+    | opSub => interpreterBinary aluSub machine
+    | opDiv => interpreterBinary aluDiv machine
+    | opSdiv => interpreterBinary aluSdiv machine
+    | opMod => interpreterBinary aluMod machine
+    | opSmod => interpreterBinary aluSmod machine
+    | opAddmod => interpreterTernary aluAddmod machine
+    | opMulmod => interpreterTernary aluMulmod machine
+    | opExp => interpreterExponentiate machine
+    | opSignextend => interpreterBinary aluSignextend machine
+    | opLt => interpreterBinary aluLt machine
+    | opGt => interpreterBinary aluGt machine
+    | opSlt => interpreterBinary aluSlt machine
+    | opSgt => interpreterBinary aluSgt machine
+    | opEq => interpreterBinary aluEq machine
+    | opIszero => interpreterUnary aluIszero machine
+    | opAnd => interpreterBinary aluAnd machine
+    | opOr => interpreterBinary aluOr machine
+    | opXor => interpreterBinary aluXor machine
+    | opNot => interpreterUnary aluNot machine
+    | opByte => interpreterBinary aluByte machine
+    | opShl => interpreterBinary aluShl machine
+    | opShr => interpreterBinary aluShr machine
+    | opSar => interpreterBinary aluSar machine
+    | opKeccak256 => interpreterKeccak machine
+    | opAddress => interpreterPush (addressToWord (interpreterExecuting env)) machine
+    | opBalance => interpreterBalance machine
+    | opOrigin => interpreterPush (addressToWord (evmTxOrigin (evmEnvTx env))) machine
+    | opCaller => interpreterPush (addressToWord (evmCallCaller (evmEnvCall env))) machine
+    | opCallvalue => interpreterPush (evmCallValue (evmEnvCall env)) machine
+    | opCalldataload => interpreterUnary (fun (offset : U256) => evmDataWordAt (evmCallData (evmEnvCall env)) offset) machine
+    | opCalldatasize => interpreterPush (u256Value (evmDataLength (evmCallData (evmEnvCall env)))) machine
+    | opCalldatacopy => interpreterCopyFromData (evmCallData (evmEnvCall env)) machine
+    | opCodesize => interpreterPush (u256Value (evmCodeLength code)) machine
+    | opCodecopy => interpreterCopyFromData (evmCodeWindow code) machine
+    | opGasprice => interpreterPush (evmTxGasprice (evmEnvTx env)) machine
+    | opExtcodesize => interpreterExtcodesize machine
+    | opExtcodecopy => interpreterExtcodecopy machine
+    | opReturndatasize => interpreterPush (u256Value (returnDataSize machine.5)) machine
+    | opReturndatacopy => interpreterReturndatacopy machine
+    | opExtcodehash => interpreterExtcodehash machine
+    | opBlockhash => interpreterBlockhash env machine
+    | opCoinbase => interpreterPush (addressToWord (evmBlockCoinbase (evmEnvBlock env))) machine
+    | opTimestamp => interpreterPush (evmBlockTimestamp (evmEnvBlock env)) machine
+    | opNumber => interpreterPush (evmBlockNumber (evmEnvBlock env)) machine
+    | opPrevrandao => interpreterPush (evmBlockPrevrandao (evmEnvBlock env)) machine
+    | opGaslimit => interpreterPush (evmBlockGasLimit (evmEnvBlock env)) machine
+    | opChainid => interpreterPush (evmBlockChainId (evmEnvBlock env)) machine
+    | opSelfbalance => interpreterSelfbalance env machine
+    | opBasefee => interpreterPush (evmBlockBasefee (evmEnvBlock env)) machine
+    | opBlobhash => interpreterUnary (fun (index : U256) => u256Zero) machine
+    | opBlobbasefee => interpreterPush (evmBlockBlobGasprice (evmEnvBlock env)) machine
+    | opPop => interpreterDiscard machine
+    | opMload => interpreterMload machine
+    | opMstore => interpreterMstore 32 memoryStoreWord machine
+    | opMstore8 => interpreterMstore 1 interpreterStoreLowByte machine
+    | opSload => interpreterSload env machine
+    | opSstore => interpreterSstore env machine
+    | opJump => interpreterJump code machine
+    | opJumpi => interpreterJumpi code machine
+    | opPc => interpreterPush (interpreterWordOfInt machine.0) machine
+    | opMsize => interpreterPush (u256Value (memorySizeBytes machine.2)) machine
+    | opGas => interpreterPush (interpreterWordOfInt (gasAmount machine.3)) machine
+    | opJumpdest => evmContinue (machineAdvance machine)
+    | opTload => interpreterTload env machine
+    | opTstore => interpreterTstore env machine
+    | opMcopy => interpreterMcopy machine
+    | opPush0 => interpreterPush u256Zero machine
+    | opCreate => interpreterCreateOp runChild (natEq 0 1) env depth machine
+    | opCall => interpreterCallOp precompile runChild evmPlainCall env depth machine
+    | opCallcode => interpreterCallOp precompile runChild evmCallcode env depth machine
+    | opReturn => interpreterHaltWithOutput (fun (output : Bytes) (gas : Gas) => evmReturned output gas machine.4) machine
+    | opDelegatecall => interpreterCallOp precompile runChild evmDelegatecall env depth machine
+    | opCreate2 => interpreterCreateOp runChild (natEq 0 0) env depth machine
+    | opStaticcall => interpreterCallOp precompile runChild evmStaticcall env depth machine
+    | opRevert => interpreterHaltWithOutput (fun (output : Bytes) (gas : Gas) => evmReverted output gas) machine
+    | opInvalid => evmHalt (evmFailed (evmInvalidOpcode 254))
+    | opSelfdestruct => interpreterSelfdestruct env machine
+    | opPush width => interpreterPushImmediate code width machine
+    | opDup depth => interpreterWithStack (fun (stack : EvmStack) => stackDup depth stack) machine
+    | opSwap depth => interpreterWithStack (fun (stack : EvmStack) => stackSwap depth stack) machine
+    | opLog count => interpreterLog count env machine
+def interpreterStep : PrecompileInvoke -> EvmSubframe -> EvmEnv -> EvmCode -> EvmCallDepth -> EvmMachine -> EvmTransition :=
+  fun (precompile : PrecompileInvoke) (runChild : EvmSubframe) (env : EvmEnv) (code : EvmCode) (depth : EvmCallDepth) (machine : EvmMachine) =>
+    let byte : Nat := evmCodeByteAt code machine.0 in case (opcodeDecode byte) with
+    | 0 (unit : prod ()) => evmHalt (evmFailed (evmInvalidOpcode byte))
+    | 1 (opcode : Opcode) => case (interpreterNotActivatedAt (evmBlockSpec (evmEnvBlock env)) opcode) with
+      | 1 (unit : prod ()) => evmHalt (evmFailed (evmNotActivated byte))
+      | 0 (unit : prod ()) => case (interpreterChargeMachine (gasStaticCost opcode) machine) with
+        | 0 (error : InterpreterError) => evmHalt (evmFailed error)
+        | 1 (charged : EvmMachine) => interpreterExecute precompile runChild env code depth opcode charged
+def EvmContinuation : Type 0 := prod (EvmEnv, EvmCode, EvmCallDepth, EvmResume)
+mu EvmContinuations : Type 0 :=
+| evmContinuationsNil : EvmContinuations
+| evmContinuationsCons (head : EvmContinuation) (tail : EvmContinuations) : EvmContinuations
+def EvmExecution : Type 0 := prod (EvmEnv, EvmCode, EvmCallDepth, EvmTransition, EvmContinuations)
+def interpreterFreshMachine : Gas -> EvmEffects -> EvmMachine := fun (gas : Gas) (effects : EvmEffects) =>
+  tuple (hostIntPositive 0, stackEmpty, memoryEmpty, gas, effects, returnDataValue bytesNil)
+def interpreterEnter : EvmSubframe := fun (env : EvmEnv) (code : EvmCode) (gas : Gas) (effects : EvmEffects) (depth : EvmCallDepth) (resume : EvmResume) =>
+  evmEnter env code gas effects depth resume
+def interpreterExecutionDone : EvmExecution -> Nat := fun (execution : EvmExecution) => match execution.3 as self in EvmTransition return Nat with
+  | evmContinue machine => 0
+  | evmEnter env code gas effects depth resume => 0
+  | evmHalt outcome => match execution.4 as frames in EvmContinuations return Nat with
+    | evmContinuationsNil => 1 | evmContinuationsCons head tail => 0
+def interpreterExecutionStep : PrecompileInvoke -> EvmExecution -> EvmExecution := fun (precompile : PrecompileInvoke) (execution : EvmExecution) =>
+  match execution.3 as self in EvmTransition return EvmExecution with
+  | evmContinue machine => tuple (execution.0, execution.1, execution.2, interpreterStep precompile interpreterEnter execution.0 execution.1 execution.2 machine, execution.4)
+  | evmEnter env code gas effects depth resume => tuple (env, code, depth, evmContinue (interpreterFreshMachine gas effects),
+    evmContinuationsCons (tuple (execution.0, execution.1, execution.2, resume)) execution.4)
+  | evmHalt outcome => match execution.4 as frames in EvmContinuations return EvmExecution with
+    | evmContinuationsNil => execution
+    | evmContinuationsCons head tail => tuple (head.0, head.1, head.2, interpreterResume head.3 outcome, tail)
+-- Frames live in the continuation list, so nesting never recurses through
+-- the host call stack. Each instruction that continues spends net gas. Calls
+-- and creation also pay for the extra enter, child-stop and resume ticks.
+-- Four ticks per gas unit plus root completion fit within 2^64 for 63-bit gas.
+def interpreterDrive : PrecompileInvoke -> EvmEnv -> EvmCode -> EvmCallDepth -> EvmMachine -> EvmOutcome :=
+  fun (precompile : PrecompileInvoke) (env : EvmEnv) (code : EvmCode) (depth : EvmCallDepth) (machine : EvmMachine) =>
+    let execution : EvmExecution := stepsFold EvmExecution steps64 interpreterExecutionDone
+      (fun (state : EvmExecution) => interpreterExecutionStep precompile state) (tuple (env, code, depth, evmContinue machine, evmContinuationsNil)) in
+    match execution.3 as self in EvmTransition return EvmOutcome with
+    | evmHalt outcome => outcome
+    | evmContinue exhausted => evmFailed evmOutOfGas
+    | evmEnter nextEnv nextCode gas effects nextDepth resume => evmFailed evmOutOfGas
+def interpreterRunWithPrecompiles : PrecompileInvoke -> EvmEnv -> EvmCode -> Gas -> EvmEffects -> EvmOutcome :=
+  fun (precompile : PrecompileInvoke) (env : EvmEnv) (code : EvmCode) (gas : Gas) (effects : EvmEffects) =>
+    interpreterDrive precompile env code evmCallDepthZero (interpreterFreshMachine gas effects)
