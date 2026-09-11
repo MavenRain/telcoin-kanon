@@ -1,0 +1,18 @@
+def rec evmTestOffsets : CodeOffsets -> Bytes := fun (offsets : CodeOffsets) => match offsets as self in CodeOffsets return Bytes with
+  | codeOffsetsNil => b"" | codeOffsetsCons head tail => append (decimal64 head) (append b"," (evmTestOffsets tail))
+def evm_test_data : Bytes -> Bytes -> Nat -> Bytes -> Bytes := fun (source : Bytes) (wordRaw : Bytes) (count : Nat) (signedRaw : Bytes) =>
+  case (u256OfHex wordRaw) with | 0 (unit : prod ()) => b"error:bad word"
+  | 1 (offset : U256) => case (hostIntParse signedRaw) with | 0 (unit : prod ()) => b"error:bad int"
+  | 1 (signed : HostInt) => let data : EvmData := evmDataValue source in let code : EvmCode := evmCodeOfBytes source in
+    append (decimal64 (evmDataLength data)) (append b":" (append (decimal64 (evmDataStart data offset)) (append b":" (append (bytesHex (evmDataRead data offset count)) (append b":" (append (u256Hex (evmDataWordAt data offset)) (append b":" (append (decimal64 (evmCodeByteAt code signed)) (append b":" (append (evmTestBool (evmCodeIsValidJumpdest code signed)) (append b":" (append (evmTestOffsets (evmCodeJumpdests code)) (append b":" (evmTestBool (evmDataEqual (evmCodeWindow code) data)))))))))))))))
+def evm_test_transient : Bytes -> Bytes -> Bytes -> Bytes -> Bytes := fun (aRaw : Bytes) (bRaw : Bytes) (slotRaw : Bytes) (valueRaw : Bytes) =>
+  case (addressOfBytes aRaw) with | 0 (unit : prod ()) => b"error:bad address"
+  | 1 (a : Address) => case (addressOfBytes bRaw) with | 0 (unit : prod ()) => b"error:bad address"
+  | 1 (b : Address) => case (u256OfHex slotRaw) with | 0 (unit : prod ()) => b"error:bad word"
+  | 1 (slot : U256) => case (u256OfHex valueRaw) with | 0 (unit : prod ()) => b"error:bad word"
+  | 1 (value : U256) =>
+    let first : TransientStorage := transientSet transientEmpty a slot value in
+    let second : TransientStorage := transientSet first b slot (u256Add value u256One) in
+    let third : TransientStorage := transientSet second a slot u256Zero in
+    let cleared : TransientStorage := transientSet third b slot u256Zero in
+    append (u256Hex (transientGet second a slot)) (append b":" (append (u256Hex (transientGet second b slot)) (append b":" (append (decimal64 (transientLength second)) (append b":" (append (u256Hex (transientGet third a slot)) (append b":" (append (u256Hex (transientGet third b slot)) (append b":" (append (decimal64 (transientLength third)) (append b":" (append (evmTestBool (transientIsEmpty cleared)) (append b":" (evmTestBool (transientEqual cleared transientEmpty)))))))))))))))

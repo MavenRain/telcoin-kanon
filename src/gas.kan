@@ -1,0 +1,87 @@
+mu Gas : Type 0 :=
+| gasValue (amount : HostInt) : Gas
+def gasAmount : Gas -> HostInt := fun (gas : Gas) => match gas as self in Gas return HostInt with | gasValue amount => amount
+def gasOfHostInt : HostInt -> ValueOption Gas := fun (amount : HostInt) => case (hostIntNonnegative amount) with
+  | 0 (unit : prod ()) => valueNone Gas | 1 (n : Nat) => valueSome Gas (gasValue amount)
+def gasEqual : Gas -> Gas -> Bool := fun (a : Gas) (b : Gas) => hostIntEqual (gasAmount a) (gasAmount b)
+def gasCharge : HostInt -> Gas -> ValueOption Gas := fun (cost : HostInt) (gas : Gas) =>
+  case (hostIntNonnegative cost) with | 0 (unit : prod ()) => valueNone Gas
+  | 1 (price : Nat) => case (hostIntNonnegative (gasAmount gas)) with | 0 (unit : prod ()) => valueNone Gas
+    | 1 (remaining : Nat) => case (natLt remaining price) with | 1 (unit : prod ()) => valueNone Gas
+      | 0 (unit : prod ()) => valueSome Gas (gasValue (hostIntPositive (natSub remaining price)))
+def gasCheckedNat : Nat -> ValueOption Nat := fun (n : Nat) => case (natLt hostIntMax n) with
+  | 1 (unit : prod ()) => valueNone Nat | 0 (unit : prod ()) => valueSome Nat n
+def gasCheckedMul : Nat -> Nat -> ValueOption Nat := fun (a : Nat) (b : Nat) => gasCheckedNat (natMul a b)
+def gasCheckedAdd : Nat -> Nat -> ValueOption Nat := fun (a : Nat) (b : Nat) => gasCheckedNat (natAdd a b)
+def gasMemoryCost : HostInt -> ValueOption Nat := fun (words : HostInt) =>
+  let w : Nat := hostIntClampZero words in let divided : DivResult := divide64 w 512 in
+  case (gasCheckedMul (divQuotient divided) w) with | 0 (unit : prod ()) => valueNone Nat
+  | 1 (qw : Nat) => case (gasCheckedMul (divRemainder divided) w) with | 0 (unit : prod ()) => valueNone Nat
+  | 1 (rw : Nat) => case (gasCheckedAdd qw (divQuotient (divide64 rw 512))) with | 0 (unit : prod ()) => valueNone Nat
+  | 1 (quadratic : Nat) => case (gasCheckedMul 3 w) with | 0 (unit : prod ()) => valueNone Nat
+  | 1 (linear : Nat) => gasCheckedAdd linear quadratic
+def gasMemoryExpansion : HostInt -> HostInt -> ValueOption Nat := fun (current : HostInt) (next : HostInt) =>
+  case (natEq (hostIntLess current next) 0) with | 1 (unit : prod ()) => valueSome Nat 0
+  | 0 (unit : prod ()) => case (gasMemoryCost current) with | 0 (unit : prod ()) => valueNone Nat
+  | 1 (oldCost : Nat) => case (gasMemoryCost next) with | 0 (unit : prod ()) => valueNone Nat
+    | 1 (newCost : Nat) => valueSome Nat (natSub newCost oldCost)
+def rec gasSignificantScan : Bytes -> Nat := fun (bytes : Bytes) => match bytes as self in Bytes return Nat with
+  | bytesNil => 0 | bytesCons head tail => case (natEq head 0) with
+    | 1 (unit : prod ()) => gasSignificantScan tail | 0 (unit : prod ()) => natAdd 1 (bytesLength tail)
+def gasSignificantBytes : U256 -> Nat := fun (value : U256) => gasSignificantScan (u256ToBeBytes value)
+def gasExpDynamic : U256 -> Nat := fun (value : U256) => natMul 50 (gasSignificantBytes value)
+def gasWordsOfLength : HostInt -> Nat := fun (length : HostInt) =>
+  let divided : DivResult := divide64 (hostIntClampZero length) 32 in
+  natAdd (divQuotient divided) (boolNat (boolNot (natEq (divRemainder divided) 0)))
+def gasCopyCost : HostInt -> Nat := fun (length : HostInt) => natMul 3 (gasWordsOfLength length)
+def gasCopyVerylowCost : HostInt -> Nat := fun (length : HostInt) => natAdd 3 (gasCopyCost length)
+def gasKeccakWordCost : HostInt -> Nat := fun (length : HostInt) => natMul 6 (gasWordsOfLength length)
+def gasLogDynamic : TopicCount -> HostInt -> ValueOption Nat := fun (topics : TopicCount) (length : HostInt) =>
+  case (gasCheckedMul 8 (hostIntClampZero length)) with | 0 (unit : prod ()) => valueNone Nat
+  | 1 (cost : Nat) => gasCheckedAdd cost (natMul 375 (topicCountNat topics))
+def gasStorageAccess : Warmth -> Nat := fun (warmth : Warmth) => match warmth as self in Warmth return Nat with | accessCold => 2000 | accessWarm => 0
+def gasAccountAccess : Warmth -> Nat := fun (warmth : Warmth) => match warmth as self in Warmth return Nat with | accessCold => 2500 | accessWarm => 0
+def gasDelegationAccess : ValueOption Warmth -> Nat := fun (warmth : ValueOption Warmth) => case warmth with
+  | 0 (unit : prod ()) => 0 | 1 (value : Warmth) => natAdd 100 (gasAccountAccess value)
+mu SstoreEntryError : Type 0 :=
+| sstoreReentrancySentry : SstoreEntryError
+| sstoreInsufficient : SstoreEntryError
+def gasSstoreEntry : Gas -> sum (SstoreEntryError, Gas) := fun (gas : Gas) =>
+  case (natEq (hostIntLess (hostIntPositive 2300) (gasAmount gas)) 0) with | 1 (unit : prod ()) => inj 0 of 2 sstoreReentrancySentry
+  | 0 (unit : prod ()) => case (gasCharge (hostIntPositive 100) gas) with
+    | 0 (unit : prod ()) => inj 0 of 2 sstoreInsufficient | 1 (remaining : Gas) => inj 1 of 2 remaining
+def gasSstoreDynamic : Warmth -> SstoreState -> Nat := fun (warmth : Warmth) (state : SstoreState) =>
+  let cold : Nat := match warmth as self in Warmth return Nat with | accessCold => 2100 | accessWarm => 0 in
+  let change : Nat := match (sstoreClassify state) as self in SstoreChange return Nat with
+    | sstoreNoOp => 0 | sstoreDirty => 0 | sstoreFreshSet => 19900 | sstoreFreshReset => 2800 in natAdd cold change
+def gasSstoreRefund : SstoreState -> Refund := fun (state : SstoreState) =>
+  case (u256Equal state.1 state.2) with | 1 (unit : prod ()) => refundZero
+  | 0 (unit : prod ()) => case (boolAnd (u256Equal state.0 state.1) (u256IsZero state.2)) with
+    | 1 (unit : prod ()) => refundValue (hostIntPositive 4800)
+    | 0 (unit : prod ()) =>
+      let claw : HostInt := case (u256IsZero state.0) with | 1 (unit : prod ()) => hostIntPositive 0
+        | 0 (unit : prod ()) => case (u256IsZero state.1) with | 1 (unit : prod ()) => hostIntNegative 4800
+          | 0 (unit : prod ()) => case (u256IsZero state.2) with | 1 (unit : prod ()) => hostIntPositive 4800 | 0 (unit : prod ()) => hostIntPositive 0 in
+      let restore : Nat := case (u256Equal state.0 state.2) with | 0 (unit : prod ()) => 0
+        | 1 (unit : prod ()) => case (u256IsZero state.0) with | 1 (unit : prod ()) => 19900 | 0 (unit : prod ()) => 2800 in
+      refundValue (hostIntAdd claw (hostIntPositive restore))
+def gasCallValueCost : U256 -> Nat := fun (value : U256) => case (u256IsZero value) with | 1 (unit : prod ()) => 0 | 0 (unit : prod ()) => 9000
+def gasCallNewAccountCost : U256 -> Nat := fun (value : U256) => case (u256IsZero value) with | 1 (unit : prod ()) => 0 | 0 (unit : prod ()) => 25000
+def gasForwardable : Gas -> HostInt := fun (gas : Gas) => hostIntSub (gasAmount gas) (hostIntDividePositive (gasAmount gas) 64)
+def CallGas : Type 0 := prod (Gas, Gas)
+def gasCallGas : U256 -> Gas -> U256 -> CallGas := fun (requested : U256) (remaining : Gas) (value : U256) =>
+  let ceiling : HostInt := gasForwardable remaining in
+  let cap : HostInt := case (u256ToHostNat requested) with | 0 (unit : prod ()) => ceiling
+    | 1 (wanted : Nat) => case (natEq (hostIntLess (hostIntPositive wanted) ceiling) 1) with
+      | 1 (unit : prod ()) => hostIntPositive wanted | 0 (unit : prod ()) => ceiling in
+  let stipend : Nat := case (u256IsZero value) with | 1 (unit : prod ()) => 0 | 0 (unit : prod ()) => 2300 in
+  tuple (gasValue cap, gasValue (hostIntAdd cap (hostIntPositive stipend)))
+def gasInitcodeCost : HostInt -> Nat := fun (length : HostInt) => natMul 2 (gasWordsOfLength length)
+def gasCreateCost : Bool -> HostInt -> Nat := fun (salted : Bool) (length : HostInt) =>
+  let hashCost : Nat := case salted with | 0 (unit : prod ()) => 0 | 1 (unit : prod ()) => gasKeccakWordCost length in natAdd 32000 hashCost
+def gasCodeDepositCost : HostInt -> HostInt := fun (length : HostInt) => hostIntMul (hostIntPositive 200) length
+def gasSelfdestructDynamic : Bool -> Bool -> Warmth -> Nat := fun (hadValue : Bool) (beneficiaryExists : Bool) (warmth : Warmth) =>
+  let created : Nat := case (boolAnd hadValue (boolNot beneficiaryExists)) with | 1 (unit : prod ()) => 25000 | 0 (unit : prod ()) => 0 in
+  let access : Nat := match warmth as self in Warmth return Nat with | accessCold => 2600 | accessWarm => 0 in natAdd created access
+def gasCreateGas : Gas -> CallGas := fun (remaining : Gas) => let cap : Gas := gasValue (gasForwardable remaining) in tuple (cap, cap)
+def gasGiveBack : HostInt -> Gas -> Gas := fun (amount : HostInt) (gas : Gas) => gasValue (hostIntAdd (gasAmount gas) amount)

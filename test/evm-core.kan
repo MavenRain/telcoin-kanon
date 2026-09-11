@@ -1,0 +1,91 @@
+def evmTestNatOption : ValueOption Nat -> Bytes := fun (value : ValueOption Nat) => case value with
+  | 0 (unit : prod ()) => b"none" | 1 (n : Nat) => decimal64 n
+def evmTestBool : Bool -> Bytes := fun (value : Bool) => case value with | 0 (unit : prod ()) => b"false" | 1 (unit : prod ()) => b"true"
+def evmTestGasOption : ValueOption Gas -> Bytes := fun (value : ValueOption Gas) => case value with
+  | 0 (unit : prod ()) => b"none" | 1 (gas : Gas) => hostIntText (gasAmount gas)
+def evmTestStackError : StackError -> Bytes := fun (error : StackError) => match error as self in StackError return Bytes with
+  | stackUnderflow => b"stack underflow" | stackOverflow => b"stack overflow"
+def rec evmTestWords : Words -> Bytes := fun (words : Words) => match words as self in Words return Bytes with
+  | wordsNil => b"" | wordsCons head tail => append (decimal64 (u256Nat head)) (append b"," (evmTestWords tail))
+def evmTestStack : EvmStack -> Bytes := fun (stack : EvmStack) => append (decimal64 (stackLength stack)) (append b":" (evmTestWords (stackToList stack)))
+def evmTestStackResult : sum (StackError, EvmStack) -> Bytes := fun (value : sum (StackError, EvmStack)) => case value with
+  | 0 (error : StackError) => evmTestStackError error | 1 (stack : EvmStack) => evmTestStack stack
+def evm_test_stack : Nat -> Nat -> Nat -> Bytes := fun (count : Nat) (op : Nat) (depth : Nat) =>
+  let built : prod (Nat, Words) := stepsFold (prod (Nat, Words)) steps32 (fun (state : prod (Nat, Words)) => boolNat (natEq state.0 count))
+    (fun (state : prod (Nat, Words)) => tuple (natAdd state.0 1, wordsCons (u256Value state.0) state.1)) (tuple (0, wordsNil)) in
+  case (stackOfList built.1) with | 0 (unit : prod ()) => b"none"
+  | 1 (stack : EvmStack) =>
+    case (natEq op 0) with | 1 (unit : prod ()) => evmTestStack stack
+    | 0 (unit : prod ()) => case (natEq op 1) with | 1 (unit : prod ()) => evmTestStackResult (stackPush (u256Value 65535) stack)
+    | 0 (unit : prod ()) => case (natEq op 2) with | 1 (unit : prod ()) =>
+      (case (stackPop stack) with | 0 (error : StackError) => evmTestStackError error
+      | 1 (result : prod (U256, EvmStack)) => append (decimal64 (u256Nat result.0)) (append b":" (evmTestStack result.1)))
+    | 0 (unit : prod ()) => case (natEq op 3) with | 1 (unit : prod ()) =>
+      (case (stackPop2 stack) with | 0 (error : StackError) => evmTestStackError error
+      | 1 (result : prod (U256, U256, EvmStack)) => append (decimal64 (u256Nat result.0)) (append b":" (append (decimal64 (u256Nat result.1)) (append b":" (evmTestStack result.2)))))
+    | 0 (unit : prod ()) => case (natEq op 4) with | 1 (unit : prod ()) =>
+      (case (stackPop3 stack) with | 0 (error : StackError) => evmTestStackError error
+      | 1 (result : prod (U256, U256, U256, EvmStack)) => append (decimal64 (u256Nat result.0)) (append b":" (append (decimal64 (u256Nat result.1)) (append b":" (append (decimal64 (u256Nat result.2)) (append b":" (evmTestStack result.3)))))))
+    | 0 (unit : prod ()) => case (stackDepthOfNat depth) with | 0 (unit : prod ()) => b"none-depth"
+      | 1 (d : StackDepth) => case (natEq op 5) with | 1 (unit : prod ()) => evmTestStackResult (stackDup d stack)
+        | 0 (unit : prod ()) => evmTestStackResult (stackSwap d stack)
+def evm_test_extent : Bytes -> Bytes -> Bytes := fun (offsetRaw : Bytes) (lengthRaw : Bytes) =>
+  case (hostIntParse offsetRaw) with | 0 (unit : prod ()) => b"error:bad int"
+  | 1 (offset : HostInt) => case (hostIntParse lengthRaw) with | 0 (unit : prod ()) => b"error:bad int"
+  | 1 (length : HostInt) => evmTestNatOption (memoryWordsNeeded offset length)
+def evm_test_memory : Bytes -> Bytes -> Bytes -> Bytes -> Bytes := fun (offsetRaw : Bytes) (wordRaw : Bytes) (byteRaw : Bytes) (source : Bytes) =>
+  case (hostIntParse offsetRaw) with | 0 (unit : prod ()) => b"error:bad int"
+  | 1 (offset : HostInt) => case (hostIntParse byteRaw) with | 0 (unit : prod ()) => b"error:bad int"
+  | 1 (byte : HostInt) => case (u256OfHex wordRaw) with | 0 (unit : prod ()) => b"error:bad word"
+  | 1 (word : U256) =>
+    let first : EvmMemory := memoryStoreWord memoryEmpty offset word in
+    let second : EvmMemory := memoryStoreByte first (hostIntAdd offset (hostIntPositive 31)) byte in
+    let third : EvmMemory := memoryStoreBytes second (hostIntAdd offset (hostIntPositive 1)) source in
+    let expanded : EvmMemory := memoryExpand 3 third in
+    let cleared : EvmMemory := memoryStoreBytes expanded offset (memorySlice memoryEmpty (hostIntPositive 0) 40) in
+    append (u256Hex (memoryLoadWord expanded offset)) (append b":" (append (bytesHex (memorySlice expanded offset 40)) (append b":" (append (decimal64 (memoryWords expanded)) (append b":" (append (decimal64 (memorySizeBytes expanded)) (append b":" (append (evmTestBool (memoryEqual cleared (memoryExpand 3 memoryEmpty))) (append b":" (append (evmTestBool (memoryEqual expanded (memoryExpand 2 expanded))) (append b":" (evmTestBool (memoryEqual expanded third)))))))))))))
+def evm_test_costs : Bytes -> Bytes -> Nat -> Bytes := fun (nRaw : Bytes) (mRaw : Bytes) (topic : Nat) =>
+  case (hostIntParse nRaw) with | 0 (unit : prod ()) => b"error:bad int"
+  | 1 (n : HostInt) => case (hostIntParse mRaw) with | 0 (unit : prod ()) => b"error:bad int"
+  | 1 (m : HostInt) => case (topicCountOfNat topic) with | 0 (unit : prod ()) => b"none-topic"
+  | 1 (topics : TopicCount) =>
+    let gas : Bytes := case (gasOfHostInt n) with | 0 (unit : prod ()) => b"none" | 1 (g : Gas) => evmTestGasOption (gasCharge m g) in
+    append (evmTestNatOption (gasMemoryCost n)) (append b":" (append (evmTestNatOption (gasMemoryExpansion n m)) (append b":" (append (decimal64 (gasWordsOfLength n)) (append b":" (append (decimal64 (gasCopyCost n)) (append b":" (append (decimal64 (gasCopyVerylowCost n)) (append b":" (append (decimal64 (gasKeccakWordCost n)) (append b":" (append (evmTestNatOption (gasLogDynamic topics n)) (append b":" (append (decimal64 (gasInitcodeCost n)) (append b":" (append (decimal64 (gasCreateCost (natEq 0 1) n)) (append b":" (append (decimal64 (gasCreateCost (natEq 0 0) n)) (append b":" (append (hostIntText (gasCodeDepositCost n)) (append b":" (append (gas) (append b":" (append (hostIntText (refundAmount (refundAdd (refundValue n) (refundValue m)))) (append b":" (hostIntText (gasAmount (gasGiveBack m (gasValue n)))))))))))))))))))))))))))))
+def evm_test_static : Nat -> Bytes := fun (byte : Nat) => case (opcodeDecode byte) with
+  | 0 (unit : prod ()) => b"none" | 1 (op : Opcode) => decimal64 (gasStaticCost op)
+def evm_test_sstore : Bytes -> Bytes -> Bytes -> Nat -> Bytes := fun (aRaw : Bytes) (bRaw : Bytes) (cRaw : Bytes) (cold : Nat) =>
+  case (u256OfHex aRaw) with | 0 (unit : prod ()) => b"error:bad word"
+  | 1 (a : U256) => case (u256OfHex bRaw) with | 0 (unit : prod ()) => b"error:bad word"
+  | 1 (b : U256) => case (u256OfHex cRaw) with | 0 (unit : prod ()) => b"error:bad word"
+  | 1 (c : U256) =>
+    let state : SstoreState := tuple (a, b, c) in
+    let warmth : Warmth := case (natEq cold 0) with | 1 (unit : prod ()) => accessWarm | 0 (unit : prod ()) => accessCold in
+    let classification : Bytes := match (sstoreClassify state) as self in SstoreChange return Bytes with
+      | sstoreNoOp => b"noop" | sstoreDirty => b"dirty" | sstoreFreshSet => b"set" | sstoreFreshReset => b"reset" in
+    append (classification) (append b":" (append (decimal64 (gasSstoreDynamic warmth state)) (append b":" (append (hostIntText (refundAmount (gasSstoreRefund state))) (append b":" (append (decimal64 (gasStorageAccess warmth)) (append b":" (append (decimal64 (gasAccountAccess warmth)) (append b":" (append (decimal64 (gasDelegationAccess (valueSome Warmth warmth))) (append b":" (append (decimal64 (gasDelegationAccess (valueNone Warmth))) (append b":" (evmTestBool (sstoreStateEqual state state)))))))))))))))
+def evm_test_call : Bytes -> Bytes -> Bytes -> Nat -> Nat -> Nat -> Bytes := fun (remainingRaw : Bytes) (requestedRaw : Bytes) (valueRaw : Bytes) (cold : Nat) (had : Nat) (exists : Nat) =>
+  case (hostIntParse remainingRaw) with | 0 (unit : prod ()) => b"error:bad int"
+  | 1 (remaining : HostInt) => case (u256OfHex requestedRaw) with | 0 (unit : prod ()) => b"error:bad word"
+  | 1 (requested : U256) => case (u256OfHex valueRaw) with | 0 (unit : prod ()) => b"error:bad word"
+  | 1 (value : U256) => case (gasOfHostInt remaining) with | 0 (unit : prod ()) => b"none"
+  | 1 (gas : Gas) =>
+    let call : CallGas := gasCallGas requested gas value in let create : CallGas := gasCreateGas gas in
+    let warmth : Warmth := case (natEq cold 0) with | 1 (unit : prod ()) => accessWarm | 0 (unit : prod ()) => accessCold in
+    let entry : Bytes := case (gasSstoreEntry gas) with | 1 (rest : Gas) => hostIntText (gasAmount rest)
+      | 0 (error : SstoreEntryError) => match error as self in SstoreEntryError return Bytes with | sstoreReentrancySentry => b"sentry" | sstoreInsufficient => b"insufficient" in
+    append (hostIntText (gasAmount call.0)) (append b":" (append (hostIntText (gasAmount call.1)) (append b":" (append (hostIntText (gasAmount create.0)) (append b":" (append (hostIntText (gasAmount create.1)) (append b":" (append (decimal64 (gasCallValueCost value)) (append b":" (append (decimal64 (gasCallNewAccountCost value)) (append b":" (append (decimal64 (gasSelfdestructDynamic (natEq had 1) (natEq exists 1) warmth)) (append b":" (append (decimal64 (gasExpDynamic requested)) (append b":" (entry))))))))))))))))
+def evm_test_access : Bytes -> Bytes -> Bytes -> Nat -> Bytes := fun (aRaw : Bytes) (bRaw : Bytes) (slotRaw : Bytes) (prewarm : Nat) =>
+  case (addressOfBytes aRaw) with | 0 (unit : prod ()) => b"error:bad address"
+  | 1 (a : Address) => case (addressOfBytes bRaw) with | 0 (unit : prod ()) => b"error:bad address"
+  | 1 (b : Address) => case (u256OfHex slotRaw) with | 0 (unit : prod ()) => b"error:bad word"
+  | 1 (slot : U256) =>
+    let addresses : Addresses := case (natEq (remainder64 prewarm 2) 1) with | 0 (unit : prod ()) => addressesNil | 1 (unit : prod ()) => addressesCons a (addressesCons a addressesNil) in
+    let slots : AddressSlots := case (natLt 1 prewarm) with | 0 (unit : prod ()) => addressSlotsNil | 1 (unit : prod ()) => addressSlotsCons (tuple (a, slot)) (addressSlotsCons (tuple (a, slot)) addressSlotsNil) in
+    let initial : AccessState := accessOfTransaction addresses slots in
+    let a1 : prod (Warmth, AccessState) := accessTouchAccount a initial in
+    let a2 : prod (Warmth, AccessState) := accessTouchAccount a a1.1 in
+    let s1 : prod (Warmth, AccessState) := accessTouchSlot a slot a2.1 in
+    let s2 : prod (Warmth, AccessState) := accessTouchSlot a slot s1.1 in
+    let s3 : prod (Warmth, AccessState) := accessTouchSlot b slot s2.1 in
+    let expected : AccessState := accessOfTransaction (addressesCons a addressesNil) (addressSlotsCons (tuple (b, slot)) (addressSlotsCons (tuple (a, slot)) addressSlotsNil)) in
+    append (evmTestBool (warmthIsCold a1.0)) (append b":" (append (evmTestBool (warmthIsCold a2.0)) (append b":" (append (evmTestBool (warmthIsCold s1.0)) (append b":" (append (evmTestBool (warmthIsCold s2.0)) (append b":" (append (evmTestBool (warmthIsCold s3.0)) (append b":" (append (evmTestBool (accessMemAccount b s3.1)) (append b":" (append (evmTestBool (accessMemSlot b slot s3.1)) (append b":" (evmTestBool (accessEqual expected s3.1)))))))))))))))

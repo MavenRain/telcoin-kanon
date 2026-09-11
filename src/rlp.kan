@@ -1,0 +1,92 @@
+def rec rlpStripLeadingZeros : Bytes -> Bytes := fun (bytes : Bytes) => match bytes as self in Bytes return Bytes with
+  | bytesNil => bytesNil | bytesCons head tail => case (natEq head 0) with | 1 (unit : prod ()) => rlpStripLeadingZeros tail | 0 (unit : prod ()) => bytes
+def rlpBigEndianNat : Nat -> Bytes := fun (value : Nat) => rlpStripLeadingZeros (u256ToBeBytes (u256Value value))
+def rlpBigEndian : HostInt -> Bytes := fun (value : HostInt) => rlpBigEndianNat (hostIntClampZero value)
+def rlpLengthOfLength : HostInt -> Nat := fun (length : HostInt) => let n : Nat := hostIntClampZero length in
+  case (natLt n 56) with | 1 (unit : prod ()) => 1 | 0 (unit : prod ()) => natAdd 1 (bytesLength (rlpBigEndianNat n))
+def rlpHeaderBytes : Nat -> Nat -> Nat -> Bytes := fun (shortBase : Nat) (longBase : Nat) (length : Nat) =>
+  case (natLt length 56) with | 1 (unit : prod ()) => bytesCons (natAdd shortBase length) bytesNil
+  | 0 (unit : prod ()) => let size : Bytes := rlpBigEndianNat length in bytesCons (natAdd longBase (bytesLength size)) size
+def rlpStringHeader : Nat -> Bytes := rlpHeaderBytes 128 183
+def rlpListHeader : Nat -> Bytes := rlpHeaderBytes 192 247
+def rlpEncodeBytes : Bytes -> Bytes := fun (bytes : Bytes) =>
+  let singleton : Bool := match bytes as self in Bytes return Bool with | bytesNil => natEq 0 1
+    | bytesCons head tail => boolAnd (natLt head 128) (natEq (bytesLength tail) 0) in
+  case singleton with | 1 (unit : prod ()) => bytes | 0 (unit : prod ()) => append (rlpStringHeader (bytesLength bytes)) bytes
+def rlpEncodeScalar : Bytes -> Bytes := fun (bytes : Bytes) => rlpEncodeBytes (rlpStripLeadingZeros bytes)
+def rlpEncodeNat : HostInt -> Bytes := fun (value : HostInt) => rlpEncodeBytes (rlpBigEndian value)
+def rlpEncodeListPayload : Bytes -> Bytes := fun (payload : Bytes) => append (rlpListHeader (bytesLength payload)) payload
+def rlpString : Bytes -> RlpItem := fun (bytes : Bytes) => rlpItemValue (rlpEncodeBytes bytes)
+def rec rlpItemsPayload : RlpItems -> Bytes := fun (items : RlpItems) => match items as self in RlpItems return Bytes with
+  | rlpItemsNil => bytesNil | rlpItemsCons head tail => append (rlpEncode head) (rlpItemsPayload tail)
+def rlpList : RlpItems -> RlpItem := fun (items : RlpItems) => rlpItemValue (rlpEncodeListPayload (rlpItemsPayload items))
+def rlpEqual : RlpItem -> RlpItem -> Bool := fun (a : RlpItem) (b : RlpItem) => bytesEqual (rlpEncode a) (rlpEncode b)
+def rlpByteAt : Bytes -> Nat -> Nat := fun (bytes : Bytes) (pos : Nat) => match (drop bytes pos) as self in Bytes return Nat with
+  | bytesNil => 0 | bytesCons head tail => head
+def rlpDecodeLength : Bytes -> Nat -> Nat -> sum (RlpError, Nat) := fun (bytes : Bytes) (pos : Nat) (length : Nat) =>
+  case (natLt (bytesLength bytes) (natAdd pos length)) with | 1 (unit : prod ()) => inj 0 of 2 rlpInputTooShort
+  | 0 (unit : prod ()) => case (boolAnd (natLt 0 length) (natEq (rlpByteAt bytes pos) 0)) with | 1 (unit : prod ()) => inj 0 of 2 rlpLeadingZero
+    | 0 (unit : prod ()) => let n : Nat := u256ReadBe (take length (drop bytes pos)) 0 in
+      case (natLt hostIntMax n) with | 1 (unit : prod ()) => inj 0 of 2 rlpOverflow | 0 (unit : prod ()) => inj 1 of 2 n
+def rlpShortHeader : Bytes -> Bool -> Nat -> Nat -> sum (RlpError, RlpHeader) := fun (bytes : Bytes) (isList : Bool) (start : Nat) (length : Nat) =>
+  let stop : Nat := natAdd start length in
+  case (natLt (bytesLength bytes) stop) with | 1 (unit : prod ()) => inj 0 of 2 rlpInputTooShort
+  | 0 (unit : prod ()) => case (boolAnd (boolNot isList) (boolAnd (natEq length 1) (natLt (rlpByteAt bytes start) 128))) with
+    | 1 (unit : prod ()) => inj 0 of 2 rlpNonCanonicalSingleByte | 0 (unit : prod ()) => inj 1 of 2 (tuple (isList, start, stop))
+def rlpLongHeader : Bytes -> Bool -> Nat -> Nat -> sum (RlpError, RlpHeader) := fun (bytes : Bytes) (isList : Bool) (start : Nat) (width : Nat) =>
+  case (rlpDecodeLength bytes start width) with | 0 (error : RlpError) => inj 0 of 2 error
+  | 1 (length : Nat) => case (natLt length 56) with | 1 (unit : prod ()) => inj 0 of 2 rlpNonCanonicalSize
+    | 0 (unit : prod ()) => rlpShortHeader bytes isList (natAdd start width) length
+def rlpReadHeader : Bytes -> Nat -> sum (RlpError, RlpHeader) := fun (bytes : Bytes) (pos : Nat) =>
+  case (natLt pos (bytesLength bytes)) with | 0 (unit : prod ()) => inj 0 of 2 rlpInputTooShort
+  | 1 (unit : prod ()) => let byte : Nat := rlpByteAt bytes pos in let next : Nat := natAdd pos 1 in
+    case (natLt byte 128) with | 1 (unit : prod ()) => inj 1 of 2 (tuple (natEq 0 1, pos, next))
+    | 0 (unit : prod ()) => case (natLt byte 184) with | 1 (unit : prod ()) => rlpShortHeader bytes (natEq 0 1) next (natSub byte 128)
+    | 0 (unit : prod ()) => case (natLt byte 192) with | 1 (unit : prod ()) => rlpLongHeader bytes (natEq 0 1) next (natSub byte 183)
+    | 0 (unit : prod ()) => case (natLt byte 248) with | 1 (unit : prod ()) => rlpShortHeader bytes (natEq 0 0) next (natSub byte 192)
+    | 0 (unit : prod ()) => rlpLongHeader bytes (natEq 0 0) next (natSub byte 247)
+def RlpValidation : Type 0 := prod (Nat, RlpStops, ValueOption RlpError)
+def rlpValidateStep : Bytes -> RlpValidation -> RlpValidation := fun (bytes : Bytes) (state : RlpValidation) =>
+  match state.1 as self in RlpStops return RlpValidation with | rlpStopsNil => state
+  | rlpStopsCons stop parents => case (natEq state.0 stop) with | 1 (unit : prod ()) => tuple (state.0, parents, state.2)
+    | 0 (unit : prod ()) => case (natLt stop state.0) with | 1 (unit : prod ()) => tuple (state.0, state.1, valueSome RlpError rlpInputTooShort)
+      | 0 (unit : prod ()) => case (rlpReadHeader bytes state.0) with | 0 (error : RlpError) => tuple (state.0, state.1, valueSome RlpError error)
+        | 1 (header : RlpHeader) => case header.0 with
+          | 0 (unit : prod ()) => tuple (header.2, state.1, state.2)
+          | 1 (unit : prod ()) => tuple (header.1, rlpStopsCons header.2 state.1, state.2)
+def rlpValidateList : Bytes -> Nat -> Nat -> ValueOption RlpError := fun (bytes : Bytes) (start : Nat) (stop : Nat) =>
+  let final : RlpValidation := stepsFold RlpValidation steps64
+    (fun (state : RlpValidation) => case state.2 with | 1 (error : RlpError) => 1
+      | 0 (unit : prod ()) => match state.1 as self in RlpStops return Nat with | rlpStopsNil => 1 | rlpStopsCons head tail => 0)
+    (rlpValidateStep bytes) (tuple (start, rlpStopsCons stop rlpStopsNil, valueNone RlpError)) in final.2
+def rlpDecodeAt : Bytes -> Nat -> sum (RlpError, prod (RlpItem, Nat)) := fun (bytes : Bytes) (pos : Nat) =>
+  case (rlpReadHeader bytes pos) with | 0 (error : RlpError) => inj 0 of 2 error
+  | 1 (header : RlpHeader) =>
+    let invalid : ValueOption RlpError := case header.0 with | 0 (unit : prod ()) => valueNone RlpError
+      | 1 (unit : prod ()) => rlpValidateList bytes header.1 header.2 in
+    case invalid with | 1 (error : RlpError) => inj 0 of 2 error
+    | 0 (unit : prod ()) => inj 1 of 2 (tuple (rlpItemValue (take (natSub header.2 pos) (drop bytes pos)), header.2))
+def rlpDecode : Bytes -> sum (RlpError, prod (RlpItem, Bytes)) := fun (bytes : Bytes) =>
+  case (rlpDecodeAt bytes 0) with | 0 (error : RlpError) => inj 0 of 2 error
+  | 1 (result : prod (RlpItem, Nat)) => inj 1 of 2 (tuple (result.0, drop bytes result.1))
+def rlpDecodeExact : Bytes -> sum (RlpError, RlpItem) := fun (bytes : Bytes) =>
+  case (rlpDecodeAt bytes 0) with | 0 (error : RlpError) => inj 0 of 2 error
+  | 1 (result : prod (RlpItem, Nat)) => case (natEq result.1 (bytesLength bytes)) with
+    | 0 (unit : prod ()) => inj 0 of 2 rlpTrailingBytes | 1 (unit : prod ()) => inj 1 of 2 result.0
+def rlpPayload : RlpItem -> sum (RlpError, prod (Bool, Bytes)) := fun (item : RlpItem) => let bytes : Bytes := rlpEncode item in
+  case (rlpReadHeader bytes 0) with | 0 (error : RlpError) => inj 0 of 2 error
+  | 1 (header : RlpHeader) => inj 1 of 2 (tuple (header.0, take (natSub header.2 header.1) (drop bytes header.1)))
+def rlpDecodeItems : Bytes -> sum (RlpError, RlpItems) := fun (bytes : Bytes) =>
+  let final : prod (Nat, RlpItems, ValueOption RlpError) := stepsFold (prod (Nat, RlpItems, ValueOption RlpError)) steps64
+    (fun (state : prod (Nat, RlpItems, ValueOption RlpError)) => case state.2 with | 1 (error : RlpError) => 1
+      | 0 (unit : prod ()) => boolNat (natEq state.0 (bytesLength bytes)))
+    (fun (state : prod (Nat, RlpItems, ValueOption RlpError)) => case (rlpDecodeAt bytes state.0) with
+      | 0 (error : RlpError) => tuple (state.0, state.1, valueSome RlpError error)
+      | 1 (result : prod (RlpItem, Nat)) => tuple (result.1, rlpItemsCons result.0 state.1, state.2))
+    (tuple (0, rlpItemsNil, valueNone RlpError)) in
+  case final.2 with | 1 (error : RlpError) => inj 0 of 2 error | 0 (unit : prod ()) => inj 1 of 2 (seqRlpItemReverse final.1)
+def rlpView : RlpItem -> sum (RlpError, sum (Bytes, RlpItems)) := fun (item : RlpItem) =>
+  case (rlpPayload item) with | 0 (error : RlpError) => inj 0 of 2 error
+  | 1 (payload : prod (Bool, Bytes)) => case payload.0 with | 0 (unit : prod ()) => inj 1 of 2 (inj 0 of 2 payload.1)
+    | 1 (unit : prod ()) => case (rlpDecodeItems payload.1) with | 0 (error : RlpError) => inj 0 of 2 error
+      | 1 (items : RlpItems) => inj 1 of 2 (inj 1 of 2 items)

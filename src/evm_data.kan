@@ -1,0 +1,37 @@
+mu EvmData : Type 0 :=
+| evmDataValue (bytes : Bytes) : EvmData
+def evmDataBytes : EvmData -> Bytes := fun (data : EvmData) => match data as self in EvmData return Bytes with | evmDataValue bytes => bytes
+def evmDataEmpty : EvmData := evmDataValue bytesNil
+def evmDataLength : EvmData -> Nat := fun (data : EvmData) => bytesLength (evmDataBytes data)
+def evmDataStart : EvmData -> U256 -> Nat := fun (data : EvmData) (offset : U256) => minNat (evmDataLength data) (u256Nat offset)
+def evmDataRead : EvmData -> U256 -> Nat -> Bytes := fun (data : EvmData) (offset : U256) (length : Nat) =>
+  let start : Bytes := drop (evmDataBytes data) (evmDataStart data offset) in
+  let final : prod (Nat, Bytes, Bytes) := stepsFold (prod (Nat, Bytes, Bytes)) steps64
+    (fun (state : prod (Nat, Bytes, Bytes)) => boolNat (natEq state.0 length))
+    (fun (state : prod (Nat, Bytes, Bytes)) => match state.1 as self in Bytes return prod (Nat, Bytes, Bytes) with
+      | bytesNil => tuple (natAdd state.0 1, bytesNil, bytesCons 0 state.2)
+      | bytesCons head tail => tuple (natAdd state.0 1, tail, bytesCons head state.2)) (tuple (0, start, bytesNil)) in reverse final.2
+def evmDataWordAt : EvmData -> U256 -> U256 := fun (data : EvmData) (offset : U256) => u256Value (u256ReadBe (evmDataRead data offset 32) 0)
+def evmDataEqual : EvmData -> EvmData -> Bool := fun (a : EvmData) (b : EvmData) => bytesEqual (evmDataBytes a) (evmDataBytes b)
+def EvmCode : Type 0 := prod (Bytes, CodeOffsets, EvmData)
+def evmCodeLength : EvmCode -> Nat := fun (code : EvmCode) => bytesLength code.0
+def evmCodeByteAt : EvmCode -> HostInt -> Nat := fun (code : EvmCode) (offset : HostInt) => match offset as self in HostInt return Nat with
+  | hostIntNegative n => 0 | hostIntPositive n => match (drop code.0 n) as self in Bytes return Nat with | bytesNil => 0 | bytesCons head tail => head
+def evmCodeStride : Nat -> Nat := fun (byte : Nat) => case (opcodeDecode byte) with
+  | 0 (unit : prod ()) => 1 | 1 (op : Opcode) => natAdd 1 (opcodeImmediateBytes op)
+def evmCodeOfBytes : Bytes -> EvmCode := fun (bytes : Bytes) =>
+  let final : prod (Bytes, Nat, CodeOffsets) := stepsFold (prod (Bytes, Nat, CodeOffsets)) steps64
+    (fun (state : prod (Bytes, Nat, CodeOffsets)) => match state.0 as self in Bytes return Nat with | bytesNil => 1 | bytesCons head tail => 0)
+    (fun (state : prod (Bytes, Nat, CodeOffsets)) => match state.0 as self in Bytes return prod (Bytes, Nat, CodeOffsets) with
+      | bytesNil => state | bytesCons head tail =>
+        let stride : Nat := evmCodeStride head in
+        let found : CodeOffsets := case (natEq head 91) with | 1 (unit : prod ()) => codeOffsetsCons state.1 state.2 | 0 (unit : prod ()) => state.2 in
+        tuple (drop state.0 stride, natAdd state.1 stride, found)) (tuple (bytes, 0, codeOffsetsNil)) in
+  tuple (bytes, seqCodeOffsetReverse final.2, evmDataValue bytes)
+def evmCodeWindow : EvmCode -> EvmData := fun (code : EvmCode) => code.2
+def evmCodeJumpdests : EvmCode -> CodeOffsets := fun (code : EvmCode) => code.1
+def rec evmCodeHasOffset : CodeOffsets -> Nat -> Bool := fun (offsets : CodeOffsets) (index : Nat) =>
+  match offsets as self in CodeOffsets return Bool with | codeOffsetsNil => natEq 0 1
+  | codeOffsetsCons head tail => case (natEq head index) with | 1 (unit : prod ()) => natEq 0 0 | 0 (unit : prod ()) => evmCodeHasOffset tail index
+def evmCodeIsValidJumpdest : EvmCode -> HostInt -> Bool := fun (code : EvmCode) (offset : HostInt) => match offset as self in HostInt return Bool with
+  | hostIntNegative n => natEq 0 1 | hostIntPositive n => evmCodeHasOffset code.1 n

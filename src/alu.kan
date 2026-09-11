@@ -1,0 +1,49 @@
+-- EVM arithmetic, including two's-complement signed operations.
+def aluBool : Bool -> U256 := fun (value : Bool) => u256Value (boolNat value)
+def aluNegative : U256 -> Bool := fun (value : U256) => boolNot (natLt (u256Nat value) u256HighBit)
+def aluNeg : U256 -> U256 := fun (value : U256) => u256Sub u256Zero value
+def aluAbs : U256 -> U256 := fun (value : U256) => case (aluNegative value) with
+  | 0 (unit : prod ()) => value | 1 (unit : prod ()) => aluNeg value
+def aluDefaultZero : ValueOption U256 -> U256 := fun (value : ValueOption U256) => case value with
+  | 0 (unit : prod ()) => u256Zero | 1 (word : U256) => word
+def aluAdd : U256 -> U256 -> U256 := u256Add
+def aluMul : U256 -> U256 -> U256 := u256Mul
+def aluSub : U256 -> U256 -> U256 := u256Sub
+def aluDiv : U256 -> U256 -> U256 := fun (a : U256) (b : U256) => aluDefaultZero (u256Div a b)
+def aluMod : U256 -> U256 -> U256 := fun (a : U256) (b : U256) => aluDefaultZero (u256Rem a b)
+def aluAddmod : U256 -> U256 -> U256 -> U256 := fun (a : U256) (b : U256) (n : U256) => aluDefaultZero (u256AddMod a b n)
+def aluMulmod : U256 -> U256 -> U256 -> U256 := fun (a : U256) (b : U256) (n : U256) => aluDefaultZero (u256MulMod a b n)
+def aluExp : U256 -> U256 -> U256 := u256Pow
+def aluSdiv : U256 -> U256 -> U256 := fun (a : U256) (b : U256) =>
+  let magnitude : U256 := aluDiv (aluAbs a) (aluAbs b) in
+  case (natEq (boolNat (aluNegative a)) (boolNat (aluNegative b))) with
+  | 1 (unit : prod ()) => magnitude | 0 (unit : prod ()) => aluNeg magnitude
+def aluSmod : U256 -> U256 -> U256 := fun (a : U256) (b : U256) =>
+  let magnitude : U256 := aluMod (aluAbs a) (aluAbs b) in
+  case (aluNegative a) with | 0 (unit : prod ()) => magnitude | 1 (unit : prod ()) => aluNeg magnitude
+def aluLt : U256 -> U256 -> U256 := fun (a : U256) (b : U256) => aluBool (natLt (u256Nat a) (u256Nat b))
+def aluGt : U256 -> U256 -> U256 := fun (a : U256) (b : U256) => aluLt b a
+def aluEq : U256 -> U256 -> U256 := fun (a : U256) (b : U256) => aluBool (u256Equal a b)
+def aluIszero : U256 -> U256 := fun (value : U256) => aluBool (u256IsZero value)
+def aluSlt : U256 -> U256 -> U256 := fun (a : U256) (b : U256) =>
+  case (natEq (boolNat (aluNegative a)) (boolNat (aluNegative b))) with
+  | 1 (unit : prod ()) => aluLt a b | 0 (unit : prod ()) => aluBool (aluNegative a)
+def aluSgt : U256 -> U256 -> U256 := fun (a : U256) (b : U256) => aluSlt b a
+def aluAnd : U256 -> U256 -> U256 := u256And
+def aluOr : U256 -> U256 -> U256 := u256Or
+def aluXor : U256 -> U256 -> U256 := u256Xor
+def aluNot : U256 -> U256 := u256Not
+def aluShl : U256 -> U256 -> U256 := fun (shift : U256) (value : U256) => u256Shl value shift
+def aluShr : U256 -> U256 -> U256 := fun (shift : U256) (value : U256) => u256Shr value shift
+def aluSar : U256 -> U256 -> U256 := fun (shift : U256) (value : U256) => case (aluNegative value) with
+  | 0 (unit : prod ()) => u256Shr value shift | 1 (unit : prod ()) => u256Not (u256Shr (u256Not value) shift)
+def aluByte : U256 -> U256 -> U256 := fun (index : U256) (value : U256) =>
+  case (natLt (u256Nat index) 32) with | 0 (unit : prod ()) => u256Zero
+  | 1 (unit : prod ()) => u256And (u256Shr value (u256Value (natMul (natSub 31 (u256Nat index)) 8))) (u256Value 255)
+def aluSignextend : U256 -> U256 -> U256 := fun (index : U256) (value : U256) =>
+  case (natLt (u256Nat index) 32) with | 0 (unit : prod ()) => value
+  | 1 (unit : prod ()) =>
+    let sign : U256 := u256Value (u256TwoPowNat (natAdd (natMul (u256Nat index) 8) 7)) in
+    let mask : U256 := u256Sub (u256Add sign sign) u256One in
+    case (u256IsZero (u256And value sign)) with
+    | 1 (unit : prod ()) => u256And value mask | 0 (unit : prod ()) => u256Or value (u256Not mask)

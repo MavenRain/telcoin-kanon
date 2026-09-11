@@ -1,0 +1,22 @@
+def rec evmTestLogList : EvmLogs -> Bytes := fun (logs : EvmLogs) => match logs as self in EvmLogs return Bytes with
+  | evmLogsNil => b"" | evmLogsCons head tail => append (evmLogText head) (append b"|" (evmTestLogList tail))
+def evm_test_logs : Nat -> Nat -> Bytes -> Bytes -> Bytes := fun (available : Nat) (count : Nat) (addressRaw : Bytes) (data : Bytes) =>
+  case (addressOfBytes addressRaw) with | 0 (unit : prod ()) => b"error:bad address"
+  | 1 (address : Address) => case (topicCountOfNat count) with | 0 (unit : prod ()) => b"none-topic"
+  | 1 (topics : TopicCount) =>
+    let built : prod (Nat, Words) := stepsFold (prod (Nat, Words)) steps32 (fun (state : prod (Nat, Words)) => boolNat (natEq state.0 available))
+      (fun (state : prod (Nat, Words)) => tuple (natAdd state.0 1, wordsCons (u256Value state.0) state.1)) (tuple (0, wordsNil)) in
+    case (stackOfList built.1) with | 0 (unit : prod ()) => b"none-stack"
+    | 1 (stack : EvmStack) => case (evmTopicsCollect EvmStack StackError topics stackPop stack) with | 0 (error : StackError) => evmTestStackError error
+      | 1 (collected : prod (EvmTopics, EvmStack)) =>
+        let first : EvmLog := tuple (address, collected.0, data) in let second : EvmLog := tuple (address, evmTopics0, b"") in
+        let journal : LogJournal := logJournalAppend (logJournalAppend logJournalEmpty first) second in
+        append (decimal64 (topicCountNat (evmTopicsArity collected.0))) (append b":" (append (decimal64 (stackLength collected.1)) (append b":" (append (evmLogText first) (append b":" (append (evmTestLogList (logJournalToList journal)) (append b":" (append (decimal64 (logJournalLength journal)) (append b":" (append (evmTestBool (logJournalEqual journal journal)) (append b":" (append (evmTestBool (logJournalEqual journal logJournalEmpty)) (append b":" (evmTestBool (evmLogEqual first second)))))))))))))))
+def evm_test_return : Bytes -> Bytes -> Bytes -> Bytes := fun (raw : Bytes) (offsetRaw : Bytes) (lengthRaw : Bytes) =>
+  case (hostIntParse offsetRaw) with | 0 (unit : prod ()) => b"error:bad int"
+  | 1 (offset : HostInt) => case (hostIntParse lengthRaw) with | 0 (unit : prod ()) => b"error:bad int"
+  | 1 (length : HostInt) => case (hostIntNonnegative offset) with | 0 (unit : prod ()) => b"error:negative offset"
+  | 1 (start : Nat) => case (hostIntNonnegative length) with | 0 (unit : prod ()) => b"error:negative length"
+  | 1 (count : Nat) => let data : ReturnData := returnDataValue raw in
+    let result : Bytes := case (returnDataRead data start count) with | 0 (unit : prod ()) => b"none" | 1 (bytes : Bytes) => bytesHex bytes in
+    append (decimal64 (returnDataSize data)) (append b":" (result))

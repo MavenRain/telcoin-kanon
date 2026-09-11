@@ -1,0 +1,38 @@
+def EvmStack : Type 0 := prod (Words, Nat)
+def stackEmpty : EvmStack := tuple (wordsNil, 0)
+def stackLength : EvmStack -> Nat := fun (stack : EvmStack) => stack.1
+def stackToList : EvmStack -> Words := fun (stack : EvmStack) => stack.0
+def stackOfList : Words -> ValueOption EvmStack := fun (words : Words) =>
+  let count : Nat := seqWordLength words in
+  case (natLt 1024 count) with | 1 (unit : prod ()) => valueNone EvmStack
+  | 0 (unit : prod ()) => valueSome EvmStack (tuple (words, count))
+def stackPush : U256 -> EvmStack -> sum (StackError, EvmStack) := fun (word : U256) (stack : EvmStack) =>
+  case (natLt stack.1 1024) with | 0 (unit : prod ()) => inj 0 of 2 stackOverflow
+  | 1 (unit : prod ()) => inj 1 of 2 (tuple (wordsCons word stack.0, natAdd stack.1 1))
+def stackPop : EvmStack -> sum (StackError, prod (U256, EvmStack)) := fun (stack : EvmStack) =>
+  match stack.0 as self in Words return sum (StackError, prod (U256, EvmStack)) with
+  | wordsNil => inj 0 of 2 stackUnderflow
+  | wordsCons head tail => inj 1 of 2 (tuple (head, tuple (tail, natSub stack.1 1)))
+def stackPop2 : EvmStack -> sum (StackError, prod (U256, U256, EvmStack)) := fun (stack : EvmStack) =>
+  case (stackPop stack) with | 0 (error : StackError) => inj 0 of 2 error
+  | 1 (first : prod (U256, EvmStack)) => case (stackPop first.1) with | 0 (error : StackError) => inj 0 of 2 error
+    | 1 (second : prod (U256, EvmStack)) => inj 1 of 2 (tuple (first.0, second.0, second.1))
+def stackPop3 : EvmStack -> sum (StackError, prod (U256, U256, U256, EvmStack)) := fun (stack : EvmStack) =>
+  case (stackPop2 stack) with | 0 (error : StackError) => inj 0 of 2 error
+  | 1 (first : prod (U256, U256, EvmStack)) => case (stackPop first.2) with | 0 (error : StackError) => inj 0 of 2 error
+    | 1 (last : prod (U256, EvmStack)) => inj 1 of 2 (tuple (first.0, first.1, last.0, last.1))
+def rec stackWordAt : Words -> Nat -> ValueOption U256 := fun (words : Words) (index : Nat) =>
+  match words as self in Words return ValueOption U256 with | wordsNil => valueNone U256
+  | wordsCons head tail => case (natEq index 0) with | 1 (unit : prod ()) => valueSome U256 head
+    | 0 (unit : prod ()) => stackWordAt tail (natSub index 1)
+def stackDup : StackDepth -> EvmStack -> sum (StackError, EvmStack) := fun (depth : StackDepth) (stack : EvmStack) =>
+  case (stackWordAt stack.0 (natSub (stackDepthNat depth) 1)) with | 0 (unit : prod ()) => inj 0 of 2 stackUnderflow
+  | 1 (word : U256) => stackPush word stack
+def rec stackReplace : Words -> Nat -> U256 -> Words := fun (words : Words) (index : Nat) (word : U256) =>
+  match words as self in Words return Words with | wordsNil => wordsNil
+  | wordsCons head tail => case (natEq index 0) with | 1 (unit : prod ()) => wordsCons word tail
+    | 0 (unit : prod ()) => wordsCons head (stackReplace tail (natSub index 1) word)
+def stackSwap : StackDepth -> EvmStack -> sum (StackError, EvmStack) := fun (depth : StackDepth) (stack : EvmStack) =>
+  match stack.0 as self in Words return sum (StackError, EvmStack) with | wordsNil => inj 0 of 2 stackUnderflow
+  | wordsCons head tail => case (stackWordAt tail (natSub (stackDepthNat depth) 1)) with | 0 (unit : prod ()) => inj 0 of 2 stackUnderflow
+    | 1 (word : U256) => inj 1 of 2 (tuple (wordsCons word (stackReplace tail (natSub (stackDepthNat depth) 1) head), stack.1))

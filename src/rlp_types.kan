@@ -1,0 +1,20 @@
+-- Canonical RLP bytes give recursive items a finite, unique representation.
+-- Constructors and the validating decoder are the admission boundary.
+mu RlpItem : Type 0 :=
+| rlpItemValue (encoding : Bytes) : RlpItem
+def rlpEncode : RlpItem -> Bytes := fun (item : RlpItem) => match item as self in RlpItem return Bytes with | rlpItemValue encoding => encoding
+mu RlpError : Type 0 :=
+| rlpInputTooShort : RlpError
+| rlpNonCanonicalSingleByte : RlpError
+| rlpNonCanonicalSize : RlpError
+| rlpLeadingZero : RlpError
+| rlpOverflow : RlpError
+| rlpTrailingBytes : RlpError
+def rlpErrorText : RlpError -> Bytes := fun (error : RlpError) => match error as self in RlpError return Bytes with
+  | rlpInputTooShort => b"input too short"
+  | rlpNonCanonicalSingleByte => b"non-canonical single byte"
+  | rlpNonCanonicalSize => b"non-canonical size"
+  | rlpLeadingZero => b"leading zero in length"
+  | rlpOverflow => b"length overflows a native int"
+  | rlpTrailingBytes => b"trailing bytes after item"
+def RlpHeader : Type 0 := prod (Bool, Nat, Nat)

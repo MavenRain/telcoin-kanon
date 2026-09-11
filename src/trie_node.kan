@@ -1,0 +1,19 @@
+mu TrieNode : Type 0 :=
+| trieEmpty : TrieNode
+| trieLeaf (path : Nibbles) (value : Bytes) : TrieNode
+| trieExtension (path : Nibbles) (child : Bytes) : TrieNode
+| trieBranch (children : TrieChildren) (value : ValueOption Bytes) : TrieNode
+def trieAbsent : Bytes := bytesCons 128 bytesNil
+def rec trieChildrenPayload : TrieChildren -> Bytes := fun (children : TrieChildren) => match children as self in TrieChildren return Bytes with
+  | trieChildrenNil => bytesNil | trieChildrenCons head tail =>
+    let child : Bytes := case head with | 0 (unit : prod ()) => trieAbsent | 1 (value : Bytes) => value in append child (trieChildrenPayload tail)
+def trieNodeEncode : TrieNode -> Bytes := fun (node : TrieNode) => match node as self in TrieNode return Bytes with
+  | trieEmpty => trieAbsent
+  | trieLeaf path value => rlpEncodeListPayload (append (rlpEncodeBytes (hexPrefixEncode path (natEq 0 0))) (rlpEncodeBytes value))
+  | trieExtension path child => rlpEncodeListPayload (append (rlpEncodeBytes (hexPrefixEncode path (natEq 0 1))) child)
+  | trieBranch children value =>
+    let ending : Bytes := case value with | 0 (unit : prod ()) => trieAbsent | 1 (bytes : Bytes) => rlpEncodeBytes bytes in
+    rlpEncodeListPayload (append (trieChildrenPayload children) ending)
+def trieEncodingRef : Bytes -> Bytes := fun (encoding : Bytes) => case (natLt (bytesLength encoding) 32) with
+  | 1 (unit : prod ()) => encoding | 0 (unit : prod ()) => bytesCons 160 (keccak256 encoding)
+def trieNodeToRef : TrieNode -> Bytes := fun (node : TrieNode) => trieEncodingRef (trieNodeEncode node)

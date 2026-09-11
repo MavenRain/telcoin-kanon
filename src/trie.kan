@@ -1,0 +1,75 @@
+mu TrieError : Type 0 :=
+| trieDuplicateKey (hex : Bytes) : TrieError
+def trieErrorText : TrieError -> Bytes := fun (error : TrieError) => match error as self in TrieError return Bytes with | trieDuplicateKey hex => append b"duplicate key: " hex
+-- Keccak256(0x80), checked against the pinned OCaml trie and Keccak modules.
+def trieEmptyRoot : Bytes := bytesCons 86 (bytesCons 232 (bytesCons 31 (bytesCons 23 (bytesCons 27 (bytesCons 204 (bytesCons 85 (bytesCons 166 (bytesCons 255 (bytesCons 131 (bytesCons 69 (bytesCons 230 (bytesCons 146 (bytesCons 192 (bytesCons 248 (bytesCons 110 (bytesCons 91 (bytesCons 72 (bytesCons 224 (bytesCons 27 (bytesCons 153 (bytesCons 108 (bytesCons 173 (bytesCons 192 (bytesCons 1 (bytesCons 98 (bytesCons 47 (bytesCons 181 (bytesCons 227 (bytesCons 99 (bytesCons 180 (bytesCons 33 (bytesNil))))))))))))))))))))))))))))))))
+def triePairCompare : prod (Nibbles, Bytes) -> prod (Nibbles, Bytes) -> Ordering := fun (a : prod (Nibbles, Bytes)) (b : prod (Nibbles, Bytes)) => nibblesCompare a.0 b.0
+def rec trieLastKey : TriePairs -> Nibbles -> Nibbles := fun (pairs : TriePairs) (fallback : Nibbles) => match pairs as self in TriePairs return Nibbles with
+  | triePairsNil => fallback | triePairsCons head tail => trieLastKey tail head.0
+def rec trieDigitGroup : TriePairs -> Nat -> Nat -> TriePairs := fun (pairs : TriePairs) (depth : Nat) (digit : Nat) => match pairs as self in TriePairs return TriePairs with
+  | triePairsNil => triePairsNil | triePairsCons head tail =>
+    let include : Bool := case (nibblesNthNat head.0 depth) with | 0 (unit : prod ()) => natEq 0 1 | 1 (n : Nat) => natEq n digit in
+    let rest : TriePairs := trieDigitGroup tail depth digit in
+    case include with | 0 (unit : prod ()) => rest | 1 (unit : prod ()) => triePairsCons head rest
+def rec trieExhaustedValue : TriePairs -> Nat -> ValueOption Bytes := fun (pairs : TriePairs) (depth : Nat) => match pairs as self in TriePairs return ValueOption Bytes with
+  | triePairsNil => valueNone Bytes | triePairsCons head tail => case (natEq (nibblesLength head.0) depth) with
+    | 1 (unit : prod ()) => valueSome Bytes head.1 | 0 (unit : prod ()) => trieExhaustedValue tail depth
+def rec trieLongestPath : TriePairs -> Bytes -> Bytes := fun (pairs : TriePairs) (longest : Bytes) => match pairs as self in TriePairs return Bytes with
+  | triePairsNil => longest | triePairsCons head tail =>
+    let next : Bytes := case (natLt (bytesLength longest) (nibblesLength head.0)) with
+      | 1 (unit : prod ()) => nibblesDigits head.0 | 0 (unit : prod ()) => longest in trieLongestPath tail next
+-- Every branch or extension increases depth. Longest-path length plus one is
+-- enough fuel for a leaf, including an empty key, on every recursive route.
+def rec trieBuild : Bytes -> Nat -> TriePairs -> TrieNode := fun (fuel : Bytes) (depth : Nat) (pairs : TriePairs) => match fuel as self in Bytes return TrieNode with
+  | bytesNil => trieEmpty
+  | bytesCons token restFuel => match pairs as self in TriePairs return TrieNode with
+    | triePairsNil => trieEmpty
+    | triePairsCons first tail => match tail as self in TriePairs return TrieNode with
+      | triePairsNil => trieLeaf (nibblesDropNat first.0 depth) first.1
+      | triePairsCons second rest =>
+        let common : Nat := nibblesCommonPrefixNat first.0 (trieLastKey tail first.0) depth in
+        case (natLt 0 common) with
+        | 1 (unit : prod ()) => trieExtension (nibblesSubNat first.0 depth common) (trieNodeToRef (trieBuild restFuel (natAdd depth common) pairs))
+        | 0 (unit : prod ()) =>
+          let built : prod (Nat, TrieChildren) := stepsFold (prod (Nat, TrieChildren)) steps32
+            (fun (state : prod (Nat, TrieChildren)) => boolNat (natEq state.0 16))
+            (fun (state : prod (Nat, TrieChildren)) => let group : TriePairs := trieDigitGroup pairs depth state.0 in
+              let child : ValueOption Bytes := match group as self in TriePairs return ValueOption Bytes with
+                | triePairsNil => valueNone Bytes | triePairsCons head tail => valueSome Bytes (trieNodeToRef (trieBuild restFuel (natAdd depth 1) group)) in
+              tuple (natAdd state.0 1, trieChildrenCons child state.1)) (tuple (0, trieChildrenNil)) in
+          trieBranch (seqTrieChildReverse built.1) (trieExhaustedValue pairs depth)
+def trieBuildPairs : Nat -> TriePairs -> TrieNode := fun (depth : Nat) (pairs : TriePairs) => trieBuild (bytesCons 0 (trieLongestPath pairs bytesNil)) depth pairs
+def rec trieFindDuplicate : TriePairs -> ValueOption Nibbles := fun (pairs : TriePairs) => match pairs as self in TriePairs return ValueOption Nibbles with
+  | triePairsNil => valueNone Nibbles | triePairsCons head tail => match tail as self in TriePairs return ValueOption Nibbles with
+    | triePairsNil => valueNone Nibbles | triePairsCons next rest => case (nibblesEqual head.0 next.0) with
+      | 1 (unit : prod ()) => valueSome Nibbles head.0 | 0 (unit : prod ()) => trieFindDuplicate tail
+def trieCheckUnique : TriePairs -> sum (TrieError, TriePairs) := fun (pairs : TriePairs) => case (trieFindDuplicate pairs) with
+  | 0 (unit : prod ()) => inj 1 of 2 pairs | 1 (path : Nibbles) => inj 0 of 2 (trieDuplicateKey (nibblesHex path))
+def trieHashSorted : TriePairs -> Bytes := fun (pairs : TriePairs) => match pairs as self in TriePairs return Bytes with
+  | triePairsNil => trieEmptyRoot | triePairsCons head tail => keccak256 (trieNodeEncode (trieBuildPairs 0 pairs))
+def trieHashPairs : TriePairs -> Bytes := fun (pairs : TriePairs) => trieHashSorted (seqTriePairSort triePairCompare pairs)
+def rec trieUnpackEntries : TrieEntries -> TriePairs := fun (entries : TrieEntries) => match entries as self in TrieEntries return TriePairs with
+  | trieEntriesNil => triePairsNil | trieEntriesCons head tail => triePairsCons (tuple (nibblesUnpack head.0, head.1)) (trieUnpackEntries tail)
+def trieRoot : TrieEntries -> sum (TrieError, Bytes) := fun (entries : TrieEntries) =>
+  case (trieCheckUnique (seqTriePairSort triePairCompare (trieUnpackEntries entries))) with
+  | 0 (error : TrieError) => inj 0 of 2 error | 1 (pairs : TriePairs) => inj 1 of 2 (trieHashSorted pairs)
+def rec trieSecureEntries : TrieEntries -> TrieEntries := fun (entries : TrieEntries) => match entries as self in TrieEntries return TrieEntries with
+  | trieEntriesNil => trieEntriesNil | trieEntriesCons head tail => trieEntriesCons (tuple (keccak256 head.0, head.1)) (trieSecureEntries tail)
+def trieSecureRoot : TrieEntries -> sum (TrieError, Bytes) := fun (entries : TrieEntries) => trieRoot (trieSecureEntries entries)
+def trieAdjustIndex : Nat -> Nat -> Nat := fun (index : Nat) (length : Nat) => case (natLt 127 index) with | 1 (unit : prod ()) => index
+  | 0 (unit : prod ()) => case (boolOr (natEq index 127) (natEq (natAdd index 1) length)) with | 1 (unit : prod ()) => 0 | 0 (unit : prod ()) => natAdd index 1
+def trieOrderedPairs : (Bytes -> Bytes) -> ByteStrings -> TriePairs := fun (wrap : Bytes -> Bytes) (items : ByteStrings) =>
+  let length : Nat := seqBytesLength items in
+  let final : prod (Nat, TriePairs) := stepsFold (prod (Nat, TriePairs)) steps64
+    (fun (state : prod (Nat, TriePairs)) => boolNat (natEq state.0 length))
+    (fun (state : prod (Nat, TriePairs)) => let index : Nat := trieAdjustIndex state.0 length in
+      let remaining : ByteStrings := (stepsFold (prod (Nat, ByteStrings)) steps64
+        (fun (scan : prod (Nat, ByteStrings)) => boolNat (natEq scan.0 index))
+        (fun (scan : prod (Nat, ByteStrings)) => tuple (natAdd scan.0 1, seqBytesOps.5 scan.1)) (tuple (0, items))).1 in
+      let value : Bytes := case (seqBytesOps.4 remaining) with | 0 (unit : prod ()) => bytesNil | 1 (bytes : Bytes) => bytes in
+      tuple (natAdd state.0 1, triePairsCons (tuple (nibblesUnpack (rlpEncodeNat (hostIntPositive index)), wrap value)) state.1))
+    (tuple (0, triePairsNil)) in seqTriePairReverse final.1
+def trieOrderedRoot : ByteStrings -> Bytes := fun (items : ByteStrings) => trieHashPairs (trieOrderedPairs (fun (value : Bytes) => value) items)
+def trieOrderedRlpRoot : ByteStrings -> Bytes := fun (items : ByteStrings) => trieHashPairs (trieOrderedPairs rlpEncodeBytes items)
+def trieAccountRlp : HostInt -> U256 -> Bytes -> Bytes -> Bytes := fun (nonce : HostInt) (balance : U256) (storageRoot : Bytes) (codeHash : Bytes) =>
+  rlpEncodeListPayload (append (rlpEncodeNat nonce) (append (rlpEncodeScalar (u256ToBeBytes balance)) (append (rlpEncodeBytes storageRoot) (rlpEncodeBytes codeHash))))

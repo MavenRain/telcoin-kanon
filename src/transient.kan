@@ -1,0 +1,19 @@
+def TransientStorage : Type 0 := TransientSlots
+def transientEmpty : TransientStorage := transientSlotsNil
+def transientGet : TransientStorage -> Address -> U256 -> U256 := fun (storage : TransientStorage) (address : Address) (slot : U256) =>
+  case (mapLookup (prod (Address, U256)) U256 TransientSlots seqTransientSlotOps addressSlotEqual (tuple (address, slot)) storage) with
+  | 0 (unit : prod ()) => u256Zero | 1 (value : U256) => value
+def transientSet : TransientStorage -> Address -> U256 -> U256 -> TransientStorage := fun (storage : TransientStorage) (address : Address) (slot : U256) (value : U256) =>
+  case (u256IsZero value) with
+  | 1 (unit : prod ()) => mapRemove (prod (Address, U256)) U256 TransientSlots seqTransientSlotOps addressSlotCompare (tuple (address, slot)) storage
+  | 0 (unit : prod ()) => mapAdd (prod (Address, U256)) U256 TransientSlots seqTransientSlotOps addressSlotCompare (tuple (address, slot)) value storage
+def transientLength : TransientStorage -> Nat := seqTransientSlotLength
+def transientIsEmpty : TransientStorage -> Bool := fun (storage : TransientStorage) => natEq (transientLength storage) 0
+def transientBindings : TransientStorage -> TransientSlots := fun (storage : TransientStorage) => storage
+def transientBindingCompare : prod (prod (Address, U256), U256) -> prod (prod (Address, U256), U256) -> Ordering :=
+  fun (a : prod (prod (Address, U256), U256)) (b : prod (prod (Address, U256), U256)) =>
+    match (addressSlotCompare a.0 b.0) as ordering in Ordering return Ordering with
+    | orderLess => orderLess | orderGreater => orderGreater | orderEqual => u256Compare a.1 b.1
+def transientEqual : TransientStorage -> TransientStorage -> Bool := fun (a : TransientStorage) (b : TransientStorage) =>
+  match (listCompare (prod (prod (Address, U256), U256)) TransientSlots seqTransientSlotOps transientBindingCompare a b) as ordering in Ordering return Bool with
+  | orderLess => natEq 0 1 | orderGreater => natEq 0 1 | orderEqual => natEq 0 0

@@ -8,11 +8,14 @@ codecs, generic nonempty operations, SplitMix64, ChaCha12, Keccak-256, scalar
 and digest types, simulation crypto, authorities and committees, batches,
 headers, votes, certificates, DAG and voting state, leader scheduling,
 sub-DAG commits, proposer and node composition, the deterministic simulator,
-consensus-chain execution and replay, U256 and account state. Protocol behavior runs in Kanon compiled to
-WasmGC. JavaScript transports bytes and supplies the CLI and test harness.
+consensus-chain execution and replay, U256 and account state. EVM primitives now
+include arithmetic, opcodes, stack, memory, access tracking, gas/refunds, code and
+data windows, transient storage and logs. RLP and Merkle-Patricia trie construction
+are also implemented. Protocol behavior runs in Kanon compiled to WasmGC.
+JavaScript transports bytes and supplies the CLI and test harness.
 
-The EVM, execution driver, production crypto, durability and networking
-remain. The source has 178 implementation modules
+The EVM interpreter, transaction execution and encoding, execution driver,
+production crypto, durability and networking remain. The source has 178 implementation modules
 across 25 libraries. [PORTING.md](PORTING.md) records module coverage and the
 next acceptance target. [VALIDATION.md](VALIDATION.md) records tested behavior.
 

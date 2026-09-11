@@ -1,5 +1,58 @@
 # Validation
 
+## Published consensus and state checkpoint
+
+Commit `b5ccc4228a10032b041e0fc0c904540b7263ff7f` passed all 101 test groups
+in a detached checkout, including the full production build and the simulator CLI
+comparisons. The sequential run took 1,760.6 seconds and exited 0. Generated-source
+checks also passed. GitHub `main` and `~/Documents/telcoin-kanon` were advanced to
+this commit after validation.
+
+The 65-export Wasm artifact has SHA-256
+`cd7add0c412a45473e1e244cf1d8ad3006fea7290abb02013ba0448623afcb98`.
+The captured suite is
+`/private/tmp/telcoin-kanon-validation-b5ccc42/.kanon-exec/run-DvMt1I`;
+generator checks are `run-vbQJca` in the same capture directory.
+This checkpoint covers consensus, simulation, the consensus execution store and
+account state. It does not claim a completed EVM, network or durable node port.
+
+New EVM arithmetic and opcode tests pass 1,522 OCaml comparisons in four groups,
+including signed constructor bounds and complete operand enumerations
+(`.kanon-exec/run-4nnptM`). Stack, memory, access tracking and gas tests pass 713
+comparisons in seven groups (`.kanon-exec/run-UmZCW2`). RLP passes 393 comparisons
+in three groups (`.kanon-exec/run-GA0Ivc`). These newer modules are being integrated
+after the published checkpoint.
+
+Code analysis and transient storage pass 203 comparisons in two groups
+(`.kanon-exec/run-eUgC8t`). Trie and nibble operations pass 423 comparisons in five
+groups, plus the explicit slice-overflow boundary assertion. The latest run also
+passed the three source-closure groups (`.kanon-exec/run-XlfWw9`). Logs and return data pass 108 comparisons in two
+groups (`.kanon-exec/run-yHNa9E`).
+
+RLP items retain canonical encoded bytes behind a nominal type. The validating
+decoder checks every nested item, and `rlpView` exposes string or child-item
+views. An explicit stack avoids host recursion limits during validation and
+preserves the source's error order when children cross their parent boundary.
+
+Nibble slices clamp the requested count before slicing. This intentionally
+avoids the source's unchecked `pos + len` overflow for a positive position and
+`len = max_int`, preserving its documented total-clamping behavior.
+
+The full production build exposed a generator type-grouping error for nested
+option elements. The collection generator now parenthesizes every applied element
+type in its optional-head signature. A regression case distinguishes an empty
+list, a stored absent child and a present child. Existing generated carriers are
+byte-identical to their pre-change versions.
+
+After that fix, the full production build passed with 65 public exports
+(`.kanon-exec/run-Sg0Bxg`). All 23 new EVM/RLP/trie groups passed across their
+scoped runs, totaling 3,362 OCaml comparisons. The original 101-group combined
+run remains the evidence for the preceding checkpoint; the expanded 124-group
+command has not yet been run as one invocation. Source inventory, generated
+collections/opcodes and staged whitespace checks passed as well.
+
+## Initial foundation audit
+
 Foundation audit: 2026-09-10. The audit and artifact hash below describe the
 initial foundation revision. Subsequent work is recorded at the end of this file.
 

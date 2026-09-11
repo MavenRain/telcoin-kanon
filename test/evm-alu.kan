@@ -1,0 +1,66 @@
+def evm_test_alu : Nat -> Bytes -> Bytes -> Bytes -> Bytes := fun (op : Nat) (aRaw : Bytes) (bRaw : Bytes) (nRaw : Bytes) =>
+  case (u256OfHex aRaw) with | 0 (unit : prod ()) => b"error:bad word"
+  | 1 (a : U256) => case (u256OfHex bRaw) with | 0 (unit : prod ()) => b"error:bad word"
+  | 1 (b : U256) => case (u256OfHex nRaw) with | 0 (unit : prod ()) => b"error:bad word"
+  | 1 (n : U256) =>
+    case (natEq op 1) with | 1 (unit : prod ()) => u256Hex (aluAdd a b)
+    | 0 (unit : prod ()) =>
+    case (natEq op 2) with | 1 (unit : prod ()) => u256Hex (aluMul a b)
+    | 0 (unit : prod ()) =>
+    case (natEq op 3) with | 1 (unit : prod ()) => u256Hex (aluSub a b)
+    | 0 (unit : prod ()) =>
+    case (natEq op 4) with | 1 (unit : prod ()) => u256Hex (aluDiv a b)
+    | 0 (unit : prod ()) =>
+    case (natEq op 5) with | 1 (unit : prod ()) => u256Hex (aluSdiv a b)
+    | 0 (unit : prod ()) =>
+    case (natEq op 6) with | 1 (unit : prod ()) => u256Hex (aluMod a b)
+    | 0 (unit : prod ()) =>
+    case (natEq op 7) with | 1 (unit : prod ()) => u256Hex (aluSmod a b)
+    | 0 (unit : prod ()) =>
+    case (natEq op 8) with | 1 (unit : prod ()) => u256Hex (aluAddmod a b n)
+    | 0 (unit : prod ()) =>
+    case (natEq op 9) with | 1 (unit : prod ()) => u256Hex (aluMulmod a b n)
+    | 0 (unit : prod ()) =>
+    case (natEq op 10) with | 1 (unit : prod ()) => u256Hex (aluExp a b)
+    | 0 (unit : prod ()) =>
+    case (natEq op 11) with | 1 (unit : prod ()) => u256Hex (aluSignextend a b)
+    | 0 (unit : prod ()) =>
+    case (natEq op 16) with | 1 (unit : prod ()) => u256Hex (aluLt a b)
+    | 0 (unit : prod ()) =>
+    case (natEq op 17) with | 1 (unit : prod ()) => u256Hex (aluGt a b)
+    | 0 (unit : prod ()) =>
+    case (natEq op 18) with | 1 (unit : prod ()) => u256Hex (aluSlt a b)
+    | 0 (unit : prod ()) =>
+    case (natEq op 19) with | 1 (unit : prod ()) => u256Hex (aluSgt a b)
+    | 0 (unit : prod ()) =>
+    case (natEq op 20) with | 1 (unit : prod ()) => u256Hex (aluEq a b)
+    | 0 (unit : prod ()) =>
+    case (natEq op 21) with | 1 (unit : prod ()) => u256Hex (aluIszero a)
+    | 0 (unit : prod ()) =>
+    case (natEq op 22) with | 1 (unit : prod ()) => u256Hex (aluAnd a b)
+    | 0 (unit : prod ()) =>
+    case (natEq op 23) with | 1 (unit : prod ()) => u256Hex (aluOr a b)
+    | 0 (unit : prod ()) =>
+    case (natEq op 24) with | 1 (unit : prod ()) => u256Hex (aluXor a b)
+    | 0 (unit : prod ()) =>
+    case (natEq op 25) with | 1 (unit : prod ()) => u256Hex (aluNot a)
+    | 0 (unit : prod ()) =>
+    case (natEq op 26) with | 1 (unit : prod ()) => u256Hex (aluByte a b)
+    | 0 (unit : prod ()) =>
+    case (natEq op 27) with | 1 (unit : prod ()) => u256Hex (aluShl a b)
+    | 0 (unit : prod ()) =>
+    case (natEq op 28) with | 1 (unit : prod ()) => u256Hex (aluShr a b)
+    | 0 (unit : prod ()) =>
+    case (natEq op 29) with | 1 (unit : prod ()) => u256Hex (aluSar a b)
+    | 0 (unit : prod ()) =>
+    b"error:bad op"
+def evm_test_opcode : Nat -> Bytes := fun (byte : Nat) => case (opcodeDecode byte) with
+  | 0 (unit : prod ()) => b"none"
+  | 1 (op : Opcode) => append (opcodeName op) (append b":" (append (decimal64 (opcodeEncode op)) (append b":" (decimal64 (opcodeImmediateBytes op)))))
+def evm_test_enum : Bytes -> Bytes := fun (raw : Bytes) => case (hostIntParse raw) with | 0 (unit : prod ()) => b"error:bad int"
+  | 1 (value : HostInt) =>
+    let depth : Bytes := case (stackDepthOfHostInt value) with | 0 (unit : prod ()) => b"none" | 1 (d : StackDepth) => decimal64 (stackDepthNat d) in
+    let width : Bytes := case (pushBytesOfHostInt value) with | 0 (unit : prod ()) => b"none" | 1 (d : PushBytes) => decimal64 (pushBytesNat d) in
+    let topics : Bytes := case (topicCountOfHostInt value) with | 0 (unit : prod ()) => b"none" | 1 (d : TopicCount) => decimal64 (topicCountNat d) in
+    let opcode : Bytes := case (opcodeDecodeHostInt value) with | 0 (unit : prod ()) => b"none" | 1 (op : Opcode) => opcodeName op in
+    append (depth) (append b":" (append (width) (append b":" (append (topics) (append b":" (append (opcode) (append b":" (append (seqStackDepthOps.6 (fun (d : StackDepth) => append (decimal64 (stackDepthNat d)) b",") stackDepthAll) (append b":" (append (seqPushWidthOps.6 (fun (d : PushBytes) => append (decimal64 (pushBytesNat d)) b",") pushBytesAll) (append b":" (seqTopicCountOps.6 (fun (d : TopicCount) => append (decimal64 (topicCountNat d)) b",") topicCountAll))))))))))))

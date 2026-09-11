@@ -1,0 +1,40 @@
+-- Sparse byte memory keeps paid extent independently from nonzero contents.
+def EvmMemory : Type 0 := prod (Nat, MemoryCells)
+def memoryEmpty : EvmMemory := tuple (0, memoryCellsNil)
+def memoryWordSize : Nat := 32
+def memoryMaxExtent : Nat := 4294967296
+def memoryWords : EvmMemory -> Nat := fun (memory : EvmMemory) => memory.0
+def memorySizeBytes : EvmMemory -> Nat := fun (memory : EvmMemory) => natMul memory.0 memoryWordSize
+def memoryWordsNeeded : HostInt -> HostInt -> ValueOption Nat := fun (offset : HostInt) (length : HostInt) =>
+  case (hostIntEqual length (hostIntPositive 0)) with | 1 (unit : prod ()) => valueSome Nat 0
+  | 0 (unit : prod ()) => case (hostIntNonnegative offset) with | 0 (unit : prod ()) => valueNone Nat
+  | 1 (start : Nat) => case (hostIntNonnegative length) with | 0 (unit : prod ()) => valueNone Nat
+  | 1 (count : Nat) => let extent : Nat := natAdd start count in
+    case (natLt memoryMaxExtent extent) with | 1 (unit : prod ()) => valueNone Nat
+    | 0 (unit : prod ()) => valueSome Nat (divQuotient (divide64 (natAdd extent 31) 32))
+def memoryExpand : Nat -> EvmMemory -> EvmMemory := fun (words : Nat) (memory : EvmMemory) => tuple (maxNat words memory.0, memory.1)
+def memoryByteAt : EvmMemory -> HostInt -> Nat := fun (memory : EvmMemory) (offset : HostInt) =>
+  case (mapLookup HostInt Nat MemoryCells seqMemoryCellOps hostIntEqual offset memory.1) with
+  | 0 (unit : prod ()) => 0 | 1 (byte : Nat) => byte
+def memorySetByte : EvmMemory -> HostInt -> Nat -> EvmMemory := fun (memory : EvmMemory) (offset : HostInt) (byte : Nat) =>
+  let cells : MemoryCells := case (natEq byte 0) with
+    | 1 (unit : prod ()) => mapRemove HostInt Nat MemoryCells seqMemoryCellOps hostIntCompare offset memory.1
+    | 0 (unit : prod ()) => mapAdd HostInt Nat MemoryCells seqMemoryCellOps hostIntCompare offset byte memory.1 in tuple (memory.0, cells)
+def memoryStoreByte : EvmMemory -> HostInt -> HostInt -> EvmMemory := fun (memory : EvmMemory) (offset : HostInt) (value : HostInt) =>
+  memorySetByte memory offset (remainder64 (hostIntBits value) 256)
+def rec memoryStoreBytes : EvmMemory -> HostInt -> Bytes -> EvmMemory := fun (memory : EvmMemory) (offset : HostInt) (bytes : Bytes) =>
+  match bytes as self in Bytes return EvmMemory with | bytesNil => memory
+  | bytesCons byte tail => memoryStoreBytes (memorySetByte memory offset byte) (hostIntAdd offset (hostIntPositive 1)) tail
+def memorySlice : EvmMemory -> HostInt -> Nat -> Bytes := fun (memory : EvmMemory) (offset : HostInt) (length : Nat) =>
+  let result : prod (Nat, HostInt, Bytes) := stepsFold (prod (Nat, HostInt, Bytes)) steps64
+    (fun (state : prod (Nat, HostInt, Bytes)) => boolNat (natEq state.0 length))
+    (fun (state : prod (Nat, HostInt, Bytes)) => tuple (natAdd state.0 1, hostIntAdd state.1 (hostIntPositive 1), bytesCons (memoryByteAt memory state.1) state.2))
+    (tuple (0, offset, bytesNil)) in reverse result.2
+def memoryLoadWord : EvmMemory -> HostInt -> U256 := fun (memory : EvmMemory) (offset : HostInt) => u256Value (u256ReadBe (memorySlice memory offset 32) 0)
+def memoryStoreWord : EvmMemory -> HostInt -> U256 -> EvmMemory := fun (memory : EvmMemory) (offset : HostInt) (word : U256) => memoryStoreBytes memory offset (u256ToBeBytes word)
+def memoryCellCompare : prod (HostInt, Nat) -> prod (HostInt, Nat) -> Ordering := fun (a : prod (HostInt, Nat)) (b : prod (HostInt, Nat)) =>
+  match (hostIntCompare a.0 b.0) as ordering in Ordering return Ordering with
+  | orderLess => orderLess | orderGreater => orderGreater | orderEqual => natOrdering a.1 b.1
+def memoryEqual : EvmMemory -> EvmMemory -> Bool := fun (a : EvmMemory) (b : EvmMemory) =>
+  let cellsEqual : Bool := match (listCompare (prod (HostInt, Nat)) MemoryCells seqMemoryCellOps memoryCellCompare a.1 b.1) as ordering in Ordering return Bool with
+    | orderLess => natEq 0 1 | orderGreater => natEq 0 1 | orderEqual => natEq 0 0 in boolAnd (natEq a.0 b.0) cellsEqual

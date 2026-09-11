@@ -1,0 +1,53 @@
+mu Nibbles : Type 0 :=
+| nibblesValue (digits : Bytes) : Nibbles
+def nibblesDigits : Nibbles -> Bytes := fun (path : Nibbles) => match path as self in Nibbles return Bytes with | nibblesValue digits => digits
+def nibblesLength : Nibbles -> Nat := fun (path : Nibbles) => bytesLength (nibblesDigits path)
+def rec nibblesUnpackBytes : Bytes -> Bytes := fun (bytes : Bytes) => match bytes as self in Bytes return Bytes with
+  | bytesNil => bytesNil | bytesCons head tail => let parts : DivResult := divide64 head 16 in
+    bytesCons (divQuotient parts) (bytesCons (divRemainder parts) (nibblesUnpackBytes tail))
+def nibblesUnpack : Bytes -> Nibbles := fun (bytes : Bytes) => nibblesValue (nibblesUnpackBytes bytes)
+def rec nibblesOfIntDigits : HostInts -> Bytes := fun (values : HostInts) => match values as self in HostInts return Bytes with
+  | hostIntsNil => bytesNil | hostIntsCons head tail => bytesCons (remainder64 (hostIntBits head) 16) (nibblesOfIntDigits tail)
+def nibblesOfInts : HostInts -> Nibbles := fun (values : HostInts) => nibblesValue (nibblesOfIntDigits values)
+def nibblesNthNat : Nibbles -> Nat -> ValueOption Nat := fun (path : Nibbles) (index : Nat) =>
+  match (drop (nibblesDigits path) index) as self in Bytes return ValueOption Nat with | bytesNil => valueNone Nat | bytesCons head tail => valueSome Nat head
+def nibblesNth : Nibbles -> HostInt -> ValueOption Nat := fun (path : Nibbles) (index : HostInt) => match index as self in HostInt return ValueOption Nat with
+  | hostIntNegative n => valueNone Nat | hostIntPositive n => nibblesNthNat path n
+def nibblesSubNat : Nibbles -> Nat -> Nat -> Nibbles := fun (path : Nibbles) (start : Nat) (count : Nat) => nibblesValue (take count (drop (nibblesDigits path) start))
+def nibblesSub : Nibbles -> HostInt -> HostInt -> Nibbles := fun (path : Nibbles) (start : HostInt) (count : HostInt) =>
+  nibblesSubNat path (hostIntClampZero start) (hostIntClampZero count)
+def nibblesDropNat : Nibbles -> Nat -> Nibbles := fun (path : Nibbles) (start : Nat) => nibblesValue (drop (nibblesDigits path) start)
+def nibblesDrop : Nibbles -> HostInt -> Nibbles := fun (path : Nibbles) (start : HostInt) =>
+  nibblesSub path start (hostIntSub (hostIntPositive (nibblesLength path)) start)
+def rec nibblesPackDigits : Bytes -> Bytes := fun (digits : Bytes) => match digits as self in Bytes return Bytes with
+  | bytesNil => bytesNil | bytesCons high tail => match tail as self in Bytes return Bytes with
+    | bytesNil => bytesCons (natMul high 16) bytesNil | bytesCons low rest => bytesCons (natAdd (natMul high 16) low) (nibblesPackDigits rest)
+def nibblesPack : Nibbles -> Bytes := fun (path : Nibbles) => nibblesPackDigits (nibblesDigits path)
+def rec nibblesCommonDigits : Bytes -> Bytes -> Nat -> Nat := fun (a : Bytes) (b : Bytes) (count : Nat) => match a as self in Bytes return Nat with
+  | bytesNil => count | bytesCons x xs => match b as self in Bytes return Nat with | bytesNil => count
+    | bytesCons y ys => case (natEq x y) with | 0 (unit : prod ()) => count | 1 (unit : prod ()) => nibblesCommonDigits xs ys (natAdd count 1)
+def nibblesCommonPrefixNat : Nibbles -> Nibbles -> Nat -> Nat := fun (a : Nibbles) (b : Nibbles) (start : Nat) =>
+  nibblesCommonDigits (drop (nibblesDigits a) start) (drop (nibblesDigits b) start) 0
+def nibblesCommonPrefix : Nibbles -> Nibbles -> HostInt -> Nat := fun (a : Nibbles) (b : Nibbles) (start : HostInt) => nibblesCommonPrefixNat a b (hostIntClampZero start)
+def nibblesCompare : Nibbles -> Nibbles -> Ordering := fun (a : Nibbles) (b : Nibbles) => bytesOrdering (nibblesDigits a) (nibblesDigits b)
+def nibblesEqual : Nibbles -> Nibbles -> Bool := fun (a : Nibbles) (b : Nibbles) => bytesEqual (nibblesDigits a) (nibblesDigits b)
+def rec nibblesHexDigits : Bytes -> Bytes := fun (digits : Bytes) => match digits as self in Bytes return Bytes with
+  | bytesNil => bytesNil | bytesCons head tail => let ascii : Nat := case (natLt head 10) with | 1 (unit : prod ()) => natAdd head 48 | 0 (unit : prod ()) => natAdd head 87 in
+    bytesCons ascii (nibblesHexDigits tail)
+def nibblesHex : Nibbles -> Bytes := fun (path : Nibbles) => nibblesHexDigits (nibblesDigits path)
+mu HexPrefixError : Type 0 :=
+| hexPrefixEmptyInput : HexPrefixError
+def hexPrefixErrorText : HexPrefixError -> Bytes := fun (error : HexPrefixError) => match error as self in HexPrefixError return Bytes with
+  | hexPrefixEmptyInput => b"hex-prefix decode of empty input"
+def hexPrefixEncode : Nibbles -> Bool -> Bytes := fun (path : Nibbles) (isLeaf : Bool) =>
+  let odd : Nat := remainder64 (nibblesLength path) 2 in let flag : Nat := natAdd (natMul (boolNat isLeaf) 32) (natMul odd 16) in
+  let first : Nat := case (nibblesNthNat path 0) with | 0 (unit : prod ()) => 0 | 1 (n : Nat) => n in
+  bytesCons (natAdd flag (natMul odd first)) (nibblesPack (nibblesDropNat path odd))
+def hexPrefixDecode : Bytes -> sum (HexPrefixError, prod (Nibbles, Bool)) := fun (bytes : Bytes) => match bytes as self in Bytes return sum (HexPrefixError, prod (Nibbles, Bool)) with
+  | bytesNil => inj 0 of 2 hexPrefixEmptyInput
+  | bytesCons flag tail =>
+    let isLeaf : Bool := natEq (remainder64 (divQuotient (divide64 flag 32)) 2) 1 in
+    let odd : Bool := natEq (remainder64 (divQuotient (divide64 flag 16)) 2) 1 in
+    let digits : Bytes := nibblesUnpackBytes tail in
+    let path : Bytes := case odd with | 0 (unit : prod ()) => digits | 1 (unit : prod ()) => bytesCons (remainder64 flag 16) digits in
+    inj 1 of 2 (tuple (nibblesValue path, isLeaf))

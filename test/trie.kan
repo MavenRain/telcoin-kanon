@@ -1,0 +1,40 @@
+def trie_test_nibbles : Bytes -> Bytes -> Bytes -> Bytes -> Bytes := fun (aRaw : Bytes) (bRaw : Bytes) (startRaw : Bytes) (lengthRaw : Bytes) =>
+  case (hostIntParse startRaw) with | 0 (unit : prod ()) => b"error:bad int"
+  | 1 (start : HostInt) => case (hostIntParse lengthRaw) with | 0 (unit : prod ()) => b"error:bad int"
+  | 1 (length : HostInt) => let a : Nibbles := nibblesUnpack aRaw in let b : Nibbles := nibblesUnpack bRaw in
+    let order : Bytes := match (nibblesCompare a b) as ordering in Ordering return Bytes with | orderLess => b"-1" | orderEqual => b"0" | orderGreater => b"1" in
+    append (nibblesHex a) (append b":" (append (bytesHex (nibblesPack a)) (append b":" (append (evmTestNatOption (nibblesNth a start)) (append b":" (append (nibblesHex (nibblesSub a start length)) (append b":" (append (nibblesHex (nibblesDrop a start)) (append b":" (append (decimal64 (nibblesCommonPrefix a b start)) (append b":" (order))))))))))))
+def rec trieTestParseInts : ByteStrings -> ValueOption HostInts := fun (values : ByteStrings) => match values as self in ByteStrings return ValueOption HostInts with
+  | byteStringsNil => valueSome HostInts hostIntsNil
+  | byteStringsCons head tail => case (hostIntParse head) with | 0 (unit : prod ()) => valueNone HostInts
+    | 1 (n : HostInt) => case (trieTestParseInts tail) with | 0 (unit : prod ()) => valueNone HostInts
+      | 1 (rest : HostInts) => valueSome HostInts (hostIntsCons n rest)
+def trie_test_mask : Bytes -> Bytes := fun (raw : Bytes) =>
+  case (codecDecode ByteStrings (codecList Bytes ByteStrings seqBytesOps codecBytes) raw) with | 0 (error : BcsError) => b"error:bad fixture"
+  | 1 (decoded : prod (ByteStrings, BcsReader)) => case (trieTestParseInts decoded.0) with | 0 (unit : prod ()) => b"error:bad int"
+    | 1 (values : HostInts) => let path : Nibbles := nibblesOfInts values in append (nibblesHex path) (append b":" (append (bytesHex (nibblesPack path)) (append b":" (append (bytesHex (hexPrefixEncode path (natEq 0 0))) (append b":" (bytesHex (hexPrefixEncode path (natEq 0 1))))))))
+def trie_test_prefix : Bytes -> Bytes := fun (raw : Bytes) => case (hexPrefixDecode raw) with | 0 (error : HexPrefixError) => hexPrefixErrorText error
+  | 1 (result : prod (Nibbles, Bool)) => append (nibblesHex result.0) (append b":" (append (evmTestBool result.1) (append b":" (bytesHex (hexPrefixEncode result.0 result.1)))))
+def trie_test_node : Bytes -> Bytes -> Bytes := fun (pathRaw : Bytes) (value : Bytes) =>
+  let path : Nibbles := nibblesUnpack pathRaw in let leaf : TrieNode := trieLeaf path value in
+  let extension : TrieNode := trieExtension path (trieNodeToRef leaf) in
+  let branch : TrieNode := trieBranch (trieChildrenCons (valueSome Bytes (trieNodeToRef leaf)) (trieChildrenCons (valueNone Bytes) trieChildrenNil)) (valueSome Bytes value) in
+  append (bytesHex (trieNodeEncode leaf)) (append b":" (append (bytesHex (trieNodeToRef leaf)) (append b":" (append (bytesHex (trieNodeEncode extension)) (append b":" (bytesHex (trieNodeEncode branch)))))))
+def trie_test_child_options : Nat -> Bytes := fun (mode : Nat) =>
+  let children : TrieChildren := case (natEq mode 0) with | 1 (unit : prod ()) => trieChildrenNil
+    | 0 (unit : prod ()) => case (natEq mode 1) with | 1 (unit : prod ()) => trieChildrenCons (valueNone Bytes) trieChildrenNil
+      | 0 (unit : prod ()) => trieChildrenCons (valueSome Bytes trieAbsent) trieChildrenNil in
+  case (seqTrieChildHead children) with | 0 (unit : prod ()) => b"empty"
+  | 1 (child : ValueOption Bytes) => case child with | 0 (unit : prod ()) => b"absent" | 1 (bytes : Bytes) => append b"present:" (bytesHex bytes)
+def trie_test_root : Bytes -> Nat -> Bytes := fun (raw : Bytes) (secure : Nat) =>
+  case (codecDecode TrieEntries (codecList (prod (Bytes, Bytes)) TrieEntries seqTrieEntryOps (codecPair Bytes Bytes codecBytes codecBytes)) raw) with
+  | 0 (error : BcsError) => b"error:bad fixture" | 1 (decoded : prod (TrieEntries, BcsReader)) =>
+    let result : sum (TrieError, Bytes) := case (natEq secure 1) with | 1 (unit : prod ()) => trieSecureRoot decoded.0 | 0 (unit : prod ()) => trieRoot decoded.0 in
+    case result with | 0 (error : TrieError) => trieErrorText error | 1 (root : Bytes) => bytesHex root
+def trie_test_ordered : Bytes -> Bytes := fun (raw : Bytes) => case (codecDecode ByteStrings (codecList Bytes ByteStrings seqBytesOps codecBytes) raw) with
+  | 0 (error : BcsError) => b"error:bad fixture" | 1 (decoded : prod (ByteStrings, BcsReader)) =>
+    append (bytesHex (trieOrderedRoot decoded.0)) (append b":" (bytesHex (trieOrderedRlpRoot decoded.0)))
+def trie_test_account : Bytes -> Bytes -> Bytes -> Bytes -> Bytes := fun (nonceRaw : Bytes) (balanceRaw : Bytes) (storageRoot : Bytes) (codeHash : Bytes) =>
+  case (hostIntParse nonceRaw) with | 0 (unit : prod ()) => b"error:bad int"
+  | 1 (nonce : HostInt) => case (u256OfHex balanceRaw) with | 0 (unit : prod ()) => b"error:bad word"
+    | 1 (balance : U256) => bytesHex (trieAccountRlp nonce balance storageRoot codeHash)

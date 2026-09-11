@@ -1,0 +1,9 @@
+def LogJournal : Type 0 := EvmLogs
+def logJournalEmpty : LogJournal := evmLogsNil
+def logJournalAppend : LogJournal -> EvmLog -> LogJournal := fun (journal : LogJournal) (entry : EvmLog) => evmLogsCons entry journal
+def logJournalToList : LogJournal -> EvmLogs := seqEvmLogReverse
+def logJournalLength : LogJournal -> Nat := seqEvmLogLength
+def rec logJournalEqual : LogJournal -> LogJournal -> Bool := fun (a : LogJournal) (b : LogJournal) => match a as self in EvmLogs return Bool with
+  | evmLogsNil => (match b as self in EvmLogs return Bool with | evmLogsNil => natEq 0 0 | evmLogsCons head tail => natEq 0 1)
+  | evmLogsCons head tail => match b as self in EvmLogs return Bool with | evmLogsNil => natEq 0 1
+    | evmLogsCons other rest => boolAnd (evmLogEqual head other) (logJournalEqual tail rest)

@@ -1,0 +1,16 @@
+def rlp_test_encode : Bytes -> Bytes := fun (bytes : Bytes) =>
+  let nested : RlpItem := rlpList (rlpItemsCons (rlpString bytes) (rlpItemsCons (rlpList (rlpItemsCons (rlpString b"") rlpItemsNil)) rlpItemsNil)) in
+  append (bytesHex (rlpEncodeBytes bytes)) (append b":" (append (bytesHex (rlpEncodeScalar bytes)) (append b":" (bytesHex (rlpEncode nested)))))
+def rlp_test_nat : Bytes -> Bytes := fun (text : Bytes) => case (hostIntParse text) with | 0 (unit : prod ()) => b"error:bad int"
+  | 1 (n : HostInt) => append (bytesHex (rlpEncodeNat n)) (append b":" (append (bytesHex (rlpBigEndian n)) (append b":" (decimal64 (rlpLengthOfLength n)))))
+def rec rlpTestChildren : RlpItems -> Bytes := fun (items : RlpItems) => match items as self in RlpItems return Bytes with
+  | rlpItemsNil => b"" | rlpItemsCons head tail => append (bytesHex (rlpEncode head)) (append b"," (rlpTestChildren tail))
+def rlpTestItem : RlpItem -> Bytes := fun (item : RlpItem) => case (rlpView item) with | 0 (error : RlpError) => rlpErrorText error
+  | 1 (view : sum (Bytes, RlpItems)) => case view with | 0 (bytes : Bytes) => append b"s:" (bytesHex bytes)
+    | 1 (items : RlpItems) => append b"l:" (rlpTestChildren items)
+def rlp_test_decode : Bytes -> Nat -> Bytes := fun (bytes : Bytes) (exact : Nat) => case (natEq exact 1) with
+  | 1 (unit : prod ()) =>
+    (case (rlpDecodeExact bytes) with | 0 (error : RlpError) => rlpErrorText error
+    | 1 (item : RlpItem) => append (bytesHex (rlpEncode item)) (append b":" (rlpTestItem item)))
+  | 0 (unit : prod ()) => case (rlpDecode bytes) with | 0 (error : RlpError) => rlpErrorText error
+    | 1 (result : prod (RlpItem, Bytes)) => append (bytesHex (rlpEncode result.0)) (append b":" (append (bytesHex result.1) (append b":" (rlpTestItem result.0))))

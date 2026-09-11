@@ -47,6 +47,27 @@ const coverage = {
   'lib/state/u256.ml': 'Ported: full 256-bit arithmetic, wide modular operations, bitwise logic, shifts and constructors, src/u256.kan; 454 OCaml rows and BigInt checks',
   ...Object.fromEntries(['nonce', 'bytecode', 'delegation', 'storage', 'account', 'genesis_account', 'world_state', 'transfer', 'address_word']
     .map(name => [`lib/state/${name}.ml`, 'Ported: canonical account state and transitions, src/state_types.kan and src/state.kan; 42 OCaml differential rows'])),
+  'lib/evm/alu.ml': 'Ported: unsigned and signed arithmetic, wide modular operations, shifts, BYTE and SIGNEXTEND, src/alu.kan; OCaml and BigInt comparisons',
+  'lib/evm/opcode.ml': 'Ported: every assigned byte and operand family, names, immediate widths and static costs, src/opcode.kan; generated table and all-byte OCaml comparisons',
+  'lib/evm/depth.ml': 'Ported: bounded stack depths, signed admission and enumeration, src/evm_types.kan and src/evm_enums.kan',
+  'lib/evm/topic_count.ml': 'Ported: five topic-count constructors, signed admission and enumeration, src/evm_types.kan and src/evm_enums.kan',
+  'lib/evm/stack.ml': 'Ported: bounded immutable stack, atomic pops, DUP and SWAP, src/evm_stack.kan; boundary comparisons against OCaml',
+  'lib/evm/access.ml': 'Ported: canonical account and address/slot warmth, src/access.kan; OCaml transition comparisons',
+  'lib/evm/sstore_state.ml': 'Ported: original, present and updated storage classification, src/evm_types.kan; all transition classes compared with OCaml',
+  'lib/evm/refund.ml': 'Ported: signed 63-bit refund accumulation with exact wraparound, src/host_int_ops.kan; OCaml boundary comparisons',
+  'lib/evm/gas.ml': 'Ported: static and dynamic costs, checked memory/log pricing, SSTORE refunds, CALL/CREATE caps and stipend, src/gas.kan; OCaml boundary comparisons',
+  'lib/evm/memory.ml': 'Ported for checked extents: sparse byte memory, signed index wrapping, word IO and zero erasure, src/evm_memory.kan; OCaml comparisons',
+  'lib/evm/data.ml': 'Ported: zero-extended data windows and saturated U256 offsets, src/evm_data.kan; OCaml comparisons',
+  'lib/evm/code.ml': 'Ported: instruction analysis, PUSH skipping and jump destinations, src/evm_data.kan; OCaml comparisons',
+  'lib/evm/transient.ml': 'Ported: canonical transaction-scoped storage keyed by address and slot, src/transient.kan; OCaml comparisons',
+  'lib/evm/return_data.ml': 'Ported: strict copy bounds including zero-length windows, src/evm_log.kan; OCaml comparisons',
+  'lib/evm/log.ml': 'Ported: typed topic arities, generic atomic collection, log values and rendering, src/evm_log.kan; OCaml comparisons',
+  'lib/evm/log_journal.ml': 'Ported: immutable journal with emission-order projection, src/log_journal.kan; OCaml comparisons',
+  'lib/rlp/rlp.ml': 'Ported: canonical encoding, recursive-item views and iterative validating decode with exact errors, src/rlp.kan; 393 OCaml comparisons',
+  'lib/trie/nibbles.ml': 'Ported with slice-overflow correction: nibble operations, clamping and packing, src/nibbles.kan; OCaml comparisons and explicit boundary check',
+  'lib/trie/hex_prefix.ml': 'Ported: compact nibble paths and source-permissive flag decoding, src/nibbles.kan; all flag bytes compared with OCaml',
+  'lib/trie/node.ml': 'Ported: node RLP and exact inline/hash child rule, src/trie_node.kan; OCaml comparisons at the 32-byte boundary',
+  'lib/trie/trie.ml': 'Ported: sorted construction, duplicate rejection, raw/secure/ordered roots and account RLP, src/trie.kan; OCaml roots and index-boundary comparisons',
 };
 const text = `# Port roadmap and source map
 
@@ -64,8 +85,8 @@ not a claim of complete module parity.
 | 1 | Complete tn_std, tn_codec and tn_types. Add general codecs, scalars, SplitMix64, digests, authorities, committees, batches and anchors. Match vectors and constructor rejections. | Value and codec behavior tested. General Round/Authority Map/Set APIs remain. |
 | 2 | Port tn_vertex and tn_consensus pure state machines, plus deterministic tn_sim and the CLI. Compare complete seeded output transcripts. | Consensus, node composition, seeded simulator and public simulator CLI tested within the configuration bounds recorded below. |
 | 3 | Timing, consensus recovery and tn_execution. Compare durable-before-action transitions, restart transcripts and consensus-chain hashes. | Pure execution, replay, reference store and consensus recovery tested. Durable shells remain. |
-| 4 | tn_state and EVM ALU/interpreter, then environment, access/refund, storage, calls, creation and transaction execution. Preserve full U256 arithmetic, gas, rollback and fork-specific outcomes. | U256 and account state tested. EVM remains. |
-| 5 | RLP, Keccak, trie/state roots, transaction envelopes, signatures and source-supported precompiles. Reuse existing golden fixtures; compare acceptance, output, gas and errors separately. | Planned |
+| 4 | tn_state and EVM ALU/interpreter, then environment, access/refund, storage, calls, creation and transaction execution. Preserve full U256 arithmetic, gas, rollback and fork-specific outcomes. | Account state, ALU, opcodes, stack, memory, access/refunds, gas, data windows, transient storage and logs tested. Interpreter and transaction execution remain. |
+| 5 | RLP, Keccak, trie/state roots, transaction envelopes, signatures and source-supported precompiles. Reuse existing golden fixtures; compare acceptance, output, gas and errors separately. | RLP, Keccak and trie construction tested. State-root integration, envelopes, signatures and precompiles remain. |
 | 6 | Batch validation, executed blocks, engine, driver, registry and epoch transitions. Compare complete committed/executed output and checkpoint consistency. | Planned |
 | 7 | Durable file framing, logs, locks and checkpoints. Audit the host's fsync, atomic replacement, locking and recovery guarantees before porting the IO shell. Test interrupted writes and restart behavior. | Planned |
 | 8 | tn_network and Snappy pure codecs through chunk 44, then integrate source-supported crypto implementations and shells. Compare wire vectors, canonicality, corruption and size-limit cases. | Planned |

@@ -1,0 +1,29 @@
+-- OCaml's signed 63-bit machine integers, with explicit wraparound.
+def hostIntModulus : Nat := 9223372036854775808
+def hostIntBits : HostInt -> Nat := fun (value : HostInt) => match value as self in HostInt return Nat with
+  | hostIntPositive n => n | hostIntNegative n => natSub hostIntModulus n
+def hostIntFromBits : Nat -> HostInt := fun (bits : Nat) =>
+  let n : Nat := divRemainder (divide256 bits hostIntModulus) in
+  case (natLt hostIntMax n) with | 0 (unit : prod ()) => hostIntPositive n
+  | 1 (unit : prod ()) => hostIntNegative (natSub hostIntModulus n)
+def hostIntAdd : HostInt -> HostInt -> HostInt := fun (a : HostInt) (b : HostInt) => hostIntFromBits (natAdd (hostIntBits a) (hostIntBits b))
+def hostIntSub : HostInt -> HostInt -> HostInt := fun (a : HostInt) (b : HostInt) => hostIntFromBits (natSub (natAdd (hostIntBits a) hostIntModulus) (hostIntBits b))
+def hostIntMul : HostInt -> HostInt -> HostInt := fun (a : HostInt) (b : HostInt) => hostIntFromBits (natMul (hostIntBits a) (hostIntBits b))
+def hostIntEqual : HostInt -> HostInt -> Bool := fun (a : HostInt) (b : HostInt) => natEq (hostIntBits a) (hostIntBits b)
+def hostIntCompare : HostInt -> HostInt -> Ordering := fun (a : HostInt) (b : HostInt) => case (hostIntEqual a b) with
+  | 1 (unit : prod ()) => orderEqual | 0 (unit : prod ()) => case (natEq (hostIntLess a b) 1) with
+    | 1 (unit : prod ()) => orderLess | 0 (unit : prod ()) => orderGreater
+def hostIntNonnegative : HostInt -> ValueOption Nat := fun (value : HostInt) => match value as self in HostInt return ValueOption Nat with
+  | hostIntNegative n => valueNone Nat | hostIntPositive n => valueSome Nat n
+def hostIntClampZero : HostInt -> Nat := fun (value : HostInt) => match value as self in HostInt return Nat with
+  | hostIntNegative n => 0 | hostIntPositive n => n
+def hostIntDividePositive : HostInt -> Nat -> HostInt := fun (value : HostInt) (divisor : Nat) => match value as self in HostInt return HostInt with
+  | hostIntPositive n => hostIntPositive (divQuotient (divide64 n divisor))
+  | hostIntNegative n => let quotient : Nat := divQuotient (divide64 n divisor) in
+    case (natEq quotient 0) with | 1 (unit : prod ()) => hostIntPositive 0 | 0 (unit : prod ()) => hostIntNegative quotient
+mu Refund : Type 0 :=
+| refundValue (amount : HostInt) : Refund
+def refundZero : Refund := refundValue (hostIntPositive 0)
+def refundAmount : Refund -> HostInt := fun (value : Refund) => match value as self in Refund return HostInt with | refundValue amount => amount
+def refundAdd : Refund -> Refund -> Refund := fun (a : Refund) (b : Refund) => refundValue (hostIntAdd (refundAmount a) (refundAmount b))
+def refundEqual : Refund -> Refund -> Bool := fun (a : Refund) (b : Refund) => hostIntEqual (refundAmount a) (refundAmount b)

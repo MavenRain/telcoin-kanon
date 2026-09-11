@@ -1,0 +1,29 @@
+def AccessState : Type 0 := prod (Addresses, AddressSlots)
+def accessEmpty : AccessState := tuple (addressesNil, addressSlotsNil)
+def addressSlotCompare : prod (Address, U256) -> prod (Address, U256) -> Ordering := fun (a : prod (Address, U256)) (b : prod (Address, U256)) =>
+  match (addressCompare a.0 b.0) as ordering in Ordering return Ordering with
+  | orderLess => orderLess | orderGreater => orderGreater | orderEqual => u256Compare a.1 b.1
+def addressSlotEqual : prod (Address, U256) -> prod (Address, U256) -> Bool := fun (a : prod (Address, U256)) (b : prod (Address, U256)) =>
+  boolAnd (addressEqual a.0 b.0) (u256Equal a.1 b.1)
+def accessOfTransaction : Addresses -> AddressSlots -> AccessState := fun (accounts : Addresses) (slots : AddressSlots) =>
+  tuple (seqAddressOps.8 addressCompare (seqAddressOps.7 addressCompare accounts), seqAddressSlotOps.8 addressSlotCompare (seqAddressSlotOps.7 addressSlotCompare slots))
+def rec accessMemAccountList : Address -> Addresses -> Bool := fun (address : Address) (accounts : Addresses) =>
+  match accounts as self in Addresses return Bool with | addressesNil => natEq 0 1
+  | addressesCons head tail => case (addressEqual address head) with | 1 (unit : prod ()) => natEq 0 0 | 0 (unit : prod ()) => accessMemAccountList address tail
+def rec accessMemSlotList : prod (Address, U256) -> AddressSlots -> Bool := fun (slot : prod (Address, U256)) (slots : AddressSlots) =>
+  match slots as self in AddressSlots return Bool with | addressSlotsNil => natEq 0 1
+  | addressSlotsCons head tail => case (addressSlotEqual slot head) with | 1 (unit : prod ()) => natEq 0 0 | 0 (unit : prod ()) => accessMemSlotList slot tail
+def accessMemAccount : Address -> AccessState -> Bool := fun (address : Address) (state : AccessState) => accessMemAccountList address state.0
+def accessMemSlot : Address -> U256 -> AccessState -> Bool := fun (address : Address) (slot : U256) (state : AccessState) => accessMemSlotList (tuple (address, slot)) state.1
+def accessTouchAccount : Address -> AccessState -> prod (Warmth, AccessState) := fun (address : Address) (state : AccessState) =>
+  case (accessMemAccount address state) with | 1 (unit : prod ()) => tuple (accessWarm, state)
+  | 0 (unit : prod ()) => tuple (accessCold, accessOfTransaction (addressesCons address state.0) state.1)
+def accessTouchSlot : Address -> U256 -> AccessState -> prod (Warmth, AccessState) := fun (address : Address) (slot : U256) (state : AccessState) =>
+  case (accessMemSlot address slot state) with | 1 (unit : prod ()) => tuple (accessWarm, state)
+  | 0 (unit : prod ()) => tuple (accessCold, accessOfTransaction state.0 (addressSlotsCons (tuple (address, slot)) state.1))
+def accessEqual : AccessState -> AccessState -> Bool := fun (a : AccessState) (b : AccessState) =>
+  let accounts : Bool := match (listCompare Address Addresses seqAddressOps addressCompare a.0 b.0) as ordering in Ordering return Bool with
+    | orderLess => natEq 0 1 | orderGreater => natEq 0 1 | orderEqual => natEq 0 0 in
+  let slots : Bool := match (listCompare (prod (Address, U256)) AddressSlots seqAddressSlotOps addressSlotCompare a.1 b.1) as ordering in Ordering return Bool with
+    | orderLess => natEq 0 1 | orderGreater => natEq 0 1 | orderEqual => natEq 0 0 in
+  boolAnd accounts slots

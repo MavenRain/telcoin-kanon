@@ -1,0 +1,56 @@
+mu EvmTopics : Type 0 :=
+| evmTopics0 : EvmTopics
+| evmTopics1 (word0 : U256) : EvmTopics
+| evmTopics2 (word0 : U256) (word1 : U256) : EvmTopics
+| evmTopics3 (word0 : U256) (word1 : U256) (word2 : U256) : EvmTopics
+| evmTopics4 (word0 : U256) (word1 : U256) (word2 : U256) (word3 : U256) : EvmTopics
+def evmTopicsArity : EvmTopics -> TopicCount := fun (topics : EvmTopics) => match topics as self in EvmTopics return TopicCount with
+  | evmTopics0  => topicZero
+  | evmTopics1 w0 => topicOne
+  | evmTopics2 w0 w1 => topicTwo
+  | evmTopics3 w0 w1 w2 => topicThree
+  | evmTopics4 w0 w1 w2 w3 => topicFour
+def evmTopicsCollect : (0 S : Type 0) -> (0 E : Type 0) -> TopicCount -> (S -> sum (E, prod (U256, S))) -> S -> sum (E, prod (EvmTopics, S)) :=
+  fun (0 S : Type 0) (0 E : Type 0) (count : TopicCount) (pop : S -> sum (E, prod (U256, S))) (source : S) =>
+    match count as self in TopicCount return sum (E, prod (EvmTopics, S)) with
+    | topicZero => (inj 1 of 2 (tuple (evmTopics0, source)))
+    | topicOne => (case (pop source) with | 0 (error : E) => inj 0 of 2 error
+      | 1 (result0 : prod (U256, S)) => inj 1 of 2 (tuple (evmTopics1 result0.0, result0.1)))
+    | topicTwo => (case (pop source) with | 0 (error : E) => inj 0 of 2 error
+      | 1 (result0 : prod (U256, S)) => case (pop result0.1) with | 0 (error : E) => inj 0 of 2 error
+      | 1 (result1 : prod (U256, S)) => inj 1 of 2 (tuple (evmTopics2 result0.0 result1.0, result1.1)))
+    | topicThree => (case (pop source) with | 0 (error : E) => inj 0 of 2 error
+      | 1 (result0 : prod (U256, S)) => case (pop result0.1) with | 0 (error : E) => inj 0 of 2 error
+      | 1 (result1 : prod (U256, S)) => case (pop result1.1) with | 0 (error : E) => inj 0 of 2 error
+      | 1 (result2 : prod (U256, S)) => inj 1 of 2 (tuple (evmTopics3 result0.0 result1.0 result2.0, result2.1)))
+    | topicFour => (case (pop source) with | 0 (error : E) => inj 0 of 2 error
+      | 1 (result0 : prod (U256, S)) => case (pop result0.1) with | 0 (error : E) => inj 0 of 2 error
+      | 1 (result1 : prod (U256, S)) => case (pop result1.1) with | 0 (error : E) => inj 0 of 2 error
+      | 1 (result2 : prod (U256, S)) => case (pop result2.1) with | 0 (error : E) => inj 0 of 2 error
+      | 1 (result3 : prod (U256, S)) => inj 1 of 2 (tuple (evmTopics4 result0.0 result1.0 result2.0 result3.0, result3.1)))
+def evmTopicsToList : EvmTopics -> Words := fun (topics : EvmTopics) => match topics as self in EvmTopics return Words with
+  | evmTopics0  => wordsNil
+  | evmTopics1 w0 => wordsCons w0 (wordsNil)
+  | evmTopics2 w0 w1 => wordsCons w0 (wordsCons w1 (wordsNil))
+  | evmTopics3 w0 w1 w2 => wordsCons w0 (wordsCons w1 (wordsCons w2 (wordsNil)))
+  | evmTopics4 w0 w1 w2 w3 => wordsCons w0 (wordsCons w1 (wordsCons w2 (wordsCons w3 (wordsNil))))
+def evmTopicsEqual : EvmTopics -> EvmTopics -> Bool := fun (a : EvmTopics) (b : EvmTopics) =>
+  match (listCompare U256 Words seqWordOps u256Compare (evmTopicsToList a) (evmTopicsToList b)) as ordering in Ordering return Bool with
+  | orderLess => natEq 0 1 | orderEqual => natEq 0 0 | orderGreater => natEq 0 1
+def EvmLog : Type 0 := prod (Address, EvmTopics, Bytes)
+def evmLogEqual : EvmLog -> EvmLog -> Bool := fun (a : EvmLog) (b : EvmLog) =>
+  boolAnd (addressEqual a.0 b.0) (boolAnd (evmTopicsEqual a.1 b.1) (bytesEqual a.2 b.2))
+def rec evmLogTopicsText : Words -> Bytes := fun (words : Words) => match words as self in Words return Bytes with
+  | wordsNil => b"" | wordsCons head tail => let suffix : Bytes := match tail as self in Words return Bytes with
+    | wordsNil => b"" | wordsCons next rest => append b"; " (evmLogTopicsText tail) in append (u256Hex head) suffix
+def evmLogText : EvmLog -> Bytes := fun (entry : EvmLog) =>
+  append b"log(" (append (bytesHex (addressBytes entry.0)) (append b", topics=[" (append (evmLogTopicsText (evmTopicsToList entry.1)) (append b"], data=" (append (bytesHex entry.2) b")")))))
+mu ReturnData : Type 0 :=
+| returnDataValue (bytes : Bytes) : ReturnData
+def returnDataBytes : ReturnData -> Bytes := fun (data : ReturnData) => match data as self in ReturnData return Bytes with | returnDataValue bytes => bytes
+def returnDataEmpty : ReturnData := returnDataValue bytesNil
+def returnDataSize : ReturnData -> Nat := fun (data : ReturnData) => bytesLength (returnDataBytes data)
+def returnDataRead : ReturnData -> Nat -> Nat -> ValueOption Bytes := fun (data : ReturnData) (offset : Nat) (length : Nat) =>
+  let stop : Nat := minNat hostIntMax (natAdd offset length) in
+  case (natLt (returnDataSize data) stop) with | 1 (unit : prod ()) => valueNone Bytes
+  | 0 (unit : prod ()) => valueSome Bytes (take length (drop (returnDataBytes data) offset))

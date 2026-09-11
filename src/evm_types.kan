@@ -1,0 +1,53 @@
+mu StackDepth : Type 0 :=
+| stackDepthValue (n : Nat) : StackDepth
+def stackDepthNat : StackDepth -> Nat := fun (value : StackDepth) => match value as self in StackDepth return Nat with | stackDepthValue n => n
+def stackDepthOfNat : Nat -> ValueOption StackDepth := fun (n : Nat) => case (boolAnd (natLt 0 n) (natLt n 17)) with
+  | 0 (unit : prod ()) => valueNone StackDepth | 1 (unit : prod ()) => valueSome StackDepth (stackDepthValue n)
+def stackDepthEqual : StackDepth -> StackDepth -> Bool := fun (a : StackDepth) (b : StackDepth) => natEq (stackDepthNat a) (stackDepthNat b)
+mu PushBytes : Type 0 :=
+| pushBytesValue (n : Nat) : PushBytes
+def pushBytesNat : PushBytes -> Nat := fun (value : PushBytes) => match value as self in PushBytes return Nat with | pushBytesValue n => n
+def pushBytesOfNat : Nat -> ValueOption PushBytes := fun (n : Nat) => case (boolAnd (natLt 0 n) (natLt n 33)) with
+  | 0 (unit : prod ()) => valueNone PushBytes | 1 (unit : prod ()) => valueSome PushBytes (pushBytesValue n)
+def pushBytesEqual : PushBytes -> PushBytes -> Bool := fun (a : PushBytes) (b : PushBytes) => natEq (pushBytesNat a) (pushBytesNat b)
+mu TopicCount : Type 0 :=
+| topicZero : TopicCount
+| topicOne : TopicCount
+| topicTwo : TopicCount
+| topicThree : TopicCount
+| topicFour : TopicCount
+def topicCountNat : TopicCount -> Nat := fun (value : TopicCount) => match value as self in TopicCount return Nat with
+  | topicZero => 0 | topicOne => 1 | topicTwo => 2 | topicThree => 3 | topicFour => 4
+def topicCountOfNat : Nat -> ValueOption TopicCount := fun (n : Nat) =>
+  case (natEq n 0) with | 1 (unit : prod ()) => valueSome TopicCount topicZero
+  | 0 (unit : prod ()) => case (natEq n 1) with | 1 (unit : prod ()) => valueSome TopicCount topicOne
+  | 0 (unit : prod ()) => case (natEq n 2) with | 1 (unit : prod ()) => valueSome TopicCount topicTwo
+  | 0 (unit : prod ()) => case (natEq n 3) with | 1 (unit : prod ()) => valueSome TopicCount topicThree
+  | 0 (unit : prod ()) => case (natEq n 4) with | 1 (unit : prod ()) => valueSome TopicCount topicFour | 0 (unit : prod ()) => valueNone TopicCount
+def topicCountEqual : TopicCount -> TopicCount -> Bool := fun (a : TopicCount) (b : TopicCount) => natEq (topicCountNat a) (topicCountNat b)
+mu StackError : Type 0 :=
+| stackUnderflow : StackError
+| stackOverflow : StackError
+mu Warmth : Type 0 :=
+| accessCold : Warmth
+| accessWarm : Warmth
+def warmthIsCold : Warmth -> Bool := fun (value : Warmth) => match value as self in Warmth return Bool with | accessCold => natEq 0 0 | accessWarm => natEq 0 1
+def warmthEqual : Warmth -> Warmth -> Bool := fun (a : Warmth) (b : Warmth) => natEq (boolNat (warmthIsCold a)) (boolNat (warmthIsCold b))
+def SstoreState : Type 0 := prod (U256, U256, U256)
+mu SstoreChange : Type 0 :=
+| sstoreNoOp : SstoreChange
+| sstoreDirty : SstoreChange
+| sstoreFreshSet : SstoreChange
+| sstoreFreshReset : SstoreChange
+def sstoreClassify : SstoreState -> SstoreChange := fun (state : SstoreState) =>
+  case (u256Equal state.1 state.2) with | 1 (unit : prod ()) => sstoreNoOp
+  | 0 (unit : prod ()) => case (u256Equal state.0 state.1) with | 0 (unit : prod ()) => sstoreDirty
+    | 1 (unit : prod ()) => case (u256IsZero state.0) with | 1 (unit : prod ()) => sstoreFreshSet | 0 (unit : prod ()) => sstoreFreshReset
+def sstoreStateEqual : SstoreState -> SstoreState -> Bool := fun (a : SstoreState) (b : SstoreState) =>
+  boolAnd (u256Equal a.0 b.0) (boolAnd (u256Equal a.1 b.1) (u256Equal a.2 b.2))
+def stackDepthOfHostInt : HostInt -> ValueOption StackDepth := fun (value : HostInt) => match value as self in HostInt return ValueOption StackDepth with
+  | hostIntNegative n => valueNone StackDepth | hostIntPositive n => stackDepthOfNat n
+def pushBytesOfHostInt : HostInt -> ValueOption PushBytes := fun (value : HostInt) => match value as self in HostInt return ValueOption PushBytes with
+  | hostIntNegative n => valueNone PushBytes | hostIntPositive n => pushBytesOfNat n
+def topicCountOfHostInt : HostInt -> ValueOption TopicCount := fun (value : HostInt) => match value as self in HostInt return ValueOption TopicCount with
+  | hostIntNegative n => valueNone TopicCount | hostIntPositive n => topicCountOfNat n
