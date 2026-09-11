@@ -1,0 +1,18 @@
+def Withdrawal : Type 0 := prod (Nat, Nat, Address, Nat)
+def withdrawalMake : HostInt -> HostInt -> Address -> HostInt -> ValueOption Withdrawal :=
+  fun (index : HostInt) (validator : HostInt) (address : Address) (amount : HostInt) =>
+    case (hostIntNonnegative index) with | 0 (unit : prod ()) => valueNone Withdrawal | 1 (index : Nat) =>
+    case (hostIntNonnegative validator) with | 0 (unit : prod ()) => valueNone Withdrawal | 1 (validator : Nat) =>
+    case (hostIntNonnegative amount) with | 0 (unit : prod ()) => valueNone Withdrawal | 1 (amount : Nat) => valueSome Withdrawal (tuple (index, validator, address, amount))
+def withdrawalIndex : Withdrawal -> Nat := fun (withdrawal : Withdrawal) => withdrawal.0
+def withdrawalValidatorIndex : Withdrawal -> Nat := fun (withdrawal : Withdrawal) => withdrawal.1
+def withdrawalAddress : Withdrawal -> Address := fun (withdrawal : Withdrawal) => withdrawal.2
+def withdrawalAmount : Withdrawal -> Nat := fun (withdrawal : Withdrawal) => withdrawal.3
+def withdrawalEncodeRlp : Withdrawal -> Bytes := fun (withdrawal : Withdrawal) => rlpEncodeListPayload
+  (append (rlpEncodeNat (hostIntPositive withdrawal.0)) (append (rlpEncodeNat (hostIntPositive withdrawal.1))
+    (append (rlpEncodeBytes (addressBytes withdrawal.2)) (rlpEncodeNat (hostIntPositive withdrawal.3)))))
+def withdrawalEqual : Withdrawal -> Withdrawal -> Bool := fun (a : Withdrawal) (b : Withdrawal) =>
+  boolAnd (natEq a.0 b.0) (boolAnd (natEq a.1 b.1) (boolAnd (addressEqual a.2 b.2) (natEq a.3 b.3)))
+def withdrawalText : Withdrawal -> Bytes := fun (withdrawal : Withdrawal) => append b"Withdrawal{index=" (append (decimal64 withdrawal.0)
+  (append b"; validator_index=" (append (decimal64 withdrawal.1) (append b"; address=" (append (addressHex withdrawal.2)
+    (append b"; amount=" (append (decimal64 withdrawal.3) b"}")))))))

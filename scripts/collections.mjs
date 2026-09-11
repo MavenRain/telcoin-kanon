@@ -160,7 +160,13 @@ const trieFamilies = [
   ['TrieChildren', 'seqTrieChild', 'ValueOption Bytes', 'trieChildrenNil', 'trieChildrenCons', true],
 ];
 const logFamilies = [['EvmLogs', 'seqEvmLog', 'EvmLog', 'evmLogsNil', 'evmLogsCons', true]];
-for (const [name, group] of [['collections', families], ['crypto_collections', cryptoFamilies], ['vertex_collections', vertexFamilies], ['consensus_collections', consensusFamilies], ['machine_collections', machineFamilies], ['node_collections', nodeFamilies], ['execution_collections', executionFamilies], ['sim_collections', simFamilies], ['storage_collections', storageFamilies], ['state_collections', stateFamilies], ['evm_collections', evmFamilies], ['rlp_collections', rlpFamilies], ['trie_collections', trieFamilies], ['log_collections', logFamilies]]) {
+const envFamilies = [
+  ['Keccaks', 'seqKeccak', 'Keccak', 'keccaksNil', 'keccaksCons', true],
+  ['TxAccessEntries', 'seqTxAccessEntry', 'prod (Address, Words)', 'txAccessEntriesNil', 'txAccessEntriesCons', true],
+];
+const blockFamilies = [['Withdrawals', 'seqWithdrawal', 'Withdrawal', 'withdrawalsNil', 'withdrawalsCons', true]];
+const receiptFamilies = [['ReceiptPairs', 'seqReceiptPair', 'prod (HostInt, Receipt)', 'receiptPairsNil', 'receiptPairsCons', true]];
+for (const [name, group] of [['collections', families], ['crypto_collections', cryptoFamilies], ['vertex_collections', vertexFamilies], ['consensus_collections', consensusFamilies], ['machine_collections', machineFamilies], ['node_collections', nodeFamilies], ['execution_collections', executionFamilies], ['sim_collections', simFamilies], ['storage_collections', storageFamilies], ['state_collections', stateFamilies], ['evm_collections', evmFamilies], ['rlp_collections', rlpFamilies], ['trie_collections', trieFamilies], ['log_collections', logFamilies], ['env_collections', envFamilies], ['block_collections', blockFamilies], ['receipt_collections', receiptFamilies]]) {
   const output = renderCollections(group);
   const destination = resolve(root, `src/${name}.kan`);
   if (process.argv.includes('--check')) {

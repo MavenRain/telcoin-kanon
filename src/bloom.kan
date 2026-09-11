@@ -1,0 +1,21 @@
+mu Bloom : Type 0 :=
+| bloomValue (bytes : Bytes) : Bloom
+def bloomEmpty : Bloom := bloomValue b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+def bloomBytes : Bloom -> Bytes := fun (bloom : Bloom) => match bloom as self in Bloom return Bytes with | bloomValue bytes => bytes
+def bloomOfBytes : Bytes -> ValueOption Bloom := fun (bytes : Bytes) => case (natEq (bytesLength bytes) 256) with
+  | 0 (unit : prod ()) => valueNone Bloom | 1 (unit : prod ()) => valueSome Bloom (bloomValue bytes)
+def bloomEqual : Bloom -> Bloom -> Bool := fun (a : Bloom) (b : Bloom) => bytesEqual (bloomBytes a) (bloomBytes b)
+def rec bloomSetByte : Bytes -> Nat -> Nat -> Bytes := fun (bytes : Bytes) (index : Nat) (mask : Nat) => match bytes as self in Bytes return Bytes with
+  | bytesNil => bytesNil | bytesCons head tail => case (natEq index 0) with
+    | 0 (unit : prod ()) => bytesCons head (bloomSetByte tail (natSub index 1) mask)
+    | 1 (unit : prod ()) => bytesCons (case (natEq (remainder64 (divQuotient (divide64 head mask)) 2) 0) with
+      | 1 (unit : prod ()) => natAdd head mask | 0 (unit : prod ()) => head) tail
+def bloomSetBit : Bloom -> Nat -> Bloom := fun (bloom : Bloom) (bit : Nat) => bloomValue
+  (bloomSetByte (bloomBytes bloom) (natSub 255 (divQuotient (divide64 bit 8))) (u256TwoPowNat (remainder64 bit 8)))
+def bloomDigestBit : Bytes -> Nat -> Nat := fun (digest : Bytes) (offset : Nat) =>
+  remainder64 (natAdd (natMul 256 (bytesHead (drop digest offset))) (bytesHead (drop digest (natAdd offset 1)))) 2048
+def bloomAccrue : Bloom -> Bytes -> Bloom := fun (bloom : Bloom) (input : Bytes) => let digest : Bytes := keccak256 input in
+  bloomSetBit (bloomSetBit (bloomSetBit bloom (bloomDigestBit digest 0)) (bloomDigestBit digest 2)) (bloomDigestBit digest 4)
+def bloomOfLogs : EvmLogs -> Bloom := fun (logs : EvmLogs) => listFoldLeft EvmLog EvmLogs Bloom seqEvmLogOps
+  (fun (bloom : Bloom) (log : EvmLog) => listFoldLeft U256 Words Bloom seqWordOps (fun (bloom : Bloom) (topic : U256) => bloomAccrue bloom (u256ToBeBytes topic))
+    (bloomAccrue bloom (addressBytes log.0)) (evmTopicsToList log.1)) bloomEmpty logs

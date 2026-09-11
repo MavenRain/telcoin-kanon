@@ -1,0 +1,38 @@
+mu InterpreterError : Type 0 :=
+| evmOutOfGas : InterpreterError
+| evmStackUnderflow : InterpreterError
+| evmStackOverflow : InterpreterError
+| evmInvalidJump : InterpreterError
+| evmOffsetTooLarge : InterpreterError
+| evmReentrancySentry : InterpreterError
+| evmStaticStateChange : InterpreterError
+| evmOutOfOffset : InterpreterError
+| evmCallInsideStatic : InterpreterError
+| evmInitcodeTooLarge : InterpreterError
+| evmBalanceOverflow : InterpreterError
+| evmInvalidOpcode (byte : Nat) : InterpreterError
+| evmNotActivated (byte : Nat) : InterpreterError
+def interpreterErrorText : InterpreterError -> Bytes := fun (error : InterpreterError) => match error as self in InterpreterError return Bytes with
+  | evmOutOfGas => b"out of gas"
+  | evmStackUnderflow => b"stack underflow"
+  | evmStackOverflow => b"stack overflow"
+  | evmInvalidJump => b"invalid jump destination"
+  | evmOffsetTooLarge => b"memory offset or length too large"
+  | evmReentrancySentry => b"storage write refused on a call stipend"
+  | evmStaticStateChange => b"state change in a static frame"
+  | evmOutOfOffset => b"return-data read past the end of the buffer"
+  | evmCallInsideStatic => b"value-bearing call from a static frame"
+  | evmInitcodeTooLarge => b"init code longer than the EIP-3860 limit"
+  | evmBalanceOverflow => b"balance overflow past 2^256"
+  | evmInvalidOpcode byte => append b"invalid opcode 0x" (bytesHex (bytesCons byte bytesNil))
+  | evmNotActivated byte => append b"instruction 0x" (append (bytesHex (bytesCons byte bytesNil)) b" not activated")
+mu EvmOutcome : Type 0 :=
+| evmStopped (gasLeft : Gas) (effects : EvmEffects) : EvmOutcome
+| evmReturned (output : Bytes) (gasLeft : Gas) (effects : EvmEffects) : EvmOutcome
+| evmReverted (output : Bytes) (gasLeft : Gas) : EvmOutcome
+| evmFailed (error : InterpreterError) : EvmOutcome
+def evmOutcomeText : EvmOutcome -> Bytes := fun (outcome : EvmOutcome) => match outcome as self in EvmOutcome return Bytes with
+  | evmStopped gas effects => append b"stopped, gas left " (hostIntText (gasAmount gas))
+  | evmReturned output gas effects => append b"returned " (append (decimal64 (bytesLength output)) (append b" bytes, gas left " (hostIntText (gasAmount gas))))
+  | evmReverted output gas => append b"reverted with " (append (decimal64 (bytesLength output)) (append b" bytes, gas left " (hostIntText (gasAmount gas))))
+  | evmFailed error => append b"failed: " (interpreterErrorText error)

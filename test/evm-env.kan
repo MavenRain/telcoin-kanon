@@ -1,0 +1,47 @@
+def envTestField : Bytes -> Bytes -> Bytes := fun (a : Bytes) (b : Bytes) => append a (append b":" b)
+def envTestSpec : Nat -> EvmSpec := fun (n : Nat) => case (natEq n 0) with | 1 (unit : prod ()) => evmShanghai
+  | 0 (unit : prod ()) => case (natEq n 1) with | 1 (unit : prod ()) => evmCancun | 0 (unit : prod ()) => evmPrague
+def evm_test_penalty : Bytes -> Bytes -> Bytes := fun (limitRaw : Bytes) (spentRaw : Bytes) =>
+  case (hostIntParse limitRaw) with | 0 (unit : prod ()) => b"error:bad int" | 1 (limit : HostInt) =>
+  case (hostIntParse spentRaw) with | 0 (unit : prod ()) => b"error:bad int" | 1 (spent : HostInt) => decimal64 (gasPenalty limit spent)
+def evm_test_spec : Nat -> Nat -> Nat -> Bytes := fun (a : Nat) (b : Nat) (mode : Nat) =>
+  let spec : EvmSpec := envTestSpec a in let from : EvmSpec := envTestSpec b in
+  let mutability : Mutability := case (natEq mode 0) with | 1 (unit : prod ()) => evmMutable | 0 (unit : prod ()) => evmStatic in
+  envTestField (evmSpecText spec) (envTestField (evmTestBool (evmSpecEnabled spec from)) (envTestField (mutabilityText mutability)
+    (envTestField (evmTestBool (mutabilityIsStatic mutability)) (case (mutabilityPermit mutability) with | 0 (unit : prod ()) => b"none" | 1 (permit : MutabilityPermit) => b"permit"))))
+def envTestPosition : EvmBatchPosition -> Bytes := fun (position : EvmBatchPosition) =>
+  envTestField (u256Hex (evmBatchPositionWord position)) (envTestField (evmTestBool (evmBatchPositionIsFirst position))
+    (envTestField (evmTestNatOption (evmBatchPositionIndex position)) (case (evmBatchPositionWorker position) with | 0 (unit : prod ()) => b"none" | 1 (worker : WorkerId) => decimal64 (workerIdNat worker))))
+def evm_test_position : Bytes -> Nat -> Bytes := fun (indexRaw : Bytes) (worker : Nat) =>
+  case (hostIntParse indexRaw) with | 0 (unit : prod ()) => b"error:bad int" | 1 (index : HostInt) =>
+  case (evmBatchPositionOfBatch index (workerIdValue worker)) with | 0 (unit : prod ()) => b"none" | 1 (position : EvmBatchPosition) => envTestPosition position
+def evm_test_position_word : Bytes -> Bytes := fun (raw : Bytes) => case (u256OfHex raw) with | 0 (unit : prod ()) => b"error:bad word"
+  | 1 (word : U256) => envTestPosition (evmBatchPositionValue word)
+def envTestHashes : Nat -> Keccaks := fun (count : Nat) =>
+  let state : prod (Nat, Keccaks) := stepsFold (prod (Nat, Keccaks)) steps32 (fun (state : prod (Nat, Keccaks)) => boolNat (natEq state.0 count))
+    (fun (state : prod (Nat, Keccaks)) => tuple (natAdd state.0 1, keccaksCons (keccakValue (u256ToBeBytes (u256Value (natAdd state.0 1)))) state.1)) (tuple (0, keccaksNil)) in seqKeccakReverse state.1
+def evm_test_hashes : Nat -> Bytes -> Bytes -> Bytes := fun (count : Nat) (currentRaw : Bytes) (requestedRaw : Bytes) =>
+  case (u256OfHex currentRaw) with | 0 (unit : prod ()) => b"error:bad word" | 1 (current : U256) =>
+  case (u256OfHex requestedRaw) with | 0 (unit : prod ()) => b"error:bad word" | 1 (requested : U256) =>
+  let hashes : BlockHashes := blockHashesOfRecent (envTestHashes count) in
+  envTestField (u256Hex (blockHashesLookup hashes current requested)) (envTestField (evmTestBool (blockHashesEqual hashes (blockHashesOfRecent (envTestHashes (minNat count 256)))))
+    (evmTestBool (blockHashesEqual hashes blockHashesEmpty)))
+def rec envTestAddresses : Addresses -> Bytes := fun (addresses : Addresses) => match addresses as self in Addresses return Bytes with
+  | addressesNil => b"" | addressesCons head tail => append (addressHex head) (append b"," (envTestAddresses tail))
+def rec envTestSlots : AddressSlots -> Bytes := fun (slots : AddressSlots) => match slots as self in AddressSlots return Bytes with
+  | addressSlotsNil => b"" | addressSlotsCons head tail => append (addressHex head.0) (append b"/" (append (u256Hex head.1) (append b"," (envTestSlots tail))))
+def evm_test_env : Nat -> Nat -> Nat -> Bytes := fun (specRaw : Nat) (mode : Nat) (changed : Nat) =>
+  let a : Address := addressOfWord (u256Value 1) in let b : Address := addressOfWord (u256Value 2) in
+  let spec : EvmSpec := envTestSpec specRaw in
+  let block : EvmBlock := evmBlockMakeAtSpec spec a (u256Value 10) (u256Value 11) (u256Value 12) (u256Value 13) (u256Value 14) b (u256Value 15) evmConsensusBlobGasprice (blockHashesOfRecent (envTestHashes 2)) in
+  let access : TxAccessEntries := txAccessEntriesCons (tuple (a, wordsCons (u256Value 3) (wordsCons (u256Value 4) wordsNil)))
+    (txAccessEntriesCons (tuple (b, wordsNil)) (txAccessEntriesCons (tuple (a, wordsCons (u256Value 3) wordsNil)) txAccessEntriesNil)) in
+  let tx : EvmTx := evmTxMake a (u256Value 21) access in
+  let call : EvmCall := evmCallMake a b (u256Value 22) (evmDataValue b"abc") (case (natEq mode 0) with | 1 (unit : prod ()) => evmMutable | 0 (unit : prod ()) => evmStatic) in
+  let env : EvmEnv := evmEnvMake block tx call in
+  let nextCall : EvmCall := case (natEq changed 0) with | 1 (unit : prod ()) => call | 0 (unit : prod ()) => evmCallMake b a u256Zero (evmDataValue b"") evmStatic in
+  let next : EvmEnv := evmEnvWithCall env nextCall in let warm : prod (Addresses, AddressSlots) := evmTxDeclaredWarm tx in
+  envTestField (evmSpecText (evmBlockSpec (evmEnvBlock next))) (envTestField (evmTestBool (evmEnvEqual env next))
+    (envTestField (evmTestBool (evmTxEqual tx (evmTxMake a (u256Value 21) (seqTxAccessEntryReverse access))))
+      (envTestField (envTestAddresses warm.0) (envTestField (envTestSlots warm.1) (envTestField (u256Hex (evmBlockBlobGasprice block))
+        (envTestField (evmTestBool (evmBlockEqual block (evmEnvBlock next))) (evmTestBool (evmTxEqual tx (evmEnvTx next)))))))))

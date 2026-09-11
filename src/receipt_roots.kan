@@ -1,0 +1,13 @@
+def blockReceiptsRoot : ReceiptPairs -> Bytes := fun (pairs : ReceiptPairs) =>
+  let state : prod (HostInt, ByteStrings) := listFoldLeft (prod (HostInt, Receipt)) ReceiptPairs (prod (HostInt, ByteStrings)) seqReceiptPairOps
+    (fun (state : prod (HostInt, ByteStrings)) (entry : prod (HostInt, Receipt)) => let cumulative : HostInt := hostIntAdd state.0 (receiptGasUsed entry.1) in
+      tuple (cumulative, byteStringsCons (receiptEncode2718 entry.0 cumulative entry.1) state.1)) (tuple (hostIntPositive 0, byteStringsNil)) pairs in trieOrderedRoot (seqBytesReverse state.1)
+def BlockGas : Type 0 := prod (Nat, HostInt)
+def blockGasStart : BlockContext -> BlockGas := fun (context : BlockContext) => tuple (blockContextGasLimit context, hostIntPositive 0)
+def blockGasLimit : BlockGas -> Nat := fun (gas : BlockGas) => gas.0
+def blockGasUsed : BlockGas -> HostInt := fun (gas : BlockGas) => gas.1
+def blockGasAvailable : BlockGas -> HostInt := fun (gas : BlockGas) => hostIntSub (hostIntPositive gas.0) gas.1
+def blockGasChargeReceipt : BlockGas -> Receipt -> ValueOption BlockGas := fun (gas : BlockGas) (receipt : Receipt) =>
+  let used : HostInt := hostIntAdd gas.1 (receiptGasUsed receipt) in case (natEq (hostIntLess (hostIntPositive gas.0) used) 1) with
+    | 1 (unit : prod ()) => valueNone BlockGas | 0 (unit : prod ()) => valueSome BlockGas (tuple (gas.0, used))
+def blockGasEqual : BlockGas -> BlockGas -> Bool := fun (a : BlockGas) (b : BlockGas) => boolAnd (natEq a.0 b.0) (hostIntEqual a.1 b.1)

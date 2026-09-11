@@ -1,0 +1,40 @@
+mu EvmCallDepth : Type 0 :=
+| evmCallDepthValue (depth : Nat) : EvmCallDepth
+def evmCallDepthZero : EvmCallDepth := evmCallDepthValue 0
+def evmCallDepthNat : EvmCallDepth -> Nat := fun (depth : EvmCallDepth) => match depth as self in EvmCallDepth return Nat with | evmCallDepthValue value => value
+def evmCallDepthSucc : EvmCallDepth -> EvmCallDepth := fun (depth : EvmCallDepth) => evmCallDepthValue (natAdd (evmCallDepthNat depth) 1)
+def evmCallDepthWithinLimit : EvmCallDepth -> Bool := fun (depth : EvmCallDepth) => boolNot (natLt 1024 (evmCallDepthNat depth))
+def CallTarget : Type 0 := prod (EvmCode, EvmEffects, Nat, ValueOption Address)
+def callTargetResolve : EvmEffects -> Account -> CallTarget := fun (effects : EvmEffects) (account : Account) =>
+  case (accountDelegation account) with
+  | 0 (unit : prod ()) => tuple (evmCodeOfBytes (accountCode account), effects, 0, valueNone Address)
+  | 1 (target : Address) => let load : EffectLoad Account := effectsExtAccount effects target in
+    tuple (evmCodeOfBytes (accountCode load.0), load.2, gasDelegationAccess (valueSome Warmth load.1), valueSome Address target)
+def callTargetCode : CallTarget -> EvmCode := fun (target : CallTarget) => target.0
+def callTargetEffects : CallTarget -> EvmEffects := fun (target : CallTarget) => target.1
+def callTargetSurcharge : CallTarget -> Nat := fun (target : CallTarget) => target.2
+def callTargetDelegate : CallTarget -> ValueOption Address := fun (target : CallTarget) => target.3
+mu ContractAddressScheme : Type 0 :=
+| contractFromNonce (nonce : Nonce) : ContractAddressScheme
+| contractFromSalt (salt : U256) (initCode : Bytes) : ContractAddressScheme
+def contractAddressDerive : Address -> ContractAddressScheme -> Address := fun (creator : Address) (scheme : ContractAddressScheme) =>
+  let preimage : Bytes := match scheme as self in ContractAddressScheme return Bytes with
+    | contractFromNonce nonce => rlpEncodeListPayload (append (rlpEncodeBytes (addressBytes creator)) (rlpEncodeNat (hostIntPositive (nonceNat nonce))))
+    | contractFromSalt salt initCode => consBytes 255 (append (addressBytes creator) (append (u256ToBeBytes salt) (keccak256 initCode))) in
+  addressValue (drop (keccak256 preimage) 12)
+mu IntrinsicKind : Type 0 :=
+| intrinsicCall : IntrinsicKind
+| intrinsicCreate : IntrinsicKind
+def intrinsicNumWords : HostInt -> HostInt := fun (length : HostInt) => case (natEq (hostIntLess (hostIntPositive 0) length) 1) with
+  | 0 (unit : prod ()) => hostIntPositive 0 | 1 (unit : prod ()) => hostIntDividePositive (hostIntAdd length (hostIntPositive 31)) 32
+def rec intrinsicTokens : Bytes -> Nat := fun (data : Bytes) => match data as self in Bytes return Nat with
+  | bytesNil => 0 | bytesCons head tail => natAdd (case (natEq head 0) with | 1 (unit : prod ()) => 1 | 0 (unit : prod ()) => 4) (intrinsicTokens tail)
+-- Authorization count is the number listed on the wire, including skipped entries.
+def intrinsicInitialGas : IntrinsicKind -> Bytes -> TxAccessEntries -> Nat -> HostInt := fun (kind : IntrinsicKind) (data : Bytes) (accessList : TxAccessEntries) (authorizations : Nat) =>
+  let slots : Nat := listFoldLeft (prod (Address, Words)) TxAccessEntries Nat seqTxAccessEntryOps (fun (count : Nat) (entry : prod (Address, Words)) => natAdd count (seqWordLength entry.1)) 0 accessList in
+  let shared : HostInt := hostIntFromBits (natAdd 21000 (natAdd (natMul 4 (intrinsicTokens data)) (natAdd (natMul 2400 (seqTxAccessEntryLength accessList)) (natAdd (natMul 1900 slots) (natMul 25000 authorizations))))) in
+  match kind as self in IntrinsicKind return HostInt with | intrinsicCall => shared
+  | intrinsicCreate => hostIntAdd shared (hostIntAdd (hostIntPositive 32000) (hostIntMul (hostIntPositive 2) (intrinsicNumWords (hostIntPositive (bytesLength data)))))
+def intrinsicFloorGas : Bytes -> HostInt := fun (data : Bytes) => hostIntFromBits (natAdd 21000 (natMul 10 (intrinsicTokens data)))
+def eip2718Frame : HostInt -> Bytes -> Bytes := fun (typeByte : HostInt) (body : Bytes) => case (hostIntEqual typeByte (hostIntPositive 0)) with
+  | 1 (unit : prod ()) => body | 0 (unit : prod ()) => consBytes (remainder64 (hostIntBits typeByte) 256) body

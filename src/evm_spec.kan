@@ -1,0 +1,44 @@
+mu EvmSpec : Type 0 :=
+| evmShanghai : EvmSpec
+| evmCancun : EvmSpec
+| evmPrague : EvmSpec
+def evmSpecRank : EvmSpec -> Nat := fun (spec : EvmSpec) => match spec as self in EvmSpec return Nat with
+  | evmShanghai => 0 | evmCancun => 1 | evmPrague => 2
+def evmSpecCompare : EvmSpec -> EvmSpec -> Ordering := fun (a : EvmSpec) (b : EvmSpec) => natOrdering (evmSpecRank a) (evmSpecRank b)
+def evmSpecEnabled : EvmSpec -> EvmSpec -> Bool := fun (spec : EvmSpec) (from : EvmSpec) => boolNot (natLt (evmSpecRank spec) (evmSpecRank from))
+def evmSpecText : EvmSpec -> Bytes := fun (spec : EvmSpec) => match spec as self in EvmSpec return Bytes with
+  | evmShanghai => b"shanghai" | evmCancun => b"cancun" | evmPrague => b"prague"
+mu Mutability : Type 0 :=
+| evmMutable : Mutability
+| evmStatic : Mutability
+mu MutabilityPermit : Type 0 :=
+| mutabilityPermitValue : MutabilityPermit
+def mutabilityPermit : Mutability -> ValueOption MutabilityPermit := fun (mutability : Mutability) => match mutability as self in Mutability return ValueOption MutabilityPermit with
+  | evmMutable => valueSome MutabilityPermit mutabilityPermitValue | evmStatic => valueNone MutabilityPermit
+def mutabilityIsStatic : Mutability -> Bool := fun (mutability : Mutability) => match mutability as self in Mutability return Bool with
+  | evmMutable => natEq 0 1 | evmStatic => natEq 0 0
+def mutabilityEqual : Mutability -> Mutability -> Bool := fun (a : Mutability) (b : Mutability) => natEq (boolNat (mutabilityIsStatic a)) (boolNat (mutabilityIsStatic b))
+def mutabilityText : Mutability -> Bytes := fun (mutability : Mutability) => match mutability as self in Mutability return Bytes with
+  | evmMutable => b"mutable" | evmStatic => b"static"
+def gasPenalty : HostInt -> HostInt -> Nat := fun (gasLimit : HostInt) (gasSpent : HostInt) =>
+  let limit : Nat := hostIntClampZero gasLimit in let spent : Nat := hostIntClampZero gasSpent in
+  case (natLt 210000 limit) with | 0 (unit : prod ()) => 0
+  | 1 (unit : prod ()) => let ratio : Nat := divQuotient (divide256 (natMul 1000000000 spent) limit) in
+    case (natLt ratio 100000000) with | 0 (unit : prod ()) => 0
+    | 1 (unit : prod ()) => let inefficiency : Nat := natSub 100000000 ratio in
+      divQuotient (divide256 (natMul (natMul inefficiency inefficiency) (natSub limit spent)) 10000000000000000)
+mu EvmBatchPosition : Type 0 :=
+| evmBatchPositionValue (word : U256) : EvmBatchPosition
+def evmBatchPositionWord : EvmBatchPosition -> U256 := fun (position : EvmBatchPosition) => match position as self in EvmBatchPosition return U256 with | evmBatchPositionValue word => word
+def evmBatchPositionOfBatch : HostInt -> WorkerId -> ValueOption EvmBatchPosition := fun (index : HostInt) (worker : WorkerId) =>
+  match index as self in HostInt return ValueOption EvmBatchPosition with | hostIntNegative n => valueNone EvmBatchPosition
+  | hostIntPositive n => case (natLt 70368744177663 n) with | 1 (unit : prod ()) => valueNone EvmBatchPosition
+    | 0 (unit : prod ()) => valueSome EvmBatchPosition (evmBatchPositionValue (u256Value (natAdd (natMul n 65536) (workerIdNat worker))))
+def evmBatchPositionIsFirst : EvmBatchPosition -> Bool := fun (position : EvmBatchPosition) => natLt (u256Nat (evmBatchPositionWord position)) 65536
+def evmBatchPositionIndex : EvmBatchPosition -> ValueOption Nat := fun (position : EvmBatchPosition) =>
+  case (u256ToHostNat (evmBatchPositionWord position)) with | 0 (unit : prod ()) => valueNone Nat
+  | 1 (n : Nat) => valueSome Nat (divQuotient (divide64 n 65536))
+def evmBatchPositionWorker : EvmBatchPosition -> ValueOption WorkerId := fun (position : EvmBatchPosition) =>
+  case (u256ToHostNat (evmBatchPositionWord position)) with | 0 (unit : prod ()) => valueNone WorkerId
+  | 1 (n : Nat) => valueSome WorkerId (workerIdValue (remainder64 n 65536))
+def evmBatchPositionEqual : EvmBatchPosition -> EvmBatchPosition -> Bool := fun (a : EvmBatchPosition) (b : EvmBatchPosition) => u256Equal (evmBatchPositionWord a) (evmBatchPositionWord b)

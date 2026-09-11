@@ -1,0 +1,78 @@
+-- Immutable transaction snapshots retain their original world across nested calls.
+def EvmEffects : Type 0 := prod (WorldState, WorldState, AccessState, Refund, LogJournal, TransientStorage, Lifecycle)
+def effectsStart : WorldState -> AccessState -> EvmEffects := fun (world : WorldState) (access : AccessState) =>
+  tuple (world, world, access, refundZero, logJournalEmpty, transientEmpty, lifecycleEmpty)
+def effectsWorld : EvmEffects -> WorldState := fun (effects : EvmEffects) => effects.0
+def effectsBase : EvmEffects -> WorldState := fun (effects : EvmEffects) => effects.1
+def effectsAccess : EvmEffects -> AccessState := fun (effects : EvmEffects) => effects.2
+def effectsRefund : EvmEffects -> Refund := fun (effects : EvmEffects) => effects.3
+def effectsLogs : EvmEffects -> LogJournal := fun (effects : EvmEffects) => effects.4
+def effectsTransient : EvmEffects -> TransientStorage := fun (effects : EvmEffects) => effects.5
+def effectsLifecycle : EvmEffects -> Lifecycle := fun (effects : EvmEffects) => effects.6
+def effectsWithWorld : EvmEffects -> WorldState -> EvmEffects := fun (effects : EvmEffects) (world : WorldState) => tuple (world, effects.1, effects.2, effects.3, effects.4, effects.5, effects.6)
+def effectsWithAccess : EvmEffects -> AccessState -> EvmEffects := fun (effects : EvmEffects) (access : AccessState) => tuple (effects.0, effects.1, access, effects.3, effects.4, effects.5, effects.6)
+def effectsWithRefund : EvmEffects -> Refund -> EvmEffects := fun (effects : EvmEffects) (refund : Refund) => tuple (effects.0, effects.1, effects.2, refund, effects.4, effects.5, effects.6)
+def effectsWithLogs : EvmEffects -> LogJournal -> EvmEffects := fun (effects : EvmEffects) (logs : LogJournal) => tuple (effects.0, effects.1, effects.2, effects.3, logs, effects.5, effects.6)
+def effectsWithTransient : EvmEffects -> TransientStorage -> EvmEffects := fun (effects : EvmEffects) (transient : TransientStorage) => tuple (effects.0, effects.1, effects.2, effects.3, effects.4, transient, effects.6)
+def effectsWithLifecycle : EvmEffects -> Lifecycle -> EvmEffects := fun (effects : EvmEffects) (lifecycle : Lifecycle) => tuple (effects.0, effects.1, effects.2, effects.3, effects.4, effects.5, lifecycle)
+def EffectLoad : Type 0 -> Type 0 := fun (A : Type 0) => prod (A, Warmth, EvmEffects, EvmEffects -> EvmEffects)
+def effectLoaded : (A : Type 0) -> EffectLoad A -> A := fun (A : Type 0) (load : EffectLoad A) => load.0
+def effectWarmth : (A : Type 0) -> EffectLoad A -> Warmth := fun (A : Type 0) (load : EffectLoad A) => load.1
+def effectWarmed : (A : Type 0) -> EffectLoad A -> EvmEffects := fun (A : Type 0) (load : EffectLoad A) => load.2
+def effectsRead : (A : Type 0) -> EvmEffects -> prod (Warmth, AccessState) -> A -> EffectLoad A :=
+  fun (A : Type 0) (effects : EvmEffects) (touch : prod (Warmth, AccessState)) (value : A) => tuple (value, touch.0, effectsWithAccess effects touch.1, fun (effects : EvmEffects) => effects)
+def effectsBalance : EvmEffects -> Address -> EffectLoad U256 := fun (effects : EvmEffects) (address : Address) =>
+  effectsRead U256 effects (accessTouchAccount address effects.2) (worldStateBalance effects.0 address)
+def effectsExtAccount : EvmEffects -> Address -> EffectLoad Account := fun (effects : EvmEffects) (address : Address) =>
+  effectsRead Account effects (accessTouchAccount address effects.2) (worldStateAccount effects.0 address)
+def effectsSelfBalance : EvmEffects -> Address -> prod (U256, EvmEffects) := fun (effects : EvmEffects) (address : Address) =>
+  let load : EffectLoad U256 := effectsBalance effects address in tuple (load.0, load.2)
+def effectsSelfAccount : EvmEffects -> Address -> prod (Account, EvmEffects) := fun (effects : EvmEffects) (address : Address) =>
+  let load : EffectLoad Account := effectsExtAccount effects address in tuple (load.0, load.2)
+def effectsStorage : EvmEffects -> Address -> U256 -> EffectLoad U256 := fun (effects : EvmEffects) (address : Address) (slot : U256) =>
+  effectsRead U256 effects (accessTouchSlot address slot effects.2) (worldStateStorage effects.0 address slot)
+def effectsLog : EvmEffects -> MutabilityPermit -> EvmLog -> EvmEffects := fun (effects : EvmEffects) (permit : MutabilityPermit) (entry : EvmLog) =>
+  effectsWithLogs effects (logJournalAppend effects.4 entry)
+def effectsTransientLoad : EvmEffects -> Address -> U256 -> U256 := fun (effects : EvmEffects) (address : Address) (slot : U256) => transientGet effects.5 address slot
+def effectsTransientStore : EvmEffects -> MutabilityPermit -> Address -> U256 -> U256 -> EvmEffects := fun (effects : EvmEffects) (permit : MutabilityPermit) (address : Address) (slot : U256) (value : U256) =>
+  effectsWithTransient effects (transientSet effects.5 address slot value)
+def effectsPlanStore : EvmEffects -> MutabilityPermit -> Address -> U256 -> U256 -> EffectLoad SstoreState :=
+  fun (effects : EvmEffects) (permit : MutabilityPermit) (address : Address) (slot : U256) (value : U256) =>
+    let touched : prod (Warmth, AccessState) := accessTouchSlot address slot effects.2 in
+    let original : U256 := case (lifecycleCreatedHere effects.6 address) with | 0 (unit : prod ()) => worldStateStorage effects.1 address slot | 1 (unit : prod ()) => u256Zero in
+    let write : SstoreState := tuple (original, worldStateStorage effects.0 address slot, value) in
+    tuple (write, touched.0, effectsWithAccess effects touched.1, fun (current : EvmEffects) =>
+      effectsWithRefund (effectsWithWorld current (worldStateSetStorage current.0 address slot value)) (refundAdd current.3 (gasSstoreRefund write)))
+def effectsCommitStore : EffectLoad SstoreState -> EvmEffects := fun (load : EffectLoad SstoreState) => load.3 load.2
+def effectsTransfer : EvmEffects -> Address -> Address -> U256 -> ValueOption EvmEffects :=
+  fun (effects : EvmEffects) (from : Address) (to : Address) (value : U256) =>
+    case (accountDebit (worldStateAccount effects.0 from) value) with | 0 (unit : prod ()) => valueNone EvmEffects
+    | 1 (debited : Account) => let world : WorldState := worldStateSetAccount effects.0 from debited in
+      case (accountCredit (worldStateAccount world to) value) with | 0 (unit : prod ()) => valueNone EvmEffects
+      | 1 (credited : Account) => valueSome EvmEffects (effectsWithWorld effects (worldStateSetAccount world to credited))
+def effectsBumpNonce : EvmEffects -> Address -> ValueOption EvmEffects := fun (effects : EvmEffects) (address : Address) =>
+  case (accountIncrementNonceChecked (worldStateAccount effects.0 address)) with | 0 (unit : prod ()) => valueNone EvmEffects
+  | 1 (account : Account) => valueSome EvmEffects (effectsWithWorld effects (worldStateSetAccount effects.0 address account))
+def effectsBeginCreation : EvmEffects -> MutabilityPermit -> Address -> Address -> U256 -> ValueOption EvmEffects :=
+  fun (effects : EvmEffects) (permit : MutabilityPermit) (creator : Address) (created : Address) (value : U256) =>
+    let account : Account := accountWithStorage (accountIncrementNonce (worldStateAccount effects.0 created)) storageEmpty in
+    let prepared : EvmEffects := effectsWithLifecycle (effectsWithWorld effects (worldStateSetAccount effects.0 created account)) (lifecycleRecordCreation effects.6 created) in
+    effectsTransfer prepared creator created value
+def effectsDeployCode : EvmEffects -> MutabilityPermit -> Address -> Bytes -> EvmEffects := fun (effects : EvmEffects) (permit : MutabilityPermit) (address : Address) (code : Bytes) =>
+  effectsWithWorld effects (worldStateSetAccount effects.0 address (accountWithCode (worldStateAccount effects.0 address) code))
+def effectsPlanDestruction : EvmEffects -> Address -> Address -> EffectLoad Destruction := fun (effects : EvmEffects) (address : Address) (beneficiary : Address) =>
+  effectsRead Destruction effects (accessTouchAccount beneficiary effects.2)
+    (tuple (address, beneficiary, worldStateBalance effects.0 address, boolNot (accountIsEmpty (worldStateAccount effects.0 beneficiary)), lifecycleCreatedHere effects.6 address))
+def effectsDestructionDeletes : Destruction -> EvmSpec -> Bool := fun (plan : Destruction) (spec : EvmSpec) => boolOr plan.4 (boolNot (evmSpecEnabled spec evmCancun))
+def effectsCommitDestruction : EffectLoad Destruction -> MutabilityPermit -> EvmSpec -> ValueOption EvmEffects :=
+  fun (load : EffectLoad Destruction) (permit : MutabilityPermit) (spec : EvmSpec) =>
+    let plan : Destruction := load.0 in let deletes : Bool := effectsDestructionDeletes plan spec in
+    let recorded : EvmEffects := case deletes with | 0 (unit : prod ()) => load.2 | 1 (unit : prod ()) => effectsWithLifecycle load.2 (lifecycleRecordDestruction load.2.6 plan.0) in
+    case (addressEqual plan.0 plan.1) with
+    | 0 (unit : prod ()) => effectsTransfer recorded plan.0 plan.1 plan.2
+    | 1 (unit : prod ()) => case deletes with | 0 (unit : prod ()) => valueSome EvmEffects recorded
+      | 1 (unit : prod ()) => case (accountDebit (worldStateAccount recorded.0 plan.0) plan.2) with | 0 (unit : prod ()) => valueNone EvmEffects
+        | 1 (account : Account) => valueSome EvmEffects (effectsWithWorld recorded (worldStateSetAccount recorded.0 plan.0 account))
+def effectsEqual : EvmEffects -> EvmEffects -> Bool := fun (a : EvmEffects) (b : EvmEffects) =>
+  boolAnd (worldStateEqual a.0 b.0) (boolAnd (worldStateEqual a.1 b.1) (boolAnd (accessEqual a.2 b.2) (boolAnd (refundEqual a.3 b.3)
+    (boolAnd (logJournalEqual a.4 b.4) (boolAnd (transientEqual a.5 b.5) (lifecycleEqual a.6 b.6))))))

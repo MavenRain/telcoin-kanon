@@ -1,0 +1,31 @@
+def receiptTestLogs : Nat -> Bytes -> EvmLogs := fun (count : Nat) (data : Bytes) =>
+  case (natEq count 0) with | 1 (unit : prod ()) => evmLogsNil
+  | 0 (unit : prod ()) => evmLogsCons (tuple (addressOfWord u256One, evmTopics2 u256Zero (u256Value 128), data))
+    (case (natEq count 1) with | 1 (unit : prod ()) => evmLogsNil | 0 (unit : prod ()) => evmLogsCons (tuple (addressOfWord (u256Value 2), evmTopics0, b"")) evmLogsNil)
+def receiptTestBuild : Nat -> HostInt -> EvmLogs -> Receipt := fun (status : Nat) (used : HostInt) (logs : EvmLogs) =>
+  case (natEq status 0) with | 1 (unit : prod ()) => receiptSuccess b"output" (valueSome Address (addressOfWord u256One)) used (hostIntPositive 7) logs
+  | 0 (unit : prod ()) => case (natEq status 1) with | 1 (unit : prod ()) => receiptReverted b"revert" used | 0 (unit : prod ()) => receiptHalted (receiptFrameHalt evmOutOfGas) used
+def evm_test_receipt : Nat -> Bytes -> Bytes -> Bytes -> Nat -> Bytes -> Bytes := fun (status : Nat) (usedRaw : Bytes) (cumRaw : Bytes) (typeRaw : Bytes) (count : Nat) (data : Bytes) =>
+  case (hostIntParse usedRaw) with | 0 (unit : prod ()) => b"error:bad int" | 1 (used : HostInt) =>
+  case (hostIntParse cumRaw) with | 0 (unit : prod ()) => b"error:bad int" | 1 (cumulative : HostInt) =>
+  case (hostIntParse typeRaw) with | 0 (unit : prod ()) => b"error:bad int" | 1 (typeByte : HostInt) =>
+  let receipt : Receipt := receiptTestBuild status used (receiptTestLogs count data) in
+  envTestField (receiptText receipt) (envTestField (evmTestBool (receiptStatus receipt)) (envTestField (decimal64 (seqEvmLogLength (receiptLogs receipt)))
+    (envTestField (bytesHex (receiptEncode2718 typeByte cumulative receipt)) (bytesHex (blockReceiptsRoot
+      (receiptPairsCons (tuple (typeByte, receipt)) (receiptPairsCons (tuple (hostIntPositive 2, receiptReverted b"" (hostIntPositive 1))) receiptPairsNil)))))))
+def receiptTestMeterText : BlockGas -> Bytes := fun (meter : BlockGas) => envTestField (decimal64 (blockGasLimit meter))
+  (envTestField (hostIntText (blockGasUsed meter)) (envTestField (hostIntText (blockGasAvailable meter)) (evmTestBool (blockGasEqual meter meter))))
+def receiptTestMeterStep : BlockGas -> HostInt -> prod (BlockGas, Bytes) := fun (meter : BlockGas) (used : HostInt) =>
+  case (blockGasChargeReceipt meter (receiptReverted b"" used)) with | 0 (unit : prod ()) => tuple (meter, b"none")
+  | 1 (next : BlockGas) => tuple (next, append b"some:" (receiptTestMeterText next))
+def evm_test_block_meter : Bytes -> Bytes -> Bytes -> Bytes := fun (limitRaw : Bytes) (firstRaw : Bytes) (secondRaw : Bytes) =>
+  case (hostIntParse limitRaw) with | 0 (unit : prod ()) => b"error:bad int" | 1 (limitInt : HostInt) =>
+  case (hostIntNonnegative limitInt) with | 0 (unit : prod ()) => b"error:negative limit" | 1 (limit : Nat) =>
+  case (hostIntParse firstRaw) with | 0 (unit : prod ()) => b"error:bad int" | 1 (firstUsed : HostInt) =>
+  case (hostIntParse secondRaw) with | 0 (unit : prod ()) => b"error:bad int" | 1 (secondUsed : HostInt) =>
+  let address : Address := addressOfWord u256Zero in let zero : Bytes := u256ToBeBytes u256Zero in
+  let block : EvmBlock := evmBlockMake address u256Zero u256Zero u256Zero (u256Value limit) u256Zero address u256One evmConsensusBlobGasprice blockHashesEmpty in
+  case (blockContextMake block (keccakValue zero) outputDigestZero (sequenceNumber (epochValue 0) (roundValue 0)) (batchDigestValue zero) (evmBatchPositionValue u256Zero) epochOpen) with
+  | 0 (error : BlockContextError) => blockContextErrorText error | 1 (context : BlockContext) =>
+    let start : BlockGas := blockGasStart context in let first : prod (BlockGas, Bytes) := receiptTestMeterStep start firstUsed in
+    let second : prod (BlockGas, Bytes) := receiptTestMeterStep first.0 secondUsed in envTestField (receiptTestMeterText start) (envTestField first.1 second.1)

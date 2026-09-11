@@ -20,8 +20,8 @@ New EVM arithmetic and opcode tests pass 1,522 OCaml comparisons in four groups,
 including signed constructor bounds and complete operand enumerations
 (`.kanon-exec/run-4nnptM`). Stack, memory, access tracking and gas tests pass 713
 comparisons in seven groups (`.kanon-exec/run-UmZCW2`). RLP passes 393 comparisons
-in three groups (`.kanon-exec/run-GA0Ivc`). These newer modules are being integrated
-after the published checkpoint.
+in three groups (`.kanon-exec/run-GA0Ivc`). These modules were published in
+checkpoint `3f743ac` after the consensus and state checkpoint.
 
 Code analysis and transient storage pass 203 comparisons in two groups
 (`.kanon-exec/run-eUgC8t`). Trie and nibble operations pass 423 comparisons in five
@@ -50,6 +50,55 @@ scoped runs, totaling 3,362 OCaml comparisons. The original 101-group combined
 run remains the evidence for the preceding checkpoint; the expanded 124-group
 command has not yet been run as one invocation. Source inventory, generated
 collections/opcodes and staged whitespace checks passed as well.
+
+Checkpoint `3f743ac` has 85 production source files and 9,174 nonempty source lines.
+Its Wasm artifact is 341,957 bytes with 65 exports and zero imports, SHA-256
+`56856d6b9ce2264b3a8fed55a9e36ab5e5ba033420f871aa3d81010d4786f3ed`.
+The public 20-second simulator smoke completed 1,959 events and 23 commits per
+validator, with all four validators agreeing on block 23
+`28a0c54d4128b75c2b192eff1a7cef28bb63bded1b669f4d6dc8eb1dcf081862`
+(`.kanon-exec/run-GODT7e`).
+
+## Environment, effects and block commitments
+
+The following scoped suites pass against actual, hash-checked OCaml modules:
+
+| Suite | Groups | Differential rows | Capture |
+| --- | ---: | ---: | --- |
+| Environment, forks, gas penalty, batch position and block hashes | 5 | 207 | `.kanon-exec/run-tuLhwE` |
+| Effect snapshots, storage planning, transfers, creation and destruction | 5 | 346 | `.kanon-exec/run-qK1fik` |
+| Fork schedules, intrinsic gas, contract addresses and delegation | 5 | 517 | `.kanon-exec/run-RvQwtZ` |
+| Withdrawals, blooms and account/state roots | 3 | 83 | `.kanon-exec/run-vGWrGG` |
+| Epoch boundaries and block-context admission | 2 | 234 | `.kanon-exec/run-Q6pgkT` |
+| Receipt encoding/roots and block gas accounting | 2 | 88 | `.kanon-exec/run-j2Wem1` |
+
+The effect cases check cold-to-warm witnesses, transaction-original storage through
+multiple writes, zero original storage after creation, refund commits, immutable
+failure snapshots, self-transfers, nonce exhaustion, prefunding, code deployment,
+recipient overflow and pre/post-Cancun destruction. Account removal remains deferred
+to the transaction layer, which is not implemented yet.
+
+The oracle harness can sort pinned source modules with `ocamldep` and checks that
+sorting preserves the complete module list. Block tests compile the source EVM
+interpreter and its secp256k1/BN254 dependencies, with no replacement algorithms in
+the test adapters. Zarith is an oracle dependency; the Kanon implementation has no
+host crypto imports. The local interpreter and transaction execution remain pending.
+
+These suites add 22 passing groups and 1,475 OCaml comparisons. Receipt tests
+cover all success/revert/halt forms, legacy and typed envelopes, fixed-width topics,
+successful-log inclusion and cumulative net gas. Block gas preserves source machine
+arithmetic, including its unchecked addition wraparound for unrealistic near-maximum
+receipt sums; transaction admission must enforce the available gas before execution.
+A full production build through block-context admission passed
+(`.kanon-exec/run-0uJC7S`).
+
+The subsequent full build, including every receipt declaration and generated carrier,
+passed (`.kanon-exec/run-QW9HwB`). The artifact has 102 production source files,
+9,936 nonempty source lines, 386,765 Wasm bytes, 65 exports and zero imports, SHA-256
+`e01234f057725de96f0dc7bbd3e6cf41d6afbdb5ae806df4f185e9c6430c86d5`
+(`.kanon-exec/run-umsQcC`). Source inventory and generated-source checks passed
+(`.kanon-exec/run-uZYIuU` and `.kanon-exec/run-iLhTvI`). The expanded 146-group
+combined invocation has not yet run; the scoped evidence above does not replace it.
 
 ## Initial foundation audit
 

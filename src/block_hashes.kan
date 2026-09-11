@@ -1,0 +1,17 @@
+def BlockHashes : Type 0 := Keccaks
+def blockHashesEmpty : BlockHashes := keccaksNil
+def rec blockHashesTake : Keccaks -> Nat -> Keccaks := fun (hashes : Keccaks) (count : Nat) => match hashes as self in Keccaks return Keccaks with
+  | keccaksNil => keccaksNil | keccaksCons head tail => case (natEq count 0) with
+    | 1 (unit : prod ()) => keccaksNil | 0 (unit : prod ()) => keccaksCons head (blockHashesTake tail (natSub count 1))
+def blockHashesOfRecent : Keccaks -> BlockHashes := fun (hashes : Keccaks) => blockHashesTake hashes 256
+def rec blockHashesNth : Keccaks -> Nat -> U256 := fun (hashes : Keccaks) (index : Nat) => match hashes as self in Keccaks return U256 with
+  | keccaksNil => u256Zero | keccaksCons head tail => case (natEq index 0) with
+    | 1 (unit : prod ()) => u256Value (u256ReadBe (keccakBytes head) 0) | 0 (unit : prod ()) => blockHashesNth tail (natSub index 1)
+def blockHashesLookup : BlockHashes -> U256 -> U256 -> U256 := fun (hashes : BlockHashes) (current : U256) (requested : U256) =>
+  case (u256CheckedSub current requested) with | 0 (unit : prod ()) => u256Zero
+  | 1 (difference : U256) => case (boolAnd (natLt 0 (u256Nat difference)) (natLt (u256Nat difference) 257)) with
+    | 0 (unit : prod ()) => u256Zero | 1 (unit : prod ()) => blockHashesNth hashes (natSub (u256Nat difference) 1)
+def rec blockHashesEqual : BlockHashes -> BlockHashes -> Bool := fun (a : BlockHashes) (b : BlockHashes) => match a as self in Keccaks return Bool with
+  | keccaksNil => (match b as self in Keccaks return Bool with | keccaksNil => natEq 0 0 | keccaksCons head tail => natEq 0 1)
+  | keccaksCons head tail => match b as self in Keccaks return Bool with | keccaksNil => natEq 0 1
+    | keccaksCons other rest => boolAnd (keccakEqual head other) (blockHashesEqual tail rest)

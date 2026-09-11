@@ -1,0 +1,34 @@
+def executionTestTimestampOption : Nat -> ValueOption Timestamp := fun (n : Nat) => case (natEq n 0) with
+  | 1 (unit : prod ()) => valueNone Timestamp | 0 (unit : prod ()) => valueSome Timestamp (timestampValue (natSub n 1))
+def evm_test_schedule : Nat -> Nat -> Nat -> Nat -> Bytes := fun (s : Nat) (c : Nat) (p : Nat) (time : Nat) =>
+  case (forkScheduleMake (timestampValue s) (executionTestTimestampOption c) (executionTestTimestampOption p)) with
+  | 0 (error : ForkScheduleError) => forkScheduleErrorText error
+  | 1 (schedule : ForkSchedule) => envTestField (forkScheduleText schedule) (envTestField (evmSpecText (forkScheduleActiveAt schedule (timestampValue time)))
+    (envTestField (evmTestBool (forkScheduleEqual schedule forkScheduleMainnet)) (evmTestBool (forkScheduleEqual schedule forkScheduleTestnet))))
+def evm_test_contract_address : Bytes -> Bytes -> Bytes -> Bytes -> Nat -> Bytes := fun (creatorRaw : Bytes) (nonceRaw : Bytes) (saltRaw : Bytes) (code : Bytes) (kind : Nat) =>
+  case (addressOfBytes creatorRaw) with | 0 (unit : prod ()) => b"error:bad address" | 1 (creator : Address) =>
+  case (hostIntParse nonceRaw) with | 0 (unit : prod ()) => b"error:bad int" | 1 (nonce : HostInt) =>
+  case (hostIntNonnegative nonce) with | 0 (unit : prod ()) => b"error:bad nonce" | 1 (nonce : Nat) =>
+  case (u256OfHex saltRaw) with | 0 (unit : prod ()) => b"error:bad word" | 1 (salt : U256) =>
+  addressHex (contractAddressDerive creator (case (natEq kind 0) with | 1 (unit : prod ()) => contractFromNonce (nonceValue nonce) | 0 (unit : prod ()) => contractFromSalt salt code))
+def executionTestAccess : Nat -> Nat -> TxAccessEntries := fun (addresses : Nat) (slots : Nat) =>
+  let words : prod (Nat, Words) := stepsFold (prod (Nat, Words)) steps32 (fun (state : prod (Nat, Words)) => boolNat (natEq state.0 slots))
+    (fun (state : prod (Nat, Words)) => tuple (natAdd state.0 1, wordsCons u256One state.1)) (tuple (0, wordsNil)) in
+  let entries : prod (Nat, TxAccessEntries) := stepsFold (prod (Nat, TxAccessEntries)) steps32 (fun (state : prod (Nat, TxAccessEntries)) => boolNat (natEq state.0 addresses))
+    (fun (state : prod (Nat, TxAccessEntries)) => tuple (natAdd state.0 1, txAccessEntriesCons (tuple (effectsTestAddress 1, words.1)) state.1)) (tuple (0, txAccessEntriesNil)) in entries.1
+def evm_test_intrinsic : Nat -> Bytes -> Nat -> Nat -> Nat -> Bytes -> Bytes := fun (kind : Nat) (data : Bytes) (addresses : Nat) (slots : Nat) (auths : Nat) (lengthRaw : Bytes) =>
+  case (hostIntParse lengthRaw) with | 0 (unit : prod ()) => b"error:bad int" | 1 (length : HostInt) =>
+  envTestField (hostIntText (intrinsicInitialGas (case (natEq kind 0) with | 1 (unit : prod ()) => intrinsicCall | 0 (unit : prod ()) => intrinsicCreate) data (executionTestAccess addresses slots) auths))
+    (envTestField (hostIntText (intrinsicFloorGas data)) (envTestField (decimal64 (intrinsicTokens data)) (hostIntText (intrinsicNumWords length))))
+def evm_test_call_target : Bytes -> Bytes -> Nat -> Bytes := fun (targetCode : Bytes) (delegateCode : Bytes) (prewarm : Nat) =>
+  let a : Address := effectsTestAddress 1 in let b : Address := effectsTestAddress 2 in
+  let world : WorldState := worldStateSetAccount worldStateEmpty b (accountWithCode accountEmpty delegateCode) in
+  let initial : EvmEffects := effectsStart world (accessOfTransaction (case (natEq prewarm 0) with | 1 (unit : prod ()) => addressesNil | 0 (unit : prod ()) => addressesCons b addressesNil) addressSlotsNil) in
+  let target : CallTarget := callTargetResolve initial (accountWithCode accountEmpty targetCode) in
+  envTestField (bytesHex (evmDataBytes (evmCodeWindow target.0))) (envTestField (decimal64 target.2)
+    (envTestField (case target.3 with | 0 (unit : prod ()) => b"none" | 1 (delegate : Address) => addressHex delegate)
+      (envTestField (evmTestBool (effectsEqual initial target.1)) (envTestField (evmTestBool (accessMemAccount a target.1.2)) (evmTestBool (accessMemAccount b target.1.2))))))
+def evm_test_depth : Nat -> Bytes := fun (n : Nat) => let depth : EvmCallDepth := evmCallDepthValue n in
+  envTestField (decimal64 (evmCallDepthNat (evmCallDepthSucc depth))) (envTestField (evmTestBool (evmCallDepthWithinLimit depth)) (evmTestBool (evmCallDepthWithinLimit (evmCallDepthSucc depth))))
+def evm_test_frame : Bytes -> Bytes -> Bytes := fun (typeRaw : Bytes) (body : Bytes) => case (hostIntParse typeRaw) with
+  | 0 (unit : prod ()) => b"error:bad int" | 1 (typeByte : HostInt) => bytesHex (eip2718Frame typeByte body)

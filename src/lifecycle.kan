@@ -1,0 +1,14 @@
+def Lifecycle : Type 0 := prod (Addresses, Addresses)
+def lifecycleEmpty : Lifecycle := tuple (addressesNil, addressesNil)
+def addressesAdd : Address -> Addresses -> Addresses := fun (address : Address) (addresses : Addresses) =>
+  seqAddressUniq addressCompare (seqAddressSort addressCompare (addressesCons address addresses))
+def addressesEqual : Addresses -> Addresses -> Bool := fun (a : Addresses) (b : Addresses) => orderingEqual (listCompare Address Addresses seqAddressOps addressCompare a b)
+def lifecycleRecordCreation : Lifecycle -> Address -> Lifecycle := fun (lifecycle : Lifecycle) (address : Address) => tuple (addressesAdd address lifecycle.0, lifecycle.1)
+def lifecycleCreatedHere : Lifecycle -> Address -> Bool := fun (lifecycle : Lifecycle) (address : Address) => accessMemAccountList address lifecycle.0
+def lifecycleRecordDestruction : Lifecycle -> Address -> Lifecycle := fun (lifecycle : Lifecycle) (address : Address) => tuple (lifecycle.0, addressesAdd address lifecycle.1)
+def lifecycleDestroyed : Lifecycle -> Addresses := fun (lifecycle : Lifecycle) => lifecycle.1
+def lifecycleEqual : Lifecycle -> Lifecycle -> Bool := fun (a : Lifecycle) (b : Lifecycle) => boolAnd (addressesEqual a.0 b.0) (addressesEqual a.1 b.1)
+def Destruction : Type 0 := prod (Address, Address, U256, Bool, Bool)
+def destructionHadValue : Destruction -> Bool := fun (plan : Destruction) => boolNot (u256IsZero plan.2)
+def destructionEqual : Destruction -> Destruction -> Bool := fun (a : Destruction) (b : Destruction) =>
+  boolAnd (addressEqual a.0 b.0) (boolAnd (addressEqual a.1 b.1) (boolAnd (u256Equal a.2 b.2) (boolAnd (natEq (boolNat a.3) (boolNat b.3)) (natEq (boolNat a.4) (boolNat b.4)))))

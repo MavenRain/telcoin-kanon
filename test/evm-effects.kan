@@ -1,0 +1,82 @@
+def effectsTestAddress : Nat -> Address := fun (n : Nat) => addressOfWord (u256Value n)
+def effectsTestAccount : Account -> Bytes := fun (a : Account) => envTestField (u256Hex (accountBalance a))
+  (envTestField (nonceText (accountNonce a)) (envTestField (u256Hex (accountSlot a u256One)) (bytesHex (accountCode a))))
+def effectsTestSummary : EvmEffects -> Bytes := fun (effects : EvmEffects) =>
+  let a : Address := effectsTestAddress 1 in let b : Address := effectsTestAddress 2 in
+  envTestField (effectsTestAccount (worldStateAccount effects.0 a)) (envTestField (effectsTestAccount (worldStateAccount effects.0 b))
+    (envTestField (u256Hex (worldStateStorage effects.1 a u256One)) (envTestField (hostIntText (refundAmount effects.3))
+      (envTestField (decimal64 (logJournalLength effects.4)) (envTestField (u256Hex (transientGet effects.5 a u256One))
+        (envTestField (evmTestBool (lifecycleCreatedHere effects.6 a)) (envTestField (evmTestBool (lifecycleCreatedHere effects.6 b))
+          (envTestField (envTestAddresses (lifecycleDestroyed effects.6)) (envTestField (evmTestBool (accessMemAccount a effects.2))
+            (envTestField (evmTestBool (accessMemAccount b effects.2)) (envTestField (evmTestBool (accessMemSlot a u256One effects.2))
+              (evmTestBool (effectsEqual effects effects)))))))))))))
+def effectsTestOption : ValueOption EvmEffects -> Bytes := fun (result : ValueOption EvmEffects) => case result with
+  | 0 (unit : prod ()) => b"none" | 1 (effects : EvmEffects) => envTestField b"some" (effectsTestSummary effects)
+def effectsTestWrite : EffectLoad SstoreState -> Bytes := fun (load : EffectLoad SstoreState) =>
+  envTestField (u256Hex load.0.0) (envTestField (u256Hex load.0.1) (envTestField (u256Hex load.0.2)
+    (envTestField (evmTestBool (warmthIsCold load.1)) (envTestField (decimal64 (gasSstoreDynamic load.1 load.0)) (hostIntText (refundAmount (gasSstoreRefund load.0)))))))
+def evm_test_effects_store : Bytes -> Bytes -> Bytes -> Nat -> Bytes := fun (originalRaw : Bytes) (nextRaw : Bytes) (lastRaw : Bytes) (created : Nat) =>
+  case (u256OfHex originalRaw) with | 0 (unit : prod ()) => b"error:bad word" | 1 (original : U256) =>
+  case (u256OfHex nextRaw) with | 0 (unit : prod ()) => b"error:bad word" | 1 (next : U256) =>
+  case (u256OfHex lastRaw) with | 0 (unit : prod ()) => b"error:bad word" | 1 (last : U256) =>
+  let a : Address := effectsTestAddress 1 in let b : Address := effectsTestAddress 2 in
+  let initial : EvmEffects := effectsStart (worldStateSetStorage worldStateEmpty a u256One original) accessEmpty in
+  let prepared : ValueOption EvmEffects := case (natEq created 0) with | 1 (unit : prod ()) => valueSome EvmEffects initial
+    | 0 (unit : prod ()) => effectsBeginCreation initial mutabilityPermitValue b a u256Zero in
+  case prepared with | 0 (unit : prod ()) => b"error:creation" | 1 (start : EvmEffects) =>
+  let first : EffectLoad SstoreState := effectsPlanStore start mutabilityPermitValue a u256One next in
+  let committed : EvmEffects := effectsCommitStore first in
+  let second : EffectLoad SstoreState := effectsPlanStore committed mutabilityPermitValue a u256One last in
+  let done : EvmEffects := effectsCommitStore second in
+  let transient : EvmEffects := effectsTransientStore done mutabilityPermitValue a u256One last in
+  let logged : EvmEffects := effectsLog (effectsLog transient mutabilityPermitValue (tuple (a, evmTopics0, b"abc"))) mutabilityPermitValue (tuple (b, evmTopics0, b"")) in
+  envTestField (effectsTestWrite first) (envTestField (effectsTestWrite second)
+    (envTestField (evmTestBool (worldStateEqual first.2.0 start.0)) (envTestField (evmTestBool (worldStateEqual logged.1 initial.0))
+      (envTestField (evmTestBool (effectsEqual initial logged)) (envTestField (effectsTestSummary logged) (effectsTestSummary initial))))))
+def evm_test_effects_transfer : Bytes -> Bytes -> Bytes -> Nat -> Nat -> Bytes := fun (fromRaw : Bytes) (toRaw : Bytes) (valueRaw : Bytes) (self : Nat) (highNonce : Nat) =>
+  case (u256OfHex fromRaw) with | 0 (unit : prod ()) => b"error:bad word" | 1 (fromBalance : U256) =>
+  case (u256OfHex toRaw) with | 0 (unit : prod ()) => b"error:bad word" | 1 (toBalance : U256) =>
+  case (u256OfHex valueRaw) with | 0 (unit : prod ()) => b"error:bad word" | 1 (value : U256) =>
+  let a : Address := effectsTestAddress 1 in let b : Address := effectsTestAddress 2 in
+  let nonce : Nonce := nonceValue (case (natEq highNonce 0) with | 1 (unit : prod ()) => 0 | 0 (unit : prod ()) => 4611686018427387903) in
+  let world : WorldState := worldStateSetAccount (worldStateSetAccount worldStateEmpty a (accountMake nonce fromBalance)) b (accountMake nonceZero toBalance) in
+  let initial : EvmEffects := effectsStart world accessEmpty in
+  let result : ValueOption EvmEffects := effectsTransfer initial a (case (natEq self 0) with | 1 (unit : prod ()) => b | 0 (unit : prod ()) => a) value in
+  envTestField (effectsTestOption result) (envTestField (effectsTestOption (effectsBumpNonce initial a)) (effectsTestSummary initial))
+def evm_test_effects_creation : Bytes -> Bytes -> Bytes -> Bytes := fun (fromRaw : Bytes) (toRaw : Bytes) (valueRaw : Bytes) =>
+  case (u256OfHex fromRaw) with | 0 (unit : prod ()) => b"error:bad word" | 1 (fromBalance : U256) =>
+  case (u256OfHex toRaw) with | 0 (unit : prod ()) => b"error:bad word" | 1 (toBalance : U256) =>
+  case (u256OfHex valueRaw) with | 0 (unit : prod ()) => b"error:bad word" | 1 (value : U256) =>
+  let a : Address := effectsTestAddress 1 in let b : Address := effectsTestAddress 2 in
+  let world : WorldState := worldStateSetAccount (worldStateSetAccount worldStateEmpty a (accountMake nonceZero fromBalance)) b (accountSetSlot (accountMake nonceZero toBalance) u256One (u256Value 9)) in
+  let initial : EvmEffects := effectsStart world accessEmpty in
+  let result : ValueOption EvmEffects := effectsBeginCreation initial mutabilityPermitValue a b value in
+  envTestField (case result with | 0 (unit : prod ()) => b"none" | 1 (born : EvmEffects) => effectsTestOption (valueSome EvmEffects (effectsDeployCode born mutabilityPermitValue b b"\x60\x01")))
+    (effectsTestSummary initial)
+def evm_test_effects_destruction : Bytes -> Bytes -> Nat -> Nat -> Nat -> Bytes := fun (balanceRaw : Bytes) (beneficiaryRaw : Bytes) (specRaw : Nat) (created : Nat) (self : Nat) =>
+  case (u256OfHex balanceRaw) with | 0 (unit : prod ()) => b"error:bad word" | 1 (balance : U256) =>
+  case (u256OfHex beneficiaryRaw) with | 0 (unit : prod ()) => b"error:bad word" | 1 (beneficiaryBalance : U256) =>
+  let a : Address := effectsTestAddress 1 in let b : Address := effectsTestAddress 2 in
+  let world : WorldState := worldStateSetAccount (worldStateSetAccount worldStateEmpty a (accountSetSlot (accountMake nonceZero balance) u256One (u256Value 7))) b (accountMake nonceZero beneficiaryBalance) in
+  let initial : EvmEffects := effectsStart world accessEmpty in
+  let prepared : ValueOption EvmEffects := case (natEq created 0) with | 1 (unit : prod ()) => valueSome EvmEffects initial
+    | 0 (unit : prod ()) => effectsBeginCreation initial mutabilityPermitValue b a u256Zero in
+  case prepared with | 0 (unit : prod ()) => b"error:creation" | 1 (prepared : EvmEffects) =>
+  let start : EvmEffects := effectsDeployCode prepared mutabilityPermitValue a b"\x60\x00" in
+  let load : EffectLoad Destruction := effectsPlanDestruction start a (case (natEq self 0) with | 1 (unit : prod ()) => b | 0 (unit : prod ()) => a) in
+  envTestField (evmTestBool (warmthIsCold load.1)) (envTestField (evmTestBool (destructionHadValue load.0))
+    (envTestField (evmTestBool load.0.3) (envTestField (evmTestBool load.0.4)
+      (envTestField (effectsTestOption (effectsCommitDestruction load mutabilityPermitValue (envTestSpec specRaw))) (effectsTestSummary start)))))
+def evm_test_effects_reads : Nat -> Nat -> Bytes := fun (prewarm : Nat) (self : Nat) =>
+  let a : Address := effectsTestAddress 1 in let b : Address := effectsTestAddress 2 in
+  let world : WorldState := worldStateSetStorage (worldStateSetAccount worldStateEmpty a (accountMake nonceZero (u256Value 8))) a u256One (u256Value 9) in
+  let addresses : Addresses := case (natEq prewarm 0) with | 1 (unit : prod ()) => addressesNil | 0 (unit : prod ()) => addressesCons a addressesNil in
+  let initial : EvmEffects := effectsStart world (accessOfTransaction addresses addressSlotsNil) in
+  let first : EffectLoad U256 := effectsBalance initial a in let second : EffectLoad Account := effectsExtAccount first.2 a in
+  let third : EffectLoad U256 := effectsStorage second.2 a u256One in let fourth : EffectLoad U256 := effectsStorage third.2 a u256One in
+  let target : Address := case (natEq self 0) with | 1 (unit : prod ()) => b | 0 (unit : prod ()) => a in
+  let selfBalance : prod (U256, EvmEffects) := effectsSelfBalance fourth.2 target in let selfAccount : prod (Account, EvmEffects) := effectsSelfAccount selfBalance.1 target in
+  envTestField (u256Hex first.0) (envTestField (effectsTestAccount second.0) (envTestField (u256Hex third.0)
+    (envTestField (evmTestBool (warmthIsCold first.1)) (envTestField (evmTestBool (warmthIsCold second.1))
+      (envTestField (evmTestBool (warmthIsCold third.1)) (envTestField (evmTestBool (warmthIsCold fourth.1))
+        (envTestField (u256Hex selfBalance.0) (envTestField (effectsTestAccount selfAccount.0) (effectsTestSummary selfAccount.1)))))))))

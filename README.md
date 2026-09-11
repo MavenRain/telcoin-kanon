@@ -10,7 +10,9 @@ headers, votes, certificates, DAG and voting state, leader scheduling,
 sub-DAG commits, proposer and node composition, the deterministic simulator,
 consensus-chain execution and replay, U256 and account state. EVM primitives now
 include arithmetic, opcodes, stack, memory, access tracking, gas/refunds, code and
-data windows, transient storage and logs. RLP and Merkle-Patricia trie construction
+data windows, transient storage, logs, transaction environments and effect snapshots.
+Fork schedules, delegation resolution, contract addresses, intrinsic gas, block contexts,
+withdrawals, blooms, RLP, Merkle-Patricia state roots, receipts and receipt roots
 are also implemented. Protocol behavior runs in Kanon compiled to WasmGC.
 JavaScript transports bytes and supplies the CLI and test harness.
 
@@ -70,7 +72,7 @@ npm run collections:check
 ```
 
 Tests require the pinned OCaml checkout and a `tn-ocaml` opam switch with
-`ocamlfind` and `digestif.c`. Use `TELCOIN_OCAML_ROOT` and `OCAML_SWITCH` to
+`ocamlfind`, `digestif.c` and `zarith`. Use `TELCOIN_OCAML_ROOT` and `OCAML_SWITCH` to
 relocate them. Tests hash-check and copy actual OCaml source modules into
 temporary directories, compile oracle executables, and compare their results
 with Kanon. They do not build or modify the source checkout or fetch packages.

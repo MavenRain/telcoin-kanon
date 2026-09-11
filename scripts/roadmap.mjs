@@ -63,6 +63,30 @@ const coverage = {
   'lib/evm/return_data.ml': 'Ported: strict copy bounds including zero-length windows, src/evm_log.kan; OCaml comparisons',
   'lib/evm/log.ml': 'Ported: typed topic arities, generic atomic collection, log values and rendering, src/evm_log.kan; OCaml comparisons',
   'lib/evm/log_journal.ml': 'Ported: immutable journal with emission-order projection, src/log_journal.kan; OCaml comparisons',
+  'lib/evm/spec.ml': 'Ported: fork ordering and activation checks, src/evm_spec.kan; OCaml comparisons',
+  'lib/evm/mutability.ml': 'Ported: explicit static/mutable permissions, src/evm_spec.kan; OCaml comparisons',
+  'lib/evm/gas_penalty.ml': 'Ported: fixed-point penalty with wide intermediates, src/evm_spec.kan; boundary comparisons against OCaml/Zarith',
+  'lib/evm/batch_position.ml': 'Ported: packed worker/index fields, checked host-int admission and first-batch classification, src/evm_spec.kan; OCaml comparisons',
+  'lib/evm/block_hashes.ml': 'Ported: 256-ancestor window and full U256 lookup, src/block_hashes.kan; OCaml comparisons',
+  'lib/evm/env.ml': 'Ported: block, transaction and call environments with ordered access entries, src/env.kan; OCaml comparisons',
+  'lib/evm/lifecycle.ml': 'Ported: created and destroyed address sets, src/lifecycle.kan; effect trace comparisons',
+  'lib/evm/destruction.ml': 'Ported: deferred destruction plans and value/existence flags, src/lifecycle.kan; effect trace comparisons',
+  'lib/evm/effects.ml': 'Ported: immutable snapshots, warmth, original storage, refunds, logs, transfers, creation and fork-dependent destruction, src/effects.kan; OCaml comparisons',
+  'lib/evm/fork_schedule.ml': 'Ported: monotone admission and inclusive activation timestamps, src/fork_schedule.kan; OCaml comparisons',
+  'lib/evm/call_depth.ml': 'Ported for reachable frame depths: explicit depth and inclusive 1024 limit, src/execution_primitives.kan; boundary comparisons',
+  'lib/evm/call_target.ml': 'Ported: one-hop delegation, independent warming and surcharge, src/execution_primitives.kan; OCaml comparisons',
+  'lib/evm/contract_address.ml': 'Ported: CREATE nonce RLP and CREATE2 salt/initcode derivation, src/execution_primitives.kan; OCaml comparisons',
+  'lib/evm/intrinsic.ml': 'Ported: token costs, wire-list charges and floor gas, src/execution_primitives.kan; authorization count passed explicitly and compared with OCaml',
+  'lib/evm/eip2718.ml': 'Ported: raw type-byte framing and legacy identity, src/execution_primitives.kan; OCaml comparisons',
+  'lib/evm/withdrawal.ml': 'Ported: checked scalars, value operations and RLP, src/withdrawal.kan; OCaml comparisons',
+  'lib/evm/bloom.ml': 'Ported: 2048-bit bloom, Keccak accrual, log collection and byte round trips, src/bloom.kan; OCaml comparisons',
+  'lib/evm/block_roots.ml': 'Partial: account/storage/state, raw transaction, withdrawal and receipt roots, src/state_roots.kan and src/receipt_roots.kan; OCaml comparisons. Typed transaction wrappers remain.',
+  'lib/evm/epoch_boundary.ml': 'Ported: open/closing admission, randomness and withdrawal commitments, src/block_context.kan; OCaml comparisons',
+  'lib/evm/block_context.ml': 'Ported: ordered narrowing, genesis root validation and context values, src/block_context.kan; OCaml comparisons',
+  'lib/evm/interpreter.ml': 'Partial: error and outcome types, src/interpreter_types.kan. Execution remains pending.',
+  'lib/evm/receipt.ml': 'Ported: typed success/revert/halt receipts, src/receipt.kan; OCaml comparisons',
+  'lib/evm/receipt_envelope.ml': 'Ported: log RLP and EIP-2718 receipt encoding, src/receipt.kan; OCaml byte comparisons',
+  'lib/evm/block_gas.ml': 'Ported: source-compatible receipt gas accounting, src/receipt_roots.kan; OCaml boundary comparisons',
   'lib/rlp/rlp.ml': 'Ported: canonical encoding, recursive-item views and iterative validating decode with exact errors, src/rlp.kan; 393 OCaml comparisons',
   'lib/trie/nibbles.ml': 'Ported with slice-overflow correction: nibble operations, clamping and packing, src/nibbles.kan; OCaml comparisons and explicit boundary check',
   'lib/trie/hex_prefix.ml': 'Ported: compact nibble paths and source-permissive flag decoding, src/nibbles.kan; all flag bytes compared with OCaml',
@@ -85,8 +109,8 @@ not a claim of complete module parity.
 | 1 | Complete tn_std, tn_codec and tn_types. Add general codecs, scalars, SplitMix64, digests, authorities, committees, batches and anchors. Match vectors and constructor rejections. | Value and codec behavior tested. General Round/Authority Map/Set APIs remain. |
 | 2 | Port tn_vertex and tn_consensus pure state machines, plus deterministic tn_sim and the CLI. Compare complete seeded output transcripts. | Consensus, node composition, seeded simulator and public simulator CLI tested within the configuration bounds recorded below. |
 | 3 | Timing, consensus recovery and tn_execution. Compare durable-before-action transitions, restart transcripts and consensus-chain hashes. | Pure execution, replay, reference store and consensus recovery tested. Durable shells remain. |
-| 4 | tn_state and EVM ALU/interpreter, then environment, access/refund, storage, calls, creation and transaction execution. Preserve full U256 arithmetic, gas, rollback and fork-specific outcomes. | Account state, ALU, opcodes, stack, memory, access/refunds, gas, data windows, transient storage and logs tested. Interpreter and transaction execution remain. |
-| 5 | RLP, Keccak, trie/state roots, transaction envelopes, signatures and source-supported precompiles. Reuse existing golden fixtures; compare acceptance, output, gas and errors separately. | RLP, Keccak and trie construction tested. State-root integration, envelopes, signatures and precompiles remain. |
+| 4 | tn_state and EVM ALU/interpreter, then environment, access/refund, storage, calls, creation and transaction execution. Preserve full U256 arithmetic, gas, rollback and fork-specific outcomes. | Account state, EVM primitives, environments, effect snapshots, creation/destruction effects, fork schedules and execution helpers tested. Interpreter and transaction execution remain. |
+| 5 | RLP, Keccak, trie/state roots, transaction envelopes, signatures and source-supported precompiles. Reuse existing golden fixtures; compare acceptance, output, gas and errors separately. | RLP, Keccak, tries, account/state roots, withdrawals, blooms and receipt encoding/roots tested. Signed envelopes and precompiles remain. |
 | 6 | Batch validation, executed blocks, engine, driver, registry and epoch transitions. Compare complete committed/executed output and checkpoint consistency. | Planned |
 | 7 | Durable file framing, logs, locks and checkpoints. Audit the host's fsync, atomic replacement, locking and recovery guarantees before porting the IO shell. Test interrupted writes and restart behavior. | Planned |
 | 8 | tn_network and Snappy pure codecs through chunk 44, then integrate source-supported crypto implementations and shells. Compare wire vectors, canonicality, corruption and size-limit cases. | Planned |

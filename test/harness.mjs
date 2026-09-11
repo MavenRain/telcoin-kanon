@@ -20,7 +20,7 @@ const aliases = {
   'tn_types.ml': ['Round', 'Units', 'Authority_id', 'Authority', 'Committee', 'Digests', 'Block_num_hash', 'Batch'],
   'tn_vertex.ml': ['Intent', 'Header', 'Vote', 'Certificate'],
 };
-export function compileOracle({ name, sources, modules, oracle, extraAliases = {} }) {
+export function compileOracle({ name, sources, modules, oracle, extraAliases = {}, packages = 'digestif.c', sortModules = false }) {
   const directory = mkdtempSync(join(tmpdir(), `telcoin-${name}-`));
   after(() => rmSync(directory, { recursive: true, force: true }));
   const lock = JSON.parse(readFileSync(resolve(project, 'source-lock.json'), 'utf8'));
@@ -35,15 +35,24 @@ export function compileOracle({ name, sources, modules, oracle, extraAliases = {
   }
   copyFileSync(resolve(project, 'test/oracle_bytes.ml'), join(directory, 'oracle_bytes.ml'));
   copyFileSync(resolve(project, oracle), join(directory, 'oracle.ml'));
-  const compiled = spawnSync('opam', ['exec', `--switch=${process.env.OCAML_SWITCH ?? 'tn-ocaml'}`, '--', 'ocamlfind', 'ocamlc',
-    '-package', 'digestif.c', '-linkpkg', '-custom', '-o', 'oracle.exe', ...modules, 'oracle_bytes.ml', 'oracle.ml'],
+  const opamArgs = ['exec', `--switch=${process.env.OCAML_SWITCH ?? 'tn-ocaml'}`, '--', 'ocamlfind'];
+  let ordered = modules;
+  if (sortModules) {
+    const sorted = spawnSync('opam', [...opamArgs, 'ocamldep', '-package', packages, '-sort', ...modules],
+      { cwd: directory, encoding: 'utf8', timeout: 30000 });
+    assert.equal(sorted.status, 0, sorted.error?.message ?? sorted.stderr);
+    ordered = sorted.stdout.trim().split(/\s+/);
+    assert.deepEqual([...ordered].sort(), [...modules].sort(), 'Dependency sorting must preserve every pinned module');
+  }
+  const compiled = spawnSync('opam', [...opamArgs, 'ocamlc',
+    '-package', packages, '-linkpkg', '-custom', '-o', 'oracle.exe', ...ordered, 'oracle_bytes.ml', 'oracle.ml'],
   { cwd: directory, encoding: 'utf8', timeout: 30000 });
   assert.equal(compiled.status, 0, compiled.error?.message ?? compiled.stderr);
   return { directory, runOracle: (args = [], input) => spawnSync(join(directory, 'oracle.exe'), args,
     { input, encoding: 'utf8', timeout: 30000, maxBuffer: 8 * 1024 * 1024 }) };
 }
-export async function harness({ name, sources, modules, oracle, fixtures, exports, extraAliases = {} }) {
-  const { directory, runOracle } = compileOracle({ name, sources, modules, oracle, extraAliases });
+export async function harness({ name, sources, modules, oracle, fixtures, exports, extraAliases = {}, packages = 'digestif.c', sortModules = false }) {
+  const { directory, runOracle } = compileOracle({ name, sources, modules, oracle, extraAliases, packages, sortModules });
   const wasm = join(directory, `${name}.wasm`);
   build(wasm, ['emptyBytes', 'consBytes', 'bytesEmpty', 'bytesHead', 'bytesTail', 'seqBytesEmpty', 'seqBytesCons', ...exports], fixtures.map(path => resolve(project, path)));
   const { instance } = await WebAssembly.instantiate(readFileSync(wasm), {});

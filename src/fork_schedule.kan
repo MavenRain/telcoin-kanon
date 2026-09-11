@@ -1,0 +1,33 @@
+def ForkSchedule : Type 0 := prod (Timestamp, ValueOption Timestamp, ValueOption Timestamp)
+mu ForkScheduleError : Type 0 :=
+| forkCancunBeforeShanghai : ForkScheduleError
+| forkPragueBeforeCancun : ForkScheduleError
+| forkPragueWithoutCancun : ForkScheduleError
+def forkScheduleErrorText : ForkScheduleError -> Bytes := fun (error : ForkScheduleError) => match error as self in ForkScheduleError return Bytes with
+  | forkCancunBeforeShanghai => b"cancun activates before shanghai"
+  | forkPragueBeforeCancun => b"prague activates before cancun"
+  | forkPragueWithoutCancun => b"prague activates on a chain that never activates cancun"
+def forkScheduleMake : Timestamp -> ValueOption Timestamp -> ValueOption Timestamp -> sum (ForkScheduleError, ForkSchedule) :=
+  fun (shanghai : Timestamp) (cancun : ValueOption Timestamp) (prague : ValueOption Timestamp) =>
+    let cancunError : Bool := case cancun with | 0 (unit : prod ()) => natEq 0 1 | 1 (at : Timestamp) => natLt (timestampNat at) (timestampNat shanghai) in
+    case cancunError with | 1 (unit : prod ()) => inj 0 of 2 forkCancunBeforeShanghai
+    | 0 (unit : prod ()) => case prague with | 0 (unit : prod ()) => inj 1 of 2 (tuple (shanghai, cancun, prague))
+      | 1 (p : Timestamp) => case cancun with | 0 (unit : prod ()) => inj 0 of 2 forkPragueWithoutCancun
+        | 1 (c : Timestamp) => case (natLt (timestampNat p) (timestampNat c)) with | 1 (unit : prod ()) => inj 0 of 2 forkPragueBeforeCancun
+          | 0 (unit : prod ()) => inj 1 of 2 (tuple (shanghai, cancun, prague))
+def forkScheduleMainnet : ForkSchedule := tuple (timestampZero, valueNone Timestamp, valueNone Timestamp)
+def forkScheduleTestnet : ForkSchedule := tuple (timestampZero, valueSome Timestamp timestampZero, valueSome Timestamp timestampZero)
+def forkScheduleActivated : ValueOption Timestamp -> Timestamp -> Bool := fun (activation : ValueOption Timestamp) (timestamp : Timestamp) => case activation with
+  | 0 (unit : prod ()) => natEq 0 1 | 1 (at : Timestamp) => boolNot (natLt (timestampNat timestamp) (timestampNat at))
+def forkScheduleActiveAt : ForkSchedule -> Timestamp -> EvmSpec := fun (schedule : ForkSchedule) (timestamp : Timestamp) =>
+  case (forkScheduleActivated schedule.2 timestamp) with | 1 (unit : prod ()) => evmPrague
+  | 0 (unit : prod ()) => case (forkScheduleActivated schedule.1 timestamp) with | 1 (unit : prod ()) => evmCancun | 0 (unit : prod ()) => evmShanghai
+def forkTimestampOptionEqual : ValueOption Timestamp -> ValueOption Timestamp -> Bool := fun (a : ValueOption Timestamp) (b : ValueOption Timestamp) =>
+  case a with | 0 (unit : prod ()) => (case b with | 0 (unit : prod ()) => natEq 0 0 | 1 (value : Timestamp) => natEq 0 1)
+  | 1 (a : Timestamp) => case b with | 0 (unit : prod ()) => natEq 0 1 | 1 (b : Timestamp) => timestampEqual a b
+def forkScheduleEqual : ForkSchedule -> ForkSchedule -> Bool := fun (a : ForkSchedule) (b : ForkSchedule) =>
+  boolAnd (timestampEqual a.0 b.0) (boolAnd (forkTimestampOptionEqual a.1 b.1) (forkTimestampOptionEqual a.2 b.2))
+def forkTimestampOptionText : ValueOption Timestamp -> Bytes := fun (at : ValueOption Timestamp) => case at with
+  | 0 (unit : prod ()) => b"never" | 1 (value : Timestamp) => timestampShow value
+def forkScheduleText : ForkSchedule -> Bytes := fun (schedule : ForkSchedule) => append b"shanghai=" (append (timestampShow schedule.0)
+  (append b" cancun=" (append (forkTimestampOptionText schedule.1) (append b" prague=" (forkTimestampOptionText schedule.2)))))

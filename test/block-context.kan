@@ -1,0 +1,23 @@
+def contextTestWithdrawals : Nat -> Withdrawals := fun (count : Nat) =>
+  let state : prod (Nat, Withdrawals) := stepsFold (prod (Nat, Withdrawals)) steps32 (fun (state : prod (Nat, Withdrawals)) => boolNat (natEq state.0 count))
+    (fun (state : prod (Nat, Withdrawals)) => tuple (natAdd state.0 1, withdrawalsCons (tuple (state.0, 0, addressOfWord u256One, 2)) state.1)) (tuple (0, withdrawalsNil)) in seqWithdrawalReverse state.1
+def evm_test_boundary : Bytes -> Nat -> Bytes := fun (extra : Bytes) (count : Nat) =>
+  case (epochBoundaryOfExtraData extra (contextTestWithdrawals count)) with | 0 (error : EpochBoundaryError) => epochBoundaryErrorText error
+  | 1 (boundary : EpochBoundary) => let commitment : EpochCommitment := epochBoundaryCommitment boundary in
+    envTestField (evmTestBool (epochBoundaryIsClosing boundary)) (envTestField (bytesHex commitment.0)
+      (envTestField (decimal64 (seqWithdrawalLength commitment.1)) (envTestField (bytesHex commitment.2)
+        (envTestField (evmTestBool (epochBoundaryEqual boundary epochOpen)) (case (epochBoundaryOfExtraData commitment.0 commitment.1) with
+          | 0 (error : EpochBoundaryError) => epochBoundaryErrorText error | 1 (decoded : EpochBoundary) => evmTestBool (epochBoundaryEqual boundary decoded))))))
+def evm_test_context : Bytes -> Bytes -> Bytes -> Nat -> Bytes -> Bytes := fun (numberRaw : Bytes) (timeRaw : Bytes) (gasRaw : Bytes) (rootRaw : Nat) (positionRaw : Bytes) =>
+  case (u256OfHex numberRaw) with | 0 (unit : prod ()) => b"error:bad word" | 1 (number : U256) =>
+  case (u256OfHex timeRaw) with | 0 (unit : prod ()) => b"error:bad word" | 1 (time : U256) =>
+  case (u256OfHex gasRaw) with | 0 (unit : prod ()) => b"error:bad word" | 1 (gas : U256) =>
+  case (u256OfHex positionRaw) with | 0 (unit : prod ()) => b"error:bad word" | 1 (position : U256) =>
+  let zero : Bytes := u256ToBeBytes u256Zero in let address : Address := addressOfWord u256Zero in
+  let block : EvmBlock := evmBlockMake address time number u256Zero gas u256Zero address u256One evmConsensusBlobGasprice blockHashesEmpty in
+  case (blockContextMake block (keccakValue zero) (outputDigestValue (u256ToBeBytes (u256Value rootRaw))) (sequenceNumber (epochValue 0) (roundValue 0))
+    (batchDigestValue zero) (evmBatchPositionValue position) epochOpen) with
+  | 0 (error : BlockContextError) => blockContextErrorText error
+  | 1 (context : BlockContext) => envTestField (decimal64 (blockContextNumber context)) (envTestField (decimal64 (blockContextTimestamp context))
+    (envTestField (decimal64 (blockContextGasLimit context)) (envTestField (evmTestBool (blockContextIsGenesis context))
+      (envTestField (evmTestBool (blockContextFirstBatch context)) (evmTestBool (blockContextEqual context context))))))

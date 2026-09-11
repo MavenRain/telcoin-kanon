@@ -1,0 +1,14 @@
+def blockRootCollapse : sum (TrieError, Bytes) -> Bytes := fun (result : sum (TrieError, Bytes)) => case result with
+  | 0 (error : TrieError) => trieErrorText error | 1 (root : Bytes) => root
+def blockStorageRoot : Account -> Bytes := fun (account : Account) => blockRootCollapse (trieSecureRoot
+  (listMapInto (prod (U256, U256)) StorageSlots (prod (Bytes, Bytes)) TrieEntries seqStorageSlotOps seqTrieEntryOps
+    (fun (entry : prod (U256, U256)) => tuple (u256ToBeBytes entry.0, rlpEncodeScalar (u256ToBeBytes entry.1))) (accountStorage account)))
+def blockAccountLeaf : Account -> Bytes := fun (account : Account) => trieAccountRlp (hostIntPositive (nonceNat (accountNonce account)))
+  (accountBalance account) (blockStorageRoot account) (keccakBytes (accountCodeHash account))
+def blockStateRoot : WorldState -> Bytes := fun (world : WorldState) => blockRootCollapse (trieSecureRoot
+  (listMapInto (prod (Address, Account)) WorldAccounts (prod (Bytes, Bytes)) TrieEntries seqWorldAccountOps seqTrieEntryOps
+    (fun (entry : prod (Address, Account)) => tuple (addressBytes entry.0, blockAccountLeaf entry.1)) (worldStateAccounts world)))
+def blockTransactionsRoot : ByteStrings -> Bytes := trieOrderedRoot
+def blockWithdrawalsRoot : Withdrawals -> Bytes := fun (withdrawals : Withdrawals) => trieOrderedRoot
+  (listMapInto Withdrawal Withdrawals Bytes ByteStrings seqWithdrawalOps seqBytesOps withdrawalEncodeRlp withdrawals)
+def blockRootsAgree : WorldState -> WorldState -> Bool := fun (a : WorldState) (b : WorldState) => bytesEqual (blockStateRoot a) (blockStateRoot b)

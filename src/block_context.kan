@@ -1,0 +1,69 @@
+mu EpochBoundary : Type 0 :=
+| epochOpen : EpochBoundary
+| epochClosing (randomness : Hash32) (withdrawals : Withdrawals) : EpochBoundary
+def epochBoundaryIsClosing : EpochBoundary -> Bool := fun (boundary : EpochBoundary) => match boundary as self in EpochBoundary return Bool with
+  | epochOpen => natEq 0 1 | epochClosing randomness withdrawals => natEq 0 0
+def rec withdrawalsEqual : Withdrawals -> Withdrawals -> Bool := fun (a : Withdrawals) (b : Withdrawals) => match a as self in Withdrawals return Bool with
+  | withdrawalsNil => (match b as self in Withdrawals return Bool with | withdrawalsNil => natEq 0 0 | withdrawalsCons head tail => natEq 0 1)
+  | withdrawalsCons head tail => match b as self in Withdrawals return Bool with | withdrawalsNil => natEq 0 1
+    | withdrawalsCons other rest => boolAnd (withdrawalEqual head other) (withdrawalsEqual tail rest)
+def epochBoundaryEqual : EpochBoundary -> EpochBoundary -> Bool := fun (a : EpochBoundary) (b : EpochBoundary) => match a as self in EpochBoundary return Bool with
+  | epochOpen => (match b as self in EpochBoundary return Bool with | epochOpen => natEq 0 0 | epochClosing randomness withdrawals => natEq 0 1)
+  | epochClosing randomness withdrawals => match b as self in EpochBoundary return Bool with | epochOpen => natEq 0 1
+    | epochClosing other entries => boolAnd (hash32Equal randomness other) (withdrawalsEqual withdrawals entries)
+mu EpochBoundaryError : Type 0 :=
+| epochExtraDataLength (length : Nat) : EpochBoundaryError
+| epochWithdrawalsWithoutClose (count : Nat) : EpochBoundaryError
+def epochBoundaryErrorText : EpochBoundaryError -> Bytes := fun (error : EpochBoundaryError) => match error as self in EpochBoundaryError return Bytes with
+  | epochExtraDataLength length => append b"extra data length " (append (decimal64 length) b" (expected 0 or 32)")
+  | epochWithdrawalsWithoutClose count => append (decimal64 count) b" withdrawals on an open boundary"
+def epochBoundaryOfExtraData : Bytes -> Withdrawals -> sum (EpochBoundaryError, EpochBoundary) := fun (extra : Bytes) (withdrawals : Withdrawals) =>
+  case (natEq (bytesLength extra) 0) with
+  | 1 (unit : prod ()) => (case (natEq (seqWithdrawalLength withdrawals) 0) with | 1 (unit : prod ()) => inj 1 of 2 epochOpen
+    | 0 (unit : prod ()) => inj 0 of 2 (epochWithdrawalsWithoutClose (seqWithdrawalLength withdrawals)))
+  | 0 (unit : prod ()) => case (natEq (bytesLength extra) 32) with | 0 (unit : prod ()) => inj 0 of 2 (epochExtraDataLength (bytesLength extra))
+    | 1 (unit : prod ()) => inj 1 of 2 (epochClosing (hash32Value extra) withdrawals)
+def EpochCommitment : Type 0 := prod (Bytes, Withdrawals, Bytes)
+def epochBoundaryCommitment : EpochBoundary -> EpochCommitment := fun (boundary : EpochBoundary) => match boundary as self in EpochBoundary return EpochCommitment with
+  | epochOpen => tuple (bytesNil, withdrawalsNil, trieEmptyRoot)
+  | epochClosing randomness withdrawals => tuple (hash32Bytes randomness, withdrawals, blockWithdrawalsRoot withdrawals)
+def epochCommitmentExtraData : EpochCommitment -> Bytes := fun (commitment : EpochCommitment) => commitment.0
+def epochCommitmentWithdrawals : EpochCommitment -> Withdrawals := fun (commitment : EpochCommitment) => commitment.1
+def epochCommitmentWithdrawalsRoot : EpochCommitment -> Bytes := fun (commitment : EpochCommitment) => commitment.2
+mu EvmBlockField : Type 0 :=
+| evmBlockNumberField : EvmBlockField
+| evmBlockTimestampField : EvmBlockField
+| evmBlockGasLimitField : EvmBlockField
+def evmBlockFieldText : EvmBlockField -> Bytes := fun (field : EvmBlockField) => match field as self in EvmBlockField return Bytes with
+  | evmBlockNumberField => b"number" | evmBlockTimestampField => b"timestamp" | evmBlockGasLimitField => b"gas limit"
+mu BlockContextError : Type 0 :=
+| blockContextGenesisRootNotZero : BlockContextError
+| blockContextFieldAboveInt (field : EvmBlockField) : BlockContextError
+def blockContextErrorText : BlockContextError -> Bytes := fun (error : BlockContextError) => match error as self in BlockContextError return Bytes with
+  | blockContextGenesisRootNotZero => b"block zero carries a nonzero consensus root"
+  | blockContextFieldAboveInt field => append b"block " (append (evmBlockFieldText field) b" does not fit a native int")
+def BlockContext : Type 0 := prod (EvmBlock, Keccak, OutputDigest, SequenceNumber, BatchDigest, EvmBatchPosition, EpochBoundary, Nat, Nat, Nat)
+def blockContextNarrow : EvmBlockField -> U256 -> sum (BlockContextError, Nat) := fun (field : EvmBlockField) (word : U256) => case (u256ToHostNat word) with
+  | 0 (unit : prod ()) => inj 0 of 2 (blockContextFieldAboveInt field) | 1 (value : Nat) => inj 1 of 2 value
+def blockContextMake : EvmBlock -> Keccak -> OutputDigest -> SequenceNumber -> BatchDigest -> EvmBatchPosition -> EpochBoundary -> sum (BlockContextError, BlockContext) :=
+  fun (block : EvmBlock) (parent : Keccak) (root : OutputDigest) (nonce : SequenceNumber) (batch : BatchDigest) (position : EvmBatchPosition) (boundary : EpochBoundary) =>
+    case (blockContextNarrow evmBlockNumberField (evmBlockNumber block)) with | 0 (error : BlockContextError) => inj 0 of 2 error | 1 (number : Nat) =>
+    case (blockContextNarrow evmBlockTimestampField (evmBlockTimestamp block)) with | 0 (error : BlockContextError) => inj 0 of 2 error | 1 (timestamp : Nat) =>
+    case (blockContextNarrow evmBlockGasLimitField (evmBlockGasLimit block)) with | 0 (error : BlockContextError) => inj 0 of 2 error | 1 (gasLimit : Nat) =>
+    case (boolAnd (natEq number 0) (boolNot (outputDigestEqual root outputDigestZero))) with | 1 (unit : prod ()) => inj 0 of 2 blockContextGenesisRootNotZero
+    | 0 (unit : prod ()) => inj 1 of 2 (tuple (block, parent, root, nonce, batch, position, boundary, number, timestamp, gasLimit))
+def blockContextBlock : BlockContext -> EvmBlock := fun (context : BlockContext) => context.0
+def blockContextParentHash : BlockContext -> Keccak := fun (context : BlockContext) => context.1
+def blockContextConsensusRoot : BlockContext -> OutputDigest := fun (context : BlockContext) => context.2
+def blockContextNonce : BlockContext -> SequenceNumber := fun (context : BlockContext) => context.3
+def blockContextBatchDigest : BlockContext -> BatchDigest := fun (context : BlockContext) => context.4
+def blockContextPosition : BlockContext -> EvmBatchPosition := fun (context : BlockContext) => context.5
+def blockContextBoundary : BlockContext -> EpochBoundary := fun (context : BlockContext) => context.6
+def blockContextNumber : BlockContext -> Nat := fun (context : BlockContext) => context.7
+def blockContextTimestamp : BlockContext -> Nat := fun (context : BlockContext) => context.8
+def blockContextGasLimit : BlockContext -> Nat := fun (context : BlockContext) => context.9
+def blockContextIsGenesis : BlockContext -> Bool := fun (context : BlockContext) => natEq context.7 0
+def blockContextFirstBatch : BlockContext -> Bool := fun (context : BlockContext) => evmBatchPositionIsFirst context.5
+def blockContextEqual : BlockContext -> BlockContext -> Bool := fun (a : BlockContext) (b : BlockContext) =>
+  boolAnd (evmBlockEqual a.0 b.0) (boolAnd (keccakEqual a.1 b.1) (boolAnd (outputDigestEqual a.2 b.2) (boolAnd (sequenceEqual a.3 b.3)
+    (boolAnd (batchDigestEqual a.4 b.4) (boolAnd (evmBatchPositionEqual a.5 b.5) (epochBoundaryEqual a.6 b.6))))))

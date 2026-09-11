@@ -1,0 +1,39 @@
+mu ReceiptHaltReason : Type 0 :=
+| receiptFrameHalt (error : InterpreterError) : ReceiptHaltReason
+| receiptCreateCollision : ReceiptHaltReason
+| receiptCreateReservedPrefix : ReceiptHaltReason
+| receiptCreateCodeSizeLimit (length : HostInt) : ReceiptHaltReason
+| receiptCreateDepositOutOfGas : ReceiptHaltReason
+| receiptCreateNonceExhausted : ReceiptHaltReason
+| receiptValueOverflow : ReceiptHaltReason
+def receiptHaltReasonText : ReceiptHaltReason -> Bytes := fun (reason : ReceiptHaltReason) => match reason as self in ReceiptHaltReason return Bytes with
+  | receiptFrameHalt error => append b"frame halt: " (interpreterErrorText error)
+  | receiptCreateCollision => b"create collision"
+  | receiptCreateReservedPrefix => b"create reserved prefix (0xEF)"
+  | receiptCreateCodeSizeLimit length => append b"create code size limit (" (append (hostIntText length) b" bytes)")
+  | receiptCreateDepositOutOfGas => b"create deposit out of gas"
+  | receiptCreateNonceExhausted => b"create nonce exhausted"
+  | receiptValueOverflow => b"value overflow"
+mu Receipt : Type 0 :=
+| receiptSuccess (output : Bytes) (created : ValueOption Address) (gasUsed : HostInt) (gasRefunded : HostInt) (logs : EvmLogs) : Receipt
+| receiptReverted (output : Bytes) (gasUsed : HostInt) : Receipt
+| receiptHalted (reason : ReceiptHaltReason) (gasUsed : HostInt) : Receipt
+def receiptGasUsed : Receipt -> HostInt := fun (receipt : Receipt) => match receipt as self in Receipt return HostInt with
+  | receiptSuccess output created used refunded logs => used | receiptReverted output used => used | receiptHalted reason used => used
+def receiptLogs : Receipt -> EvmLogs := fun (receipt : Receipt) => match receipt as self in Receipt return EvmLogs with
+  | receiptSuccess output created used refunded logs => logs | receiptReverted output used => evmLogsNil | receiptHalted reason used => evmLogsNil
+def receiptStatus : Receipt -> Bool := fun (receipt : Receipt) => match receipt as self in Receipt return Bool with
+  | receiptSuccess output created used refunded logs => natEq 0 0 | receiptReverted output used => natEq 0 1 | receiptHalted reason used => natEq 0 1
+def receiptText : Receipt -> Bytes := fun (receipt : Receipt) => match receipt as self in Receipt return Bytes with
+  | receiptSuccess output created used refunded logs => append b"Success{gas_used=" (append (hostIntText used)
+    (append b"; gas_refunded=" (append (hostIntText refunded) (append b"; logs=" (append (decimal64 (seqEvmLogLength logs)) b"}")))))
+  | receiptReverted output used => append b"Reverted{gas_used=" (append (hostIntText used) b"}")
+  | receiptHalted reason used => append b"Halted{" (append (receiptHaltReasonText reason) (append b"; gas_used=" (append (hostIntText used) b"}")))
+def receiptEncodeLog : EvmLog -> Bytes := fun (log : EvmLog) => rlpEncodeListPayload
+  (append (rlpEncodeBytes (addressBytes log.0)) (append (rlpEncodeListPayload
+    (listFoldLeft U256 Words Bytes seqWordOps (fun (bytes : Bytes) (topic : U256) => append bytes (rlpEncodeBytes (u256ToBeBytes topic))) bytesNil (evmTopicsToList log.1))) (rlpEncodeBytes log.2)))
+def receiptEncode2718 : HostInt -> HostInt -> Receipt -> Bytes := fun (typeByte : HostInt) (cumulativeGasUsed : HostInt) (receipt : Receipt) =>
+  let logs : EvmLogs := receiptLogs receipt in eip2718Frame typeByte (rlpEncodeListPayload
+    (append (rlpEncodeNat (hostIntPositive (boolNat (receiptStatus receipt)))) (append (rlpEncodeNat cumulativeGasUsed)
+      (append (rlpEncodeBytes (bloomBytes (bloomOfLogs logs))) (rlpEncodeListPayload
+        (listFoldLeft EvmLog EvmLogs Bytes seqEvmLogOps (fun (bytes : Bytes) (log : EvmLog) => append bytes (receiptEncodeLog log)) bytesNil logs))))))
