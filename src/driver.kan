@@ -1,0 +1,102 @@
+def driverCreate : ChainSpec -> Committee -> Driver := fun (spec : ChainSpec) (committee : Committee) =>
+  tuple (spec, subscriberCreate consensusChainGenesis, executionEngineCreate (chainSpecEngineConfig spec committee), valueNone ConsensusBlock)
+def driverBoundaryAfter : Driver -> Timestamp -> Timestamp := fun (driver : Driver) (timestamp : Timestamp) =>
+  chainSpecBoundaryAfter (driverSpec driver) timestamp
+def driverPreMintGuards : Driver -> SubDag -> sum (DriverError, prod ()) := fun (driver : Driver) (subdag : SubDag) =>
+  match (driver.2.6) as phase in ExecutionPhase return sum (DriverError, prod ()) with
+  | executionSealed closedAt committee => inj 0 of 2 driverSealedNeedsHandoff
+  | executionRunning boundary committee =>
+    let installed : Epoch := committeeEpoch committee in let output : Epoch := subDagLeaderEpoch subdag in
+    case (natEq (epochNat installed) (epochNat output)) with
+    | 1 (unit : prod ()) => inj 1 of 2 (tuple ())
+    | 0 (unit : prod ()) => inj 0 of 2 (driverEpochMismatch installed output)
+def driverStep : Driver -> SubDag -> BatchStore -> (AuthorityId -> ValueOption Address) -> sum (DriverError, prod (Driver, DriverAdvance)) :=
+  fun (driver : Driver) (subdag : SubDag) (bodies : BatchStore) (addressOf : AuthorityId -> ValueOption Address) =>
+  case (driverPreMintGuards driver subdag) with
+  | 0 (error : DriverError) => inj 0 of 2 error
+  | 1 (unit : prod ()) => case (subscriberReceive driver.1 subdag bodies addressOf) with
+    | 0 (error : SubscriberError) => inj 0 of 2 (driverReceive error)
+    | 1 (received : prod (Subscriber, ConsensusBlock, BatchOutput)) => case (executionEngineExecute driver.2 received.2) with
+      | 0 (error : ExecutionEngineError) => inj 0 of 2 (driverExecute error)
+      | 1 (executed : prod (ExecutionEngine, ExecutedBlocks)) => inj 1 of 2
+          (tuple (tuple (driver.0, received.0, executed.0, valueSome ConsensusBlock received.1),
+            tuple (received.1, received.2, executed.1, executionEngineIsSealed executed.0)))
+def driverMint : Driver -> SubDag -> sum (DriverError, ConsensusBlock) := fun (driver : Driver) (subdag : SubDag) =>
+  case (driverPreMintGuards driver subdag) with
+  | 0 (error : DriverError) => inj 0 of 2 error
+  | 1 (unit : prod ()) => inj 1 of 2 (subscriberMint driver.1 subdag)
+def driverFoldEnd : Driver -> DriverAdvances -> DriverOutcome Driver := fun (driver : Driver) (reversed : DriverAdvances) =>
+  case (executionEngineIsSealed driver.2) with
+  | 1 (unit : prod ()) => driverOutcomeSealed Driver driver (seqDriverAdvanceReverse reversed) subDagsNil
+  | 0 (unit : prod ()) => driverOutcomeAdvance Driver driver (seqDriverAdvanceReverse reversed)
+def rec driverFoldAcc : SubDags -> Driver -> DriverAdvances -> BatchStore -> (AuthorityId -> ValueOption Address) -> DriverOutcome Driver :=
+  fun (remaining : SubDags) (driver : Driver) (reversed : DriverAdvances) (bodies : BatchStore) (addressOf : AuthorityId -> ValueOption Address) =>
+  match remaining as self in SubDags return DriverOutcome Driver with
+  | subDagsNil => driverFoldEnd driver reversed
+  | subDagsCons head tail => case (executionEngineIsSealed driver.2) with
+    | 1 (unit : prod ()) => driverOutcomeSealed Driver driver (seqDriverAdvanceReverse reversed) remaining
+    | 0 (unit : prod ()) => case (driverStep driver head bodies addressOf) with
+      | 0 (error : DriverError) => driverOutcomeHalted Driver (seqDriverAdvanceReverse reversed) error
+      | 1 (advanced : prod (Driver, DriverAdvance)) =>
+        driverFoldAcc tail advanced.0 (driverAdvancesCons advanced.1 reversed) bodies addressOf
+def driverFold : Driver -> SubDags -> BatchStore -> (AuthorityId -> ValueOption Address) -> DriverOutcome Driver :=
+  fun (driver : Driver) (subdags : SubDags) (bodies : BatchStore) (addressOf : AuthorityId -> ValueOption Address) =>
+  driverFoldAcc subdags driver driverAdvancesNil bodies addressOf
+def driverLastForwarded : Driver -> ConsensusBlockNumber := fun (driver : Driver) =>
+  case driver.3 with | 0 (unit : prod ()) => consensusBlockNumberGenesis
+  | 1 (block : ConsensusBlock) => consensusBlockNumberOf block
+def driverIsSealed : Driver -> Bool := fun (driver : Driver) => executionEngineIsSealed driver.2
+def driverClosedAt : Driver -> ValueOption Timestamp := fun (driver : Driver) =>
+  match driver.2.6 as phase in ExecutionPhase return ValueOption Timestamp with
+  | executionRunning boundary committee => valueNone Timestamp
+  | executionSealed closedAt committee => valueSome Timestamp closedAt
+def driverNextBoundary : Driver -> ValueOption Timestamp := fun (driver : Driver) =>
+  case (driverClosedAt driver) with | 0 (unit : prod ()) => valueNone Timestamp
+  | 1 (timestamp : Timestamp) => valueSome Timestamp (driverBoundaryAfter driver timestamp)
+def driverSnapshot : Driver -> Checkpoint := fun (driver : Driver) => checkpointOfExecution (executionEngineSnapshot driver.2) driver.3
+def driverBeginEpoch : Driver -> Committee -> sum (DriverHandoffError, Driver) := fun (driver : Driver) (committee : Committee) =>
+  match driver.2.6 as phase in ExecutionPhase return sum (DriverHandoffError, Driver) with
+  | executionRunning boundary installedCommittee => inj 0 of 2 driverNotSealed
+  | executionSealed closedAt installedCommittee =>
+    let installed : Epoch := committeeEpoch installedCommittee in let proposed : Epoch := committeeEpoch committee in
+    case (natLt (epochNat installed) (epochNat proposed)) with
+    | 0 (unit : prod ()) => inj 0 of 2 (driverHandoffCommitteeEpoch installed proposed)
+    | 1 (unit : prod ()) => case (executionEngineBeginEpoch driver.2 (driverBoundaryAfter driver closedAt) committee) with
+      | 0 (error : ExecutionEngineError) => inj 0 of 2 (driverHandoffEngineRefused error)
+      | 1 (engine : ExecutionEngine) => inj 1 of 2 (tuple (driver.0, driver.1, engine, driver.3))
+def driverEpochSuccessor : Epoch -> Epoch := fun (epoch : Epoch) =>
+  epochValue (case (natLt (epochNat epoch) 4294967295) with
+    | 1 (unit : prod ()) => natAdd (epochNat epoch) 1
+    | 0 (unit : prod ()) => 4294967295)
+def driverReplayPermitted : SubDags -> Bool -> Bool := fun (subdags : SubDags) (matched : Bool) =>
+  match subdags as self in SubDags return Bool with
+  | subDagsNil => inj 1 of 2 (tuple ())
+  | subDagsCons head tail => matched
+def driverResumeFold : ChainSpec -> Checkpoint -> Replay -> (AuthorityId -> ValueOption Address) -> DriverOutcome Driver :=
+  fun (spec : ChainSpec) (checkpoint : Checkpoint) (run : Replay) (addressOf : AuthorityId -> ValueOption Address) =>
+  let driver : Driver := tuple (spec, subscriberCreate (checkpointAccumulator checkpoint),
+    executionEngineResumeOnSchedule (chainSpecForkSchedule spec) (chainSpecChainId spec) (chainSpecBasefeeAddress spec)
+      (checkpointEngine checkpoint), checkpointLastExecuted checkpoint) in
+  driverFold driver (replaySubDags run) (batchStoreOfBodies (replayBodies run)) addressOf
+def driverResumeGapFold : ChainSpec -> Checkpoint -> ConsensusStore -> Bool -> (AuthorityId -> ValueOption Address) ->
+  sum (DriverResumeError, DriverOutcome Driver) :=
+  fun (spec : ChainSpec) (checkpoint : Checkpoint) (store : ConsensusStore) (matched : Bool) (addressOf : AuthorityId -> ValueOption Address) =>
+  case (consensusStoreGap store (checkpointLastExecuted checkpoint)) with
+  | 0 (error : ConsensusStoreMiss) => inj 0 of 2 (driverResumeGap error)
+  | 1 (run : Replay) => case (driverReplayPermitted (replaySubDags run) matched) with
+    | 0 (unit : prod ()) => inj 0 of 2 (driverResumeStoreEpoch (checkpointEpoch checkpoint) (consensusStoreEpoch store))
+    | 1 (unit : prod ()) => inj 1 of 2 (driverResumeFold spec checkpoint run addressOf)
+def driverResume : ChainSpec -> Committee -> Checkpoint -> ConsensusStore -> (AuthorityId -> ValueOption Address) ->
+  sum (DriverResumeError, DriverOutcome Driver) :=
+  fun (spec : ChainSpec) (committee : Committee) (checkpoint : Checkpoint) (store : ConsensusStore) (addressOf : AuthorityId -> ValueOption Address) =>
+  let supplied : Epoch := committeeEpoch committee in let persisted : Epoch := checkpointEpoch checkpoint in
+  let stored : Epoch := consensusStoreEpoch store in let matched : Bool := natEq (epochNat persisted) (epochNat stored) in
+  let handoff : Bool := boolAnd (checkpointIsSealed checkpoint)
+    (natEq (epochNat stored) (epochNat (driverEpochSuccessor persisted))) in
+  case (natEq (epochNat supplied) (epochNat persisted)) with
+  | 0 (unit : prod ()) => inj 0 of 2 (driverResumeCommitteeEpoch supplied persisted)
+  | 1 (unit : prod ()) => case (committeeEqual committee (checkpointCommittee checkpoint)) with
+    | 0 (unit : prod ()) => inj 0 of 2 (driverResumeCommitteeMismatch persisted)
+    | 1 (unit : prod ()) => case (boolOr matched handoff) with
+      | 0 (unit : prod ()) => inj 0 of 2 (driverResumeStoreEpoch persisted stored)
+      | 1 (unit : prod ()) => driverResumeGapFold spec checkpoint store matched addressOf

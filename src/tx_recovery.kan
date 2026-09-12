@@ -1,0 +1,20 @@
+mu TxRecoveryError : Type 0 :=
+| txRecoveryHighS : TxRecoveryError
+| txRecoveryUnrecoverable : TxRecoveryError
+def txRecoveryErrorText : TxRecoveryError -> Bytes := fun (error : TxRecoveryError) => match error as self in TxRecoveryError return Bytes with
+  | txRecoveryHighS => b"signature s exceeds secp256k1n/2 (EIP-2)"
+  | txRecoveryUnrecoverable => b"no public key recovers this signature"
+def txRecoverSigner : TxEnvelope -> sum (TxRecoveryError, Address) := fun (envelope : TxEnvelope) =>
+  let signature : TxSignature := txEnvelopeSignature envelope in
+  let s : Bytes := u256ToBeBytes (txSignatureS signature) in
+  case (secpSIsHigh s) with
+  | 1 (unit : prod ()) => inj 0 of 2 txRecoveryHighS
+  | 0 (unit : prod ()) => case (secpRecover (txEnvelopeSignatureHash (txEnvelopePayload envelope))
+      (hostIntPositive (choose (txSignatureParity signature) 1 0)) (u256ToBeBytes (txSignatureR signature)) s) with
+    | 0 (unit : prod ()) => inj 0 of 2 txRecoveryUnrecoverable
+    | 1 (key : Bytes) => case (evmPublicKeyToAddress key) with
+      | 0 (unit : prod ()) => inj 0 of 2 txRecoveryUnrecoverable
+      | 1 (address : Address) => inj 1 of 2 address
+def txRecover : TxEnvelope -> sum (TxRecoveryError, Transaction) := fun (envelope : TxEnvelope) => case (txRecoverSigner envelope) with
+  | 0 (error : TxRecoveryError) => inj 0 of 2 error
+  | 1 (sender : Address) => inj 1 of 2 (txPayloadToTransaction (txEnvelopePayload envelope) sender)

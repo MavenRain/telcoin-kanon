@@ -1,0 +1,91 @@
+-- Every stored header field remains visible to equality and persistence.
+mu BlockHeaderRootField : Type 0 :=
+  | blockHeaderStateRootField : BlockHeaderRootField
+  | blockHeaderTransactionsRootField : BlockHeaderRootField
+  | blockHeaderReceiptsRootField : BlockHeaderRootField
+  | blockHeaderWithdrawalsRootField : BlockHeaderRootField
+def blockHeaderRootFieldText : BlockHeaderRootField -> Bytes := fun (field : BlockHeaderRootField) =>
+  match field as self in BlockHeaderRootField return Bytes with
+  | blockHeaderStateRootField => b"state root"
+  | blockHeaderTransactionsRootField => b"transactions root"
+  | blockHeaderReceiptsRootField => b"receipts root"
+  | blockHeaderWithdrawalsRootField => b"withdrawals root"
+mu BlockHeaderError : Type 0 :=
+  | blockHeaderRootUnrepresentable (field : BlockHeaderRootField) : BlockHeaderError
+def blockHeaderErrorText : BlockHeaderError -> Bytes := fun (error : BlockHeaderError) =>
+  match error as self in BlockHeaderError return Bytes with
+  | blockHeaderRootUnrepresentable field => append (blockHeaderRootFieldText field) b" is not 32 bytes"
+def blockHeaderHash32OfHex : Bytes -> Hash32 := fun (hex : Bytes) =>
+  case (hash32OfBytes (systemContractsBytesOfHex hex)) with
+  | 0 (unit : prod ()) => hash32Zero
+  | 1 (value : Hash32) => value
+def blockHeaderEmptyRequestsHash : Hash32 := blockHeaderHash32OfHex b"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+def blockHeaderEmptyOmmerRoot : Hash32 := blockHeaderHash32OfHex b"1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347"
+def BlockHeader : Type 0 := prod (Keccak, BatchDigest, Address, Hash32, Hash32, Hash32, Bloom, EvmBatchPosition, HostInt, HostInt, HostInt, HostInt, Bytes, U256, SequenceNumber, U256, Withdrawals, Hash32, OutputDigest, HostInt, HostInt, Hash32)
+def blockHeaderOfPersisted : Keccak -> BatchDigest -> Address -> Hash32 -> Hash32 -> Hash32 -> Bloom -> EvmBatchPosition -> HostInt -> HostInt -> HostInt -> HostInt -> Bytes -> U256 -> SequenceNumber -> U256 -> Withdrawals -> Hash32 -> OutputDigest -> HostInt -> HostInt -> Hash32 -> BlockHeader :=
+  fun (parentHash : Keccak) (ommersHash : BatchDigest) (beneficiary : Address) (stateRoot : Hash32) (transactionsRoot : Hash32) (receiptsRoot : Hash32) (logsBloom : Bloom) (position : EvmBatchPosition) (number : HostInt) (gasLimit : HostInt) (gasUsed : HostInt) (timestamp : HostInt) (extraData : Bytes) (mixHash : U256) (nonce : SequenceNumber) (baseFee : U256) (withdrawals : Withdrawals) (withdrawalsRoot : Hash32) (beaconRoot : OutputDigest) (blobGasUsed : HostInt) (excessBlobGas : HostInt) (requestsHash : Hash32) =>
+    tuple (parentHash, ommersHash, beneficiary, stateRoot, transactionsRoot, receiptsRoot, logsBloom, position, number, gasLimit, gasUsed, timestamp, extraData, mixHash, nonce, baseFee, withdrawals, withdrawalsRoot, beaconRoot, blobGasUsed, excessBlobGas, requestsHash)
+def blockHeaderParentHash : BlockHeader -> Keccak := fun (header : BlockHeader) => header.0
+def blockHeaderOmmersHash : BlockHeader -> BatchDigest := fun (header : BlockHeader) => header.1
+def blockHeaderBeneficiary : BlockHeader -> Address := fun (header : BlockHeader) => header.2
+def blockHeaderStateRoot : BlockHeader -> Hash32 := fun (header : BlockHeader) => header.3
+def blockHeaderTransactionsRoot : BlockHeader -> Hash32 := fun (header : BlockHeader) => header.4
+def blockHeaderReceiptsRoot : BlockHeader -> Hash32 := fun (header : BlockHeader) => header.5
+def blockHeaderLogsBloom : BlockHeader -> Bloom := fun (header : BlockHeader) => header.6
+def blockHeaderPosition : BlockHeader -> EvmBatchPosition := fun (header : BlockHeader) => header.7
+def blockHeaderNumber : BlockHeader -> HostInt := fun (header : BlockHeader) => header.8
+def blockHeaderGasLimit : BlockHeader -> HostInt := fun (header : BlockHeader) => header.9
+def blockHeaderGasUsed : BlockHeader -> HostInt := fun (header : BlockHeader) => header.10
+def blockHeaderTimestamp : BlockHeader -> HostInt := fun (header : BlockHeader) => header.11
+def blockHeaderExtraData : BlockHeader -> Bytes := fun (header : BlockHeader) => header.12
+def blockHeaderMixHash : BlockHeader -> U256 := fun (header : BlockHeader) => header.13
+def blockHeaderNonce : BlockHeader -> SequenceNumber := fun (header : BlockHeader) => header.14
+def blockHeaderBaseFeePerGas : BlockHeader -> U256 := fun (header : BlockHeader) => header.15
+def blockHeaderWithdrawals : BlockHeader -> Withdrawals := fun (header : BlockHeader) => header.16
+def blockHeaderWithdrawalsRoot : BlockHeader -> Hash32 := fun (header : BlockHeader) => header.17
+def blockHeaderParentBeaconBlockRoot : BlockHeader -> OutputDigest := fun (header : BlockHeader) => header.18
+def blockHeaderBlobGasUsed : BlockHeader -> HostInt := fun (header : BlockHeader) => header.19
+def blockHeaderExcessBlobGas : BlockHeader -> HostInt := fun (header : BlockHeader) => header.20
+def blockHeaderRequestsHash : BlockHeader -> Hash32 := fun (header : BlockHeader) => header.21
+def blockHeaderDifficulty : BlockHeader -> U256 := fun (header : BlockHeader) => evmBatchPositionWord (blockHeaderPosition header)
+def blockHeaderGate : BlockHeaderRootField -> Bytes -> sum (BlockHeaderError, Hash32) :=
+  fun (field : BlockHeaderRootField) (bytes : Bytes) =>
+    case (hash32OfBytes bytes) with
+    | 0 (unit : prod ()) => inj 0 of 2 (blockHeaderRootUnrepresentable field)
+    | 1 (root : Hash32) => inj 1 of 2 root
+def blockHeaderAssemble : BlockContext -> BlockFinished -> sum (BlockHeaderError, BlockHeader) :=
+  fun (context : BlockContext) (finished : BlockFinished) =>
+    let commitment : EpochCommitment := epochBoundaryCommitment (blockContextBoundary context) in
+    let outcome : BlockExecutionOutcome := blockFinishedOutcome finished in
+    let block : EvmBlock := blockContextBlock context in
+    case (blockHeaderGate blockHeaderStateRootField (blockStateRoot (blockFinishedWorld finished))) with
+    | 0 (error : BlockHeaderError) => inj 0 of 2 error
+    | 1 (stateRoot : Hash32) => case (blockHeaderGate blockHeaderTransactionsRootField (blockTransactionsRootOf (blockExecutionTransactions outcome))) with
+      | 0 (error : BlockHeaderError) => inj 0 of 2 error
+      | 1 (transactionsRoot : Hash32) => case (blockHeaderGate blockHeaderReceiptsRootField (blockReceiptsRoot (blockExecutionReceipts outcome))) with
+        | 0 (error : BlockHeaderError) => inj 0 of 2 error
+        | 1 (receiptsRoot : Hash32) => case (blockHeaderGate blockHeaderWithdrawalsRootField (epochCommitmentWithdrawalsRoot commitment)) with
+          | 0 (error : BlockHeaderError) => inj 0 of 2 error
+          | 1 (withdrawalsRoot : Hash32) => inj 1 of 2 (blockHeaderOfPersisted
+            (blockContextParentHash context) (blockContextBatchDigest context) (evmBlockCoinbase block)
+            stateRoot transactionsRoot receiptsRoot (blockExecutionLogsBloom outcome) (blockContextPosition context)
+            (hostIntPositive (blockContextNumber context)) (hostIntPositive (blockContextGasLimit context))
+            (blockExecutionGasUsed outcome) (hostIntPositive (blockContextTimestamp context))
+            (epochCommitmentExtraData commitment) (evmBlockPrevrandao block) (blockContextNonce context)
+            (evmBlockBasefee block) (epochCommitmentWithdrawals commitment) withdrawalsRoot (blockContextConsensusRoot context)
+            (hostIntPositive 0) (hostIntPositive 0) blockHeaderEmptyRequestsHash)
+def blockHeaderNonceBytes : SequenceNumber -> Bytes := fun (nonce : SequenceNumber) =>
+  drop (u256ToBeBytes (u256Value (sequenceBits nonce))) 24
+def blockHeaderEncodeRlp : BlockHeader -> Bytes := fun (header : BlockHeader) =>
+  rlpEncodeList (seqBytesCons (rlpEncodeBytes (keccakBytes header.0)) (seqBytesCons (rlpEncodeBytes (batchDigestBytes header.1)) (seqBytesCons (rlpEncodeBytes (addressBytes header.2)) (seqBytesCons (rlpEncodeBytes (hash32Bytes header.3)) (seqBytesCons (rlpEncodeBytes (hash32Bytes header.4)) (seqBytesCons (rlpEncodeBytes (hash32Bytes header.5)) (seqBytesCons (rlpEncodeBytes (bloomBytes header.6)) (seqBytesCons (rlpEncodeScalar (u256ToBeBytes (evmBatchPositionWord header.7))) (seqBytesCons (rlpEncodeNat header.8) (seqBytesCons (rlpEncodeNat header.9) (seqBytesCons (rlpEncodeNat header.10) (seqBytesCons (rlpEncodeNat header.11) (seqBytesCons (rlpEncodeBytes header.12) (seqBytesCons (rlpEncodeBytes (u256ToBeBytes header.13)) (seqBytesCons (rlpEncodeBytes (blockHeaderNonceBytes header.14)) (seqBytesCons (rlpEncodeScalar (u256ToBeBytes header.15)) (seqBytesCons (rlpEncodeBytes (hash32Bytes header.17)) (seqBytesCons (rlpEncodeNat header.19) (seqBytesCons (rlpEncodeNat header.20) (seqBytesCons (rlpEncodeBytes (outputDigestBytes header.18)) (seqBytesCons (rlpEncodeBytes (hash32Bytes header.21)) seqBytesEmpty)))))))))))))))))))))
+def blockHeaderHash : BlockHeader -> Keccak := fun (header : BlockHeader) => keccakDigest (blockHeaderEncodeRlp header)
+def rec blockHeaderWithdrawalsEqual : Withdrawals -> Withdrawals -> Bool := fun (left : Withdrawals) (right : Withdrawals) =>
+  match left as self in Withdrawals return Bool with
+  | withdrawalsNil => (match right as rest in Withdrawals return Bool with
+    | withdrawalsNil => natEq 0 0
+    | withdrawalsCons head tail => natEq 0 1)
+  | withdrawalsCons head tail => match right as rest in Withdrawals return Bool with
+    | withdrawalsNil => natEq 0 1
+    | withdrawalsCons other remaining => boolAnd (withdrawalEqual head other) (blockHeaderWithdrawalsEqual tail remaining)
+def blockHeaderEqual : BlockHeader -> BlockHeader -> Bool := fun (a : BlockHeader) (b : BlockHeader) =>
+  boolAnd (keccakEqual a.0 b.0) (boolAnd (batchDigestEqual a.1 b.1) (boolAnd (addressEqual a.2 b.2) (boolAnd (hash32Equal a.3 b.3) (boolAnd (hash32Equal a.4 b.4) (boolAnd (hash32Equal a.5 b.5) (boolAnd (bloomEqual a.6 b.6) (boolAnd (evmBatchPositionEqual a.7 b.7) (boolAnd (hostIntEqual a.8 b.8) (boolAnd (hostIntEqual a.9 b.9) (boolAnd (hostIntEqual a.10 b.10) (boolAnd (hostIntEqual a.11 b.11) (boolAnd (bytesEqual a.12 b.12) (boolAnd (u256Equal a.13 b.13) (boolAnd (sequenceEqual a.14 b.14) (boolAnd (u256Equal a.15 b.15) (boolAnd (blockHeaderWithdrawalsEqual a.16 b.16) (boolAnd (hash32Equal a.17 b.17) (boolAnd (outputDigestEqual a.18 b.18) (boolAnd (hostIntEqual a.19 b.19) (boolAnd (hostIntEqual a.20 b.20) (hash32Equal a.21 b.21)))))))))))))))))))))

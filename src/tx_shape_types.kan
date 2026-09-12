@@ -1,0 +1,87 @@
+-- Batch admission deliberately accepts a wider wire grammar than execution.
+mu TxShapeError : Type 0 :=
+  | txShapeEmptyInput : TxShapeError
+  | txShapeFailedToDecode : TxShapeError
+  | txShapeInvalidSignature : TxShapeError
+def txShapeErrorText : TxShapeError -> Bytes := fun (error : TxShapeError) =>
+  match error as self in TxShapeError return Bytes with
+  | txShapeEmptyInput => b"empty raw transaction data"
+  | txShapeFailedToDecode => b"failed to decode signed transaction"
+  | txShapeInvalidSignature => b"invalid transaction signature"
+def TxShapeResult : Type 0 -> Type 0 := fun (A : Type 0) => sum (TxShapeError, A)
+mu TxShapeKind : Type 0 :=
+  | txShapeLegacy : TxShapeKind
+  | txShapeEip2930 : TxShapeKind
+  | txShapeEip1559 : TxShapeKind
+  | txShapeEip4844 : TxShapeKind
+  | txShapeEip7702 : TxShapeKind
+def txShapeTypeByte : TxShapeKind -> Nat := fun (kind : TxShapeKind) =>
+  match kind as self in TxShapeKind return Nat with
+  | txShapeLegacy => 0
+  | txShapeEip2930 => 1
+  | txShapeEip1559 => 2
+  | txShapeEip4844 => 3
+  | txShapeEip7702 => 4
+def TxShape : Type 0 := prod (TxShapeKind, RlpItems, Nat, ValueOption U256, TxSignature)
+def txShapeGasLimit : TxShape -> Nat := fun (tx : TxShape) => tx.2
+def txShapeIsEip4844 : TxShape -> Bool := fun (tx : TxShape) => natEq (txShapeTypeByte tx.0) 3
+def txShapeTypePrefix : TxShapeKind -> Bytes := fun (kind : TxShapeKind) =>
+  case (natEq (txShapeTypeByte kind) 0) with
+  | 1 (unit : prod ()) => emptyBytes
+  | 0 (unit : prod ()) => consBytes (txShapeTypeByte kind) emptyBytes
+mu TxShapeSchema : Type 0 :=
+  | txShapeSchemaNil : TxShapeSchema
+  | txShapeSchemaCons (read : RlpItem -> Bool) (tail : TxShapeSchema) : TxShapeSchema
+def txShapeAccept : (A : Type 0) -> TxResult A -> Bool := fun (A : Type 0) (result : TxResult A) =>
+  case result with
+  | 0 (error : TxDecodeError) => natEq 0 1
+  | 1 (value : A) => natEq 0 0
+def txShapeScalar : Nat -> RlpItem -> Bool := fun (width : Nat) (item : RlpItem) => txShapeAccept U256 (txReadWord width item)
+def txShapeTarget : RlpItem -> Bool := fun (item : RlpItem) => txShapeAccept TransactionKind (txReadKind item)
+def txShapeAddress : RlpItem -> Bool := fun (item : RlpItem) => txShapeAccept Address (txReadAddress item)
+def txShapeBytes : RlpItem -> Bool := fun (item : RlpItem) => txShapeAccept Bytes (txReadBytes item)
+def txShapeAccess : RlpItem -> Bool := fun (item : RlpItem) => txShapeAccept TxAccessEntries (txReadAccessList item)
+def txShapeAuths : RlpItem -> Bool := fun (item : RlpItem) => txShapeAccept SignedAuthorizations (txReadAuthorizations item)
+def txShapeParity : RlpItem -> Bool := fun (item : RlpItem) => txShapeAccept Bool (txReadParity item)
+def txShapeHashes : RlpItem -> Bool := fun (item : RlpItem) => txShapeAccept Words (txReadKeys item)
+def txShapeLegacySchema : TxShapeSchema := txShapeSchemaCons (txShapeScalar 8) (txShapeSchemaCons (txShapeScalar 16) (txShapeSchemaCons (txShapeScalar 8) (txShapeSchemaCons txShapeTarget (txShapeSchemaCons (txShapeScalar 32) (txShapeSchemaCons txShapeBytes (txShapeSchemaCons (txShapeScalar 16) (txShapeSchemaCons (txShapeScalar 32) (txShapeSchemaCons (txShapeScalar 32) (txShapeSchemaNil)))))))))
+def txShapeEip2930Schema : TxShapeSchema := txShapeSchemaCons (txShapeScalar 8) (txShapeSchemaCons (txShapeScalar 8) (txShapeSchemaCons (txShapeScalar 16) (txShapeSchemaCons (txShapeScalar 8) (txShapeSchemaCons txShapeTarget (txShapeSchemaCons (txShapeScalar 32) (txShapeSchemaCons txShapeBytes (txShapeSchemaCons txShapeAccess (txShapeSchemaCons txShapeParity (txShapeSchemaCons (txShapeScalar 32) (txShapeSchemaCons (txShapeScalar 32) (txShapeSchemaNil)))))))))))
+def txShapeEip1559Schema : TxShapeSchema := txShapeSchemaCons (txShapeScalar 8) (txShapeSchemaCons (txShapeScalar 8) (txShapeSchemaCons (txShapeScalar 16) (txShapeSchemaCons (txShapeScalar 16) (txShapeSchemaCons (txShapeScalar 8) (txShapeSchemaCons txShapeTarget (txShapeSchemaCons (txShapeScalar 32) (txShapeSchemaCons txShapeBytes (txShapeSchemaCons txShapeAccess (txShapeSchemaCons txShapeParity (txShapeSchemaCons (txShapeScalar 32) (txShapeSchemaCons (txShapeScalar 32) (txShapeSchemaNil))))))))))))
+def txShapeEip4844Schema : TxShapeSchema := txShapeSchemaCons (txShapeScalar 8) (txShapeSchemaCons (txShapeScalar 8) (txShapeSchemaCons (txShapeScalar 16) (txShapeSchemaCons (txShapeScalar 16) (txShapeSchemaCons (txShapeScalar 8) (txShapeSchemaCons txShapeAddress (txShapeSchemaCons (txShapeScalar 32) (txShapeSchemaCons txShapeBytes (txShapeSchemaCons txShapeAccess (txShapeSchemaCons (txShapeScalar 16) (txShapeSchemaCons txShapeHashes (txShapeSchemaCons txShapeParity (txShapeSchemaCons (txShapeScalar 32) (txShapeSchemaCons (txShapeScalar 32) (txShapeSchemaNil))))))))))))))
+def txShapeEip7702Schema : TxShapeSchema := txShapeSchemaCons (txShapeScalar 8) (txShapeSchemaCons (txShapeScalar 8) (txShapeSchemaCons (txShapeScalar 16) (txShapeSchemaCons (txShapeScalar 16) (txShapeSchemaCons (txShapeScalar 8) (txShapeSchemaCons txShapeAddress (txShapeSchemaCons (txShapeScalar 32) (txShapeSchemaCons txShapeBytes (txShapeSchemaCons txShapeAccess (txShapeSchemaCons txShapeAuths (txShapeSchemaCons txShapeParity (txShapeSchemaCons (txShapeScalar 32) (txShapeSchemaCons (txShapeScalar 32) (txShapeSchemaNil)))))))))))))
+def txShapeSchema : TxShapeKind -> TxShapeSchema := fun (kind : TxShapeKind) =>
+  match kind as self in TxShapeKind return TxShapeSchema with
+  | txShapeLegacy => txShapeLegacySchema
+  | txShapeEip2930 => txShapeEip2930Schema
+  | txShapeEip1559 => txShapeEip1559Schema
+  | txShapeEip4844 => txShapeEip4844Schema
+  | txShapeEip7702 => txShapeEip7702Schema
+def rec txShapeFieldsMatch : RlpItems -> TxShapeSchema -> Bool := fun (fields : RlpItems) (schema : TxShapeSchema) =>
+  match fields as self in RlpItems return Bool with
+  | rlpItemsNil => (match schema as expected in TxShapeSchema return Bool with
+    | txShapeSchemaNil => natEq 0 0
+    | txShapeSchemaCons read tail => natEq 0 1)
+  | rlpItemsCons head tail => match schema as expected in TxShapeSchema return Bool with
+    | txShapeSchemaNil => natEq 0 1
+    | txShapeSchemaCons read remaining => case (read head) with
+      | 0 (unit : prod ()) => natEq 0 1
+      | 1 (unit : prod ()) => txShapeFieldsMatch tail remaining
+def rec txShapeItemAt : RlpItems -> Nat -> ValueOption RlpItem := fun (fields : RlpItems) (index : Nat) =>
+  match fields as self in RlpItems return ValueOption RlpItem with
+  | rlpItemsNil => valueNone RlpItem
+  | rlpItemsCons head tail => case (natEq index 0) with
+    | 1 (unit : prod ()) => valueSome RlpItem head
+    | 0 (unit : prod ()) => txShapeItemAt tail (natSub index 1)
+def txShapeWordAt : RlpItems -> Nat -> U256 := fun (fields : RlpItems) (index : Nat) =>
+  case (txShapeItemAt fields index) with
+  | 0 (unit : prod ()) => u256Zero
+  | 1 (item : RlpItem) => case (txReadWord 32 item) with
+    | 0 (error : TxDecodeError) => u256Zero
+    | 1 (value : U256) => value
+def txShapeGasIndex : TxShapeKind -> Nat := fun (kind : TxShapeKind) =>
+  match kind as self in TxShapeKind return Nat with
+  | txShapeLegacy => 2
+  | txShapeEip2930 => 3
+  | txShapeEip1559 => 4
+  | txShapeEip4844 => 4
+  | txShapeEip7702 => 4

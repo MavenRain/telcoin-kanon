@@ -1,0 +1,47 @@
+mu ExecutorError : Type 0 :=
+| executorInvalidChainId : ExecutorError
+| executorMissingChainId : ExecutorError
+| executorGasPriceBelowBaseFee : ExecutorError
+| executorPriorityFeeAboveMaxFee : ExecutorError
+| executorEip7702NotActivated : ExecutorError
+| executorEmptyAuthorizationList : ExecutorError
+| executorGasLimitAboveBlock : ExecutorError
+| executorInitCodeSizeLimit : ExecutorError
+| executorIntrinsicGasAboveLimit : ExecutorError
+| executorGasFloorAboveLimit : ExecutorError
+| executorSenderHasCode : ExecutorError
+| executorInsufficientFunds : ExecutorError
+| executorOverflowPayment : ExecutorError
+| executorNonceMismatch (expected : Nonce) (actual : Nonce) : ExecutorError
+def executorErrorText : ExecutorError -> Bytes := fun (error : ExecutorError) => match error as self in ExecutorError return Bytes with
+  | executorInvalidChainId => b"invalid chain id"
+  | executorMissingChainId => b"missing chain id"
+  | executorGasPriceBelowBaseFee => b"gas price below base fee"
+  | executorPriorityFeeAboveMaxFee => b"priority fee above max fee"
+  | executorEip7702NotActivated => b"set-code transaction before Prague (EIP-7702)"
+  | executorEmptyAuthorizationList => b"empty authorization list (EIP-7702)"
+  | executorGasLimitAboveBlock => b"gas limit above block gas limit"
+  | executorInitCodeSizeLimit => b"init code size limit (EIP-3860)"
+  | executorIntrinsicGasAboveLimit => b"intrinsic gas above gas limit"
+  | executorGasFloorAboveLimit => b"gas floor above gas limit"
+  | executorSenderHasCode => b"sender has code (EIP-3607)"
+  | executorInsufficientFunds => b"insufficient funds for max fee and value"
+  | executorOverflowPayment => b"overflow computing max payment"
+  | executorNonceMismatch expected actual => append b"nonce mismatch (expected " (append (nonceText expected) (append b", got " (append (nonceText actual) b")")))
+mu ExecutorFrameOutcome : Type 0 :=
+| executorRanSuccess (world : WorldState) (remaining : HostInt) (refund : HostInt) (logs : EvmLogs) (output : Bytes) (created : ValueOption Address) : ExecutorFrameOutcome
+| executorRanRevert (world : WorldState) (remaining : HostInt) (output : Bytes) : ExecutorFrameOutcome
+| executorRanHalt (world : WorldState) (reason : ReceiptHaltReason) : ExecutorFrameOutcome
+def ExecutorResult : Type 0 := sum (ExecutorError, prod (Receipt, WorldState))
+def executorWordOfInt : HostInt -> U256 := fun (value : HostInt) => u256Value (hostIntClampZero value)
+def executorMulChecked : U256 -> U256 -> ValueOption U256 := fun (a : U256) (b : U256) => u256OfNat (natMul (u256Nat a) (u256Nat b))
+def executorAddBalance : WorldState -> Address -> U256 -> WorldState := fun (world : WorldState) (address : Address) (amount : U256) =>
+  case (accountCredit (worldStateAccount world address) amount) with
+  | 0 (unit : prod ()) => world
+  | 1 (account : Account) => worldStateSetAccount world address account
+def executorIntLess : HostInt -> HostInt -> Bool := fun (a : HostInt) (b : HostInt) => match (hostIntCompare a b) as self in Ordering return Bool with
+  | orderLess => natEq 0 0 | orderEqual => natEq 0 1 | orderGreater => natEq 0 1
+def executorIntMin : HostInt -> HostInt -> HostInt := fun (a : HostInt) (b : HostInt) => case (executorIntLess a b) with
+  | 1 (unit : prod ()) => a | 0 (unit : prod ()) => b
+def executorRequire : Bool -> ExecutorError -> ValueOption ExecutorError := fun (valid : Bool) (error : ExecutorError) => case valid with
+  | 1 (unit : prod ()) => valueNone ExecutorError | 0 (unit : prod ()) => valueSome ExecutorError error

@@ -1,0 +1,47 @@
+def RewardsCounter : Type 0 := prod (ValueOption Committee, LeaderCounts)
+def rewardsCounterEmpty : RewardsCounter := tuple (valueNone Committee, leaderCountsNil)
+def rewardsCounterCommittee : RewardsCounter -> ValueOption Committee := fun (value : RewardsCounter) => value.0
+def rewardsCounterLeaderCounts : RewardsCounter -> LeaderCounts := fun (value : RewardsCounter) => value.1
+def rewardsCounterSetCommittee : RewardsCounter -> Committee -> RewardsCounter :=
+  fun (value : RewardsCounter) (committee : Committee) => tuple (valueSome Committee committee, value.1)
+def rewardsCounterClear : RewardsCounter -> RewardsCounter := fun (value : RewardsCounter) => tuple (value.0, leaderCountsNil)
+def rewardsCounterIncLeader : RewardsCounter -> AuthorityId -> RewardsCounter :=
+  fun (value : RewardsCounter) (leader : AuthorityId) =>
+    let previous : HostInt := case (mapLookup AuthorityId HostInt LeaderCounts seqLeaderCountOps authorityIdEqual leader (value.1)) with
+      | 0 (unit : prod ()) => hostIntFromBits 0
+      | 1 (count : HostInt) => count in
+    tuple (value.0, mapAdd AuthorityId HostInt LeaderCounts seqLeaderCountOps authorityIdCompare leader
+      (hostIntAdd previous (hostIntFromBits 1)) (value.1))
+def rewardsCounterMergeAddress : RewardPairs -> Address -> HostInt -> RewardPairs :=
+  fun (values : RewardPairs) (address : Address) (count : HostInt) =>
+    let previous : HostInt := case (mapLookup Address HostInt RewardPairs seqRewardPairOps addressEqual address values) with
+      | 0 (unit : prod ()) => hostIntFromBits 0
+      | 1 (old : HostInt) => old in
+    mapAdd Address HostInt RewardPairs seqRewardPairOps addressCompare address (hostIntAdd previous count) values
+def rec rewardsCounterAddressCountsAcc : LeaderCounts -> Committee -> RewardPairs -> RewardPairs :=
+  fun (values : LeaderCounts) (committee : Committee) (merged : RewardPairs) =>
+    match values as self in LeaderCounts return RewardPairs with
+    | leaderCountsNil => merged
+    | leaderCountsCons head tail => case (committeeAuthority committee (head.0)) with
+      | 0 (unit : prod ()) => rewardsCounterAddressCountsAcc tail committee merged
+      | 1 (authority : Authority) => rewardsCounterAddressCountsAcc tail committee
+          (rewardsCounterMergeAddress merged (authorityAddress authority) (head.1))
+def rewardsCounterAddressCounts : RewardsCounter -> RewardPairs := fun (value : RewardsCounter) =>
+  case (value.0) with
+  | 0 (unit : prod ()) => rewardPairsNil
+  | 1 (committee : Committee) => rewardsCounterAddressCountsAcc (value.1) committee rewardPairsNil
+mu RewardsCounterError : Type 0 :=
+  | rewardsNegativeAmount (address : Address) (amount : HostInt) : RewardsCounterError
+def rewardsCounterErrorText : RewardsCounterError -> Bytes := fun (error : RewardsCounterError) =>
+  match error as self in RewardsCounterError return Bytes with
+  | rewardsNegativeAmount address amount => append b"generate_withdrawals: negative amount "
+      (append (blockExecutionIntText amount) (append b" for 0x" (bytesHex (addressBytes address))))
+def rec rewardsCounterWithdrawalsAcc : RewardPairs -> Withdrawals -> sum (RewardsCounterError, Withdrawals) :=
+  fun (values : RewardPairs) (reversed : Withdrawals) =>
+    match values as self in RewardPairs return sum (RewardsCounterError, Withdrawals) with
+    | rewardPairsNil => inj 1 of 2 (seqWithdrawalReverse reversed)
+    | rewardPairsCons head tail => case (withdrawalMake (hostIntFromBits 0) (hostIntFromBits 0) (head.0) (head.1)) with
+      | 0 (unit : prod ()) => inj 0 of 2 (rewardsNegativeAmount (head.0) (head.1))
+      | 1 (withdrawal : Withdrawal) => rewardsCounterWithdrawalsAcc tail (withdrawalsCons withdrawal reversed)
+def rewardsCounterGenerateWithdrawals : RewardsCounter -> sum (RewardsCounterError, Withdrawals) :=
+  fun (value : RewardsCounter) => rewardsCounterWithdrawalsAcc (rewardsCounterAddressCounts value) withdrawalsNil

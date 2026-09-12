@@ -1,0 +1,95 @@
+-- Decoders check framing before any element, then fields in wire order.
+def rec registryBeNatAcc : Bytes -> Nat -> Nat := fun (bytes : Bytes) (acc : Nat) =>
+  match bytes as self in Bytes return Nat with
+  | bytesNil => acc
+  | bytesCons head tail => registryBeNatAcc tail (natAdd (natMul acc 256) head)
+def registryBeNat : Bytes -> Nat := fun (bytes : Bytes) => registryBeNatAcc bytes 0
+def registryZeroPrefix : Bytes -> Nat -> Bool := fun (word : Bytes) (width : Nat) => natEq (registryBeNat (take width word)) 0
+def registryDecodeUint : Bytes -> Nat -> RegistryResult Nat := fun (word : Bytes) (width : Nat) =>
+  case (registryZeroPrefix word (natSub 32 width)) with
+  | 0 (unit : prod ()) => inj 0 of 2 registryPaddingNonzero
+  | 1 (unit : prod ()) => inj 1 of 2 (registryBeNat (drop word (natSub 32 width)))
+def registryDecodeAddress : Bytes -> RegistryResult Address := fun (word : Bytes) =>
+  case (registryZeroPrefix word 12) with
+  | 0 (unit : prod ()) => inj 0 of 2 registryPaddingNonzero
+  | 1 (unit : prod ()) => case (addressOfBytes (take 20 (drop word 12))) with
+    | 0 (unit : prod ()) => inj 1 of 2 addressZero
+    | 1 (address : Address) => inj 1 of 2 address
+def registryDecodeStatus : Bytes -> RegistryResult ValidatorStatus := fun (word : Bytes) =>
+  case (registryZeroPrefix word 31) with
+  | 0 (unit : prod ()) => inj 0 of 2 registryPaddingNonzero
+  | 1 (unit : prod ()) =>
+    let byte : Nat := bytesHead (drop word 31) in
+    case (validatorStatusOfByte byte) with
+    | 0 (unit : prod ()) => inj 0 of 2 (registryStatusByte byte)
+    | 1 (status : ValidatorStatus) => inj 1 of 2 status
+def registryDecodeBool : Bytes -> RegistryResult Bool := fun (word : Bytes) =>
+  case (registryDecodeUint word 1) with
+  | 0 (error : RegistryDecodeError) => inj 0 of 2 error
+  | 1 (byte : Nat) => case (natLt byte 2) with
+    | 0 (unit : prod ()) => inj 0 of 2 registryPaddingNonzero
+    | 1 (unit : prod ()) => inj 1 of 2 (natEq byte 1)
+def registryElementSize : Nat := 224
+def registryDecodeElement : Bytes -> RegistryResult ValidatorInfo := fun (data : Bytes) =>
+  case (registryDecodeAddress (take 32 (drop data 0))) with
+  | 0 (error : RegistryDecodeError) => inj 0 of 2 error
+  | 1 (address : Address) =>
+    case (registryDecodeUint (take 32 (drop data 32)) 4) with
+    | 0 (error : RegistryDecodeError) => inj 0 of 2 error
+    | 1 (activation : Nat) =>
+      case (registryDecodeUint (take 32 (drop data 64)) 4) with
+      | 0 (error : RegistryDecodeError) => inj 0 of 2 error
+      | 1 (exit : Nat) =>
+        case (registryDecodeStatus (take 32 (drop data 96))) with
+        | 0 (error : RegistryDecodeError) => inj 0 of 2 error
+        | 1 (status : ValidatorStatus) =>
+          case (registryDecodeBool (take 32 (drop data 128))) with
+          | 0 (error : RegistryDecodeError) => inj 0 of 2 error
+          | 1 (retired : Bool) =>
+            case (registryDecodeUint (take 32 (drop data 160)) 1) with
+            | 0 (error : RegistryDecodeError) => inj 0 of 2 error
+            | 1 (stake : Nat) =>
+              case (registryDecodeUint (take 32 (drop data 192)) 1) with
+              | 0 (error : RegistryDecodeError) => inj 0 of 2 error
+              | 1 (region : Nat) => inj 1 of 2 (tuple (address, activation, exit, status, retired, stake, region))
+def rec registryDecodeElementsBytes : Bytes -> Nat -> Bytes -> ValidatorInfos -> RegistryResult ValidatorInfos :=
+  fun (data : Bytes) (count : Nat) (chunk : Bytes) (reversed : ValidatorInfos) =>
+    match data as self in Bytes return RegistryResult ValidatorInfos with
+    | bytesNil => inj 1 of 2 (seqValidatorInfoReverse reversed)
+    | bytesCons head tail =>
+      let next : Bytes := consBytes head chunk in
+      case (natEq count 223) with
+      | 0 (unit : prod ()) => registryDecodeElementsBytes tail (natAdd count 1) next reversed
+      | 1 (unit : prod ()) => case (registryDecodeElement (reverse next)) with
+        | 0 (error : RegistryDecodeError) => inj 0 of 2 error
+        | 1 (info : ValidatorInfo) => registryDecodeElementsBytes tail 0 emptyBytes (validatorInfosCons info reversed)
+def registryDecodeElements : Bytes -> Nat -> ValidatorInfos -> RegistryResult ValidatorInfos :=
+  fun (data : Bytes) (remaining : Nat) (reversed : ValidatorInfos) =>
+    registryDecodeElementsBytes (take (natMul remaining 224) data) 0 emptyBytes reversed
+def registryDecodeValidatorInfoArray : Bytes -> RegistryResult ValidatorInfos := fun (data : Bytes) =>
+  let got : Nat := bytesLength data in
+  case (natLt got 32) with
+  | 1 (unit : prod ()) => inj 0 of 2 (registryTruncated 32 got)
+  | 0 (unit : prod ()) => case (natEq (registryBeNat (take 32 data)) 32) with
+    | 0 (unit : prod ()) => inj 0 of 2 registryHeadOffsetNot32
+    | 1 (unit : prod ()) => case (natLt got 64) with
+      | 1 (unit : prod ()) => inj 0 of 2 (registryTruncated 64 got)
+      | 0 (unit : prod ()) =>
+        let word : Bytes := take 32 (drop data 32) in
+        case (registryZeroPrefix word 28) with
+        | 0 (unit : prod ()) => inj 0 of 2 registryLengthWordOverflow
+        | 1 (unit : prod ()) =>
+          let count : Nat := registryBeNat (drop word 28) in
+          let need : Nat := natAdd 64 (natMul count 224) in
+          case (natLt got need) with
+          | 1 (unit : prod ()) => inj 0 of 2 (registryTruncated need got)
+          | 0 (unit : prod ()) => case (natEq got need) with
+            | 0 (unit : prod ()) => inj 0 of 2 (registryTrailingBytes (natSub got need))
+            | 1 (unit : prod ()) => registryDecodeElements (drop data 64) count validatorInfosNil
+def registryDecodeUint16 : Bytes -> RegistryResult Nat := fun (data : Bytes) =>
+  let got : Nat := bytesLength data in
+  case (natLt got 32) with
+  | 1 (unit : prod ()) => inj 0 of 2 (registryTruncated 32 got)
+  | 0 (unit : prod ()) => case (natEq got 32) with
+    | 0 (unit : prod ()) => inj 0 of 2 (registryTrailingBytes (natSub got 32))
+    | 1 (unit : prod ()) => registryDecodeUint data 2

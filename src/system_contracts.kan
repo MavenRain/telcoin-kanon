@@ -1,0 +1,38 @@
+def systemContractsHexValue : Nat -> ValueOption Nat := fun (byte : Nat) =>
+  case (boolAnd (boolNot (natLt byte 48)) (natLt byte 58)) with
+  | 1 (unit : prod ()) => valueSome Nat (natSub byte 48) | 0 (unit : prod ()) =>
+  case (boolAnd (boolNot (natLt byte 97)) (natLt byte 103)) with
+  | 1 (unit : prod ()) => valueSome Nat (natSub byte 87) | 0 (unit : prod ()) =>
+  case (boolAnd (boolNot (natLt byte 65)) (natLt byte 71)) with
+  | 1 (unit : prod ()) => valueSome Nat (natSub byte 55) | 0 (unit : prod ()) => valueNone Nat
+def rec systemContractsHexScan : Bytes -> Bytes -> ValueOption Bytes := fun (hex : Bytes) (acc : Bytes) =>
+  match hex as self in Bytes return ValueOption Bytes with
+  | bytesNil => valueSome Bytes (reverse acc)
+  | bytesCons high rest => match rest as tail in Bytes return ValueOption Bytes with
+    | bytesNil => valueNone Bytes
+    | bytesCons low remaining => case (systemContractsHexValue high) with
+      | 0 (unit : prod ()) => valueNone Bytes
+      | 1 (a : Nat) => case (systemContractsHexValue low) with
+        | 0 (unit : prod ()) => valueNone Bytes
+        | 1 (b : Nat) => systemContractsHexScan remaining (consBytes (natAdd (natMul a 16) b) acc)
+def systemContractsBytesOfHex : Bytes -> Bytes := fun (hex : Bytes) => case (systemContractsHexScan hex bytesNil) with
+  | 0 (unit : prod ()) => bytesNil | 1 (bytes : Bytes) => bytes
+def systemContractsAddressOfHex : Bytes -> Address := fun (hex : Bytes) => case (addressOfBytes (systemContractsBytesOfHex hex)) with
+  | 0 (unit : prod ()) => addressZero | 1 (address : Address) => address
+def systemAddress : Address := systemContractsAddressOfHex b"fffffffffffffffffffffffffffffffffffffffe"
+def beaconRootsAddress : Address := systemContractsAddressOfHex b"000f3df6d732807ef1319fb7b8bb8522d0beac02"
+def historyStorageAddress : Address := systemContractsAddressOfHex b"0000f90827f1c53a10cb7a02335b175320002935"
+def governanceSafeAddress : Address := systemContractsAddressOfHex b"00000000000000000000000000000000000007a0"
+def consensusRegistryAddress : Address := systemContractsAddressOfHex b"07e17e17e17e17e17e17e17e17e17e17e17e17e1"
+def historyServeWindow : Nat := 8191
+def beaconRootsCode : Bytes := (bytesCons 51 (bytesCons 115 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 254 (bytesCons 20 (bytesCons 96 (bytesCons 77 (bytesCons 87 (bytesCons 96 (bytesCons 32 (bytesCons 54 (bytesCons 20 (bytesCons 96 (bytesCons 36 (bytesCons 87 (bytesCons 95 (bytesCons 95 (bytesCons 253 (bytesCons 91 (bytesCons 95 (bytesCons 53 (bytesCons 128 (bytesCons 21 (bytesCons 96 (bytesCons 73 (bytesCons 87 (bytesCons 98 (bytesCons 0 (bytesCons 31 (bytesCons 255 (bytesCons 129 (bytesCons 6 (bytesCons 144 (bytesCons 129 (bytesCons 84 (bytesCons 20 (bytesCons 96 (bytesCons 60 (bytesCons 87 (bytesCons 95 (bytesCons 95 (bytesCons 253 (bytesCons 91 (bytesCons 98 (bytesCons 0 (bytesCons 31 (bytesCons 255 (bytesCons 1 (bytesCons 84 (bytesCons 95 (bytesCons 82 (bytesCons 96 (bytesCons 32 (bytesCons 95 (bytesCons 243 (bytesCons 91 (bytesCons 95 (bytesCons 95 (bytesCons 253 (bytesCons 91 (bytesCons 98 (bytesCons 0 (bytesCons 31 (bytesCons 255 (bytesCons 66 (bytesCons 6 (bytesCons 66 (bytesCons 129 (bytesCons 85 (bytesCons 95 (bytesCons 53 (bytesCons 144 (bytesCons 98 (bytesCons 0 (bytesCons 31 (bytesCons 255 (bytesCons 1 (bytesCons 85 (bytesCons 0 bytesNil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+def historyStorageCode : Bytes := (bytesCons 51 (bytesCons 115 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 255 (bytesCons 254 (bytesCons 20 (bytesCons 96 (bytesCons 70 (bytesCons 87 (bytesCons 96 (bytesCons 32 (bytesCons 54 (bytesCons 3 (bytesCons 96 (bytesCons 66 (bytesCons 87 (bytesCons 95 (bytesCons 53 (bytesCons 96 (bytesCons 1 (bytesCons 67 (bytesCons 3 (bytesCons 129 (bytesCons 17 (bytesCons 96 (bytesCons 66 (bytesCons 87 (bytesCons 97 (bytesCons 31 (bytesCons 255 (bytesCons 129 (bytesCons 67 (bytesCons 3 (bytesCons 17 (bytesCons 96 (bytesCons 66 (bytesCons 87 (bytesCons 97 (bytesCons 31 (bytesCons 255 (bytesCons 144 (bytesCons 6 (bytesCons 84 (bytesCons 95 (bytesCons 82 (bytesCons 96 (bytesCons 32 (bytesCons 95 (bytesCons 243 (bytesCons 91 (bytesCons 95 (bytesCons 95 (bytesCons 253 (bytesCons 91 (bytesCons 95 (bytesCons 53 (bytesCons 97 (bytesCons 31 (bytesCons 255 (bytesCons 96 (bytesCons 1 (bytesCons 67 (bytesCons 3 (bytesCons 6 (bytesCons 85 (bytesCons 0 bytesNil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+def systemContractsDeployerAccounts : Addresses := addressesCons
+  (systemContractsAddressOfHex b"0b799c86a49deeb90402691f1041aa3af2d3c875")
+  (addressesCons (systemContractsAddressOfHex b"3462413af4609098e1e27a490f554f260213d685") addressesNil)
+def systemContractAccount : Bytes -> Account := fun (code : Bytes) => accountWithCode (accountMake nonceZero u256Zero) code
+def systemContractsDeployerAccount : Account := accountMake (nonceValue 1) u256Zero
+def systemContractsPredeploy : WorldState -> WorldState := fun (world : WorldState) =>
+  let contracts : WorldState := worldStateSetAccount (worldStateSetAccount world beaconRootsAddress (systemContractAccount beaconRootsCode)) historyStorageAddress (systemContractAccount historyStorageCode) in
+  listFoldLeft Address Addresses WorldState seqAddressOps (fun (state : WorldState) (address : Address) => worldStateSetAccount state address systemContractsDeployerAccount) contracts systemContractsDeployerAccounts
+def systemContractIsDeployed : WorldState -> Address -> Bool := fun (world : WorldState) (address : Address) => natLt 0 (accountCodeLength (worldStateAccount world address))

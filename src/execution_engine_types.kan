@@ -1,0 +1,54 @@
+def ExecutionBlockNumber : Type 0 := HostInt
+def executionBlockNumberGenesis : ExecutionBlockNumber := hostIntFromBits 0
+def executionBlockNumberSucc : ExecutionBlockNumber -> ExecutionBlockNumber := fun (value : ExecutionBlockNumber) => hostIntAdd value (hostIntFromBits 1)
+def executionBlockNumberOfInt : HostInt -> ExecutionBlockNumber := fun (value : HostInt) => value
+def executionBlockNumberToInt : ExecutionBlockNumber -> HostInt := fun (value : ExecutionBlockNumber) => value
+def executionBlockNumberEqual : ExecutionBlockNumber -> ExecutionBlockNumber -> Bool := hostIntEqual
+def executionBlockNumberCompare : ExecutionBlockNumber -> ExecutionBlockNumber -> Ordering := hostIntCompare
+def ExecutedBlock : Type 0 := prod (BlockHeader, ExecutionBlockNumber, BlockPreState, TxEnvelopes, ReceiptPairs, BlockInvalidTxs, WorldState, ValueOption EpochCloseDisposition)
+def executedBlockHeader : ExecutedBlock -> BlockHeader := fun (value : ExecutedBlock) => value.0
+def executedBlockNumber : ExecutedBlock -> ExecutionBlockNumber := fun (value : ExecutedBlock) => value.1
+def executedBlockPreBlock : ExecutedBlock -> BlockPreState := fun (value : ExecutedBlock) => value.2
+def executedBlockTransactions : ExecutedBlock -> TxEnvelopes := fun (value : ExecutedBlock) => value.3
+def executedBlockReceipts : ExecutedBlock -> ReceiptPairs := fun (value : ExecutedBlock) => value.4
+def executedBlockSkipped : ExecutedBlock -> BlockInvalidTxs := fun (value : ExecutedBlock) => value.5
+def executedBlockWorld : ExecutedBlock -> WorldState := fun (value : ExecutedBlock) => value.6
+def executedBlockCloseDisposition : ExecutedBlock -> ValueOption EpochCloseDisposition := fun (value : ExecutedBlock) => value.7
+def executedBlockMake : BlockHeader -> ExecutionBlockNumber -> BlockPreState -> TxEnvelopes -> ReceiptPairs -> BlockInvalidTxs -> WorldState -> ValueOption EpochCloseDisposition -> ExecutedBlock :=
+  fun (v0 : BlockHeader) (v1 : ExecutionBlockNumber) (v2 : BlockPreState) (v3 : TxEnvelopes) (v4 : ReceiptPairs) (v5 : BlockInvalidTxs) (v6 : WorldState) (v7 : ValueOption EpochCloseDisposition) => tuple (v0, v1, v2, v3, v4, v5, v6, v7)
+def executedBlockHash : ExecutedBlock -> Keccak := fun (block : ExecutedBlock) => blockHeaderHash (executedBlockHeader block)
+def ExecutionAnchor : Type 0 := prod (Keccak, ExecutionBlockNumber, U256, HostInt, ValueOption BlockHeader)
+def executionAnchorHash : ExecutionAnchor -> Keccak := fun (value : ExecutionAnchor) => value.0
+def executionAnchorNumber : ExecutionAnchor -> ExecutionBlockNumber := fun (value : ExecutionAnchor) => value.1
+def executionAnchorBaseFee : ExecutionAnchor -> U256 := fun (value : ExecutionAnchor) => value.2
+def executionAnchorGasLimit : ExecutionAnchor -> HostInt := fun (value : ExecutionAnchor) => value.3
+def executionAnchorHeader : ExecutionAnchor -> ValueOption BlockHeader := fun (value : ExecutionAnchor) => value.4
+def executionAnchorMake : Keccak -> ExecutionBlockNumber -> U256 -> HostInt -> ValueOption BlockHeader -> ExecutionAnchor :=
+  fun (v0 : Keccak) (v1 : ExecutionBlockNumber) (v2 : U256) (v3 : HostInt) (v4 : ValueOption BlockHeader) => tuple (v0, v1, v2, v3, v4)
+def executionAnchorOfGenesis : Keccak -> U256 -> HostInt -> ExecutionAnchor :=
+  fun (hash : Keccak) (fee : U256) (gas : HostInt) => tuple (hash, executionBlockNumberGenesis, fee, gas, valueNone BlockHeader)
+def executionAnchorOfHeader : BlockHeader -> ExecutionAnchor := fun (header : BlockHeader) =>
+  tuple (blockHeaderHash header, blockHeaderNumber header, blockHeaderBaseFeePerGas header, blockHeaderGasLimit header, valueSome BlockHeader header)
+def RecentHashes : Type 0 := prod (Keccak, Keccaks)
+def recentHashesOfGenesis : Keccak -> Keccaks -> RecentHashes := fun (hash : Keccak) (ancestors : Keccaks) => tuple (hash, blockHashesTake ancestors 255)
+def recentHashesPush : RecentHashes -> Keccak -> RecentHashes := fun (value : RecentHashes) (hash : Keccak) =>
+  recentHashesOfGenesis hash (keccaksCons (value.0) (value.1))
+def recentHashesNewest : RecentHashes -> Keccak := fun (value : RecentHashes) => value.0
+def recentHashesAncestors : RecentHashes -> Keccaks := fun (value : RecentHashes) => value.1
+def recentHashesToList : RecentHashes -> Keccaks := fun (value : RecentHashes) => keccaksCons (value.0) (value.1)
+def recentHashesWindow : RecentHashes -> BlockHashes := fun (value : RecentHashes) => blockHashesOfRecent (recentHashesToList value)
+def recentHashesDepth : RecentHashes -> Nat := fun (value : RecentHashes) => natAdd 1 (seqKeccakLength (value.1))
+def ExecutionConfig : Type 0 := prod (ExecutionAnchor, Keccaks, WorldState, U256, Address, Timestamp, Committee, ForkSchedule)
+def executionConfigAnchor : ExecutionConfig -> ExecutionAnchor := fun (value : ExecutionConfig) => value.0
+def executionConfigAncestors : ExecutionConfig -> Keccaks := fun (value : ExecutionConfig) => value.1
+def executionConfigWorld : ExecutionConfig -> WorldState := fun (value : ExecutionConfig) => value.2
+def executionConfigChainId : ExecutionConfig -> U256 := fun (value : ExecutionConfig) => value.3
+def executionConfigBaseFeeAddress : ExecutionConfig -> Address := fun (value : ExecutionConfig) => value.4
+def executionConfigEpochBoundary : ExecutionConfig -> Timestamp := fun (value : ExecutionConfig) => value.5
+def executionConfigCommittee : ExecutionConfig -> Committee := fun (value : ExecutionConfig) => value.6
+def executionConfigForkSchedule : ExecutionConfig -> ForkSchedule := fun (value : ExecutionConfig) => value.7
+def executionConfigMake : ExecutionAnchor -> Keccaks -> WorldState -> U256 -> Address -> Timestamp -> Committee -> ForkSchedule -> ExecutionConfig :=
+  fun (v0 : ExecutionAnchor) (v1 : Keccaks) (v2 : WorldState) (v3 : U256) (v4 : Address) (v5 : Timestamp) (v6 : Committee) (v7 : ForkSchedule) => tuple (v0, v1, v2, v3, v4, v5, v6, v7)
+def executionConfigCreate : ExecutionAnchor -> Keccaks -> WorldState -> U256 -> Address -> Timestamp -> Committee -> ExecutionConfig :=
+  fun (anchor : ExecutionAnchor) (ancestors : Keccaks) (world : WorldState) (chainId : U256) (feeAddress : Address) (boundary : Timestamp) (committee : Committee) =>
+    executionConfigMake anchor ancestors world chainId feeAddress boundary committee forkScheduleTestnet

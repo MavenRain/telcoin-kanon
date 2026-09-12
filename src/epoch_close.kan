@@ -1,0 +1,52 @@
+-- Reads return only bytes; mandatory writes retain the complete outcome.
+def epochCloseRead : WorldState -> EvmBlock -> Bytes -> (SystemCallError -> EpochCloseError) -> EpochCloseError -> EpochCloseResult Bytes :=
+  fun (world : WorldState) (block : EvmBlock) (data : Bytes) (callError : SystemCallError -> EpochCloseError) (unsuccessful : EpochCloseError) =>
+    case (systemCallRun world block consensusRegistryAddress data) with
+    | 0 (error : SystemCallError) => inj 0 of 2 (callError error)
+    | 1 (outcome : SystemCallOutcome) => match (systemCallReceipt outcome) as self in Receipt return EpochCloseResult Bytes with
+      | receiptSuccess output created gasUsed gasRefunded logs => inj 1 of 2 output
+      | receiptReverted output gasUsed => inj 0 of 2 unsuccessful
+      | receiptHalted reason gasUsed => inj 0 of 2 unsuccessful
+def epochCloseReadEligiblePool : WorldState -> EvmBlock -> EpochCloseResult ValidatorInfos :=
+  fun (world : WorldState) (block : EvmBlock) =>
+    case (epochCloseRead world block (registryGetValidatorsCalldata eligibleActive)
+      (fun (error : SystemCallError) => epochClosePoolRead eligibleActive error) (epochClosePoolReadUnsuccessful eligibleActive)) with
+    | 0 (error : EpochCloseError) => inj 0 of 2 error
+    | 1 (output : Bytes) => case (registryDecodeValidatorInfoArray output) with
+      | 0 (error : RegistryDecodeError) => inj 0 of 2 (epochClosePoolDecode error)
+      | 1 (pool : ValidatorInfos) => inj 1 of 2 pool
+def epochCloseReadNextCommitteeSize : WorldState -> EvmBlock -> EpochCloseResult Nat :=
+  fun (world : WorldState) (block : EvmBlock) =>
+    case (epochCloseRead world block registryGetNextCommitteeSizeCalldata
+      (fun (error : SystemCallError) => epochCloseSizeRead error) epochCloseSizeReadUnsuccessful) with
+    | 0 (error : EpochCloseError) => inj 0 of 2 error
+    | 1 (output : Bytes) => case (registryDecodeUint16 output) with
+      | 0 (error : RegistryDecodeError) => inj 0 of 2 (epochCloseSizeDecode error)
+      | 1 (size : Nat) => inj 1 of 2 size
+def epochCloseWrite : WorldState -> EvmBlock -> Bytes -> (SystemCallError -> EpochCloseError) -> EpochCloseError -> EpochCloseResult SystemCallOutcome :=
+  fun (world : WorldState) (block : EvmBlock) (data : Bytes) (callError : SystemCallError -> EpochCloseError) (unsuccessful : EpochCloseError) =>
+    case (systemCallRun world block consensusRegistryAddress data) with
+    | 0 (error : SystemCallError) => inj 0 of 2 (callError error)
+    | 1 (outcome : SystemCallOutcome) => case (systemCallSucceeded outcome) with
+      | 0 (unit : prod ()) => inj 0 of 2 unsuccessful
+      | 1 (unit : prod ()) => inj 1 of 2 outcome
+def epochClose : WorldState -> EvmBlock -> RewardPairs -> Hash32 -> EpochCloseResult (prod (WorldState, EpochCloseDisposition)) :=
+  fun (world : WorldState) (block : EvmBlock) (rewards : RewardPairs) (randomness : Hash32) =>
+    let first : Bytes := registryApplyIncentivesCalldata rewards in
+    case (epochCloseWrite world block first
+      (fun (error : SystemCallError) => epochCloseRewardsCall error) epochCloseRewardsUnsuccessful) with
+    | 0 (error : EpochCloseError) => inj 0 of 2 error
+    | 1 (rewardOutcome : SystemCallOutcome) =>
+      let afterRewards : WorldState := systemCallWorldKeepingAllButSystem rewardOutcome in
+      case (epochCloseReadEligiblePool afterRewards block) with
+      | 0 (error : EpochCloseError) => inj 0 of 2 error
+      | 1 (pool : ValidatorInfos) => case (epochCloseReadNextCommitteeSize afterRewards block) with
+        | 0 (error : EpochCloseError) => inj 0 of 2 error
+        | 1 (size : Nat) =>
+          let committee : Addresses := seqAddressSort addressCompare (committeeShuffle pool (hostIntPositive size) randomness) in
+          let second : Bytes := registryConcludeEpochCalldata committee in
+          case (epochCloseWrite afterRewards block second
+            (fun (error : SystemCallError) => epochCloseConcludeCall error) epochCloseConcludeUnsuccessful) with
+          | 0 (error : EpochCloseError) => inj 0 of 2 error
+          | 1 (concludeOutcome : SystemCallOutcome) => inj 1 of 2
+            (tuple (systemCallWorldKeepingAllButSystem concludeOutcome, tuple (first, second, rewardOutcome, concludeOutcome)))

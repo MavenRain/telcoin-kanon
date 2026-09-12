@@ -1,0 +1,51 @@
+def executorTestWord : Bytes -> U256 := fun (bytes : Bytes) => u256Value (u256ReadBe bytes 0)
+def executorTestInt : Bytes -> HostInt := fun (bytes : Bytes) => case (hostIntParse bytes) with
+  | 0 (unit : prod ()) => hostIntPositive 0 | 1 (value : HostInt) => value
+def executorTestAddress : Bytes -> Address := fun (bytes : Bytes) => case (addressOfBytes bytes) with
+  | 0 (unit : prod ()) => addressZero | 1 (address : Address) => address
+def executorTestSetAccount : WorldState -> Bytes -> Bytes -> Bytes -> Bytes -> Bytes -> WorldState :=
+  fun (world : WorldState) (address : Bytes) (nonce : Bytes) (balance : Bytes) (code : Bytes) (slot : Bytes) =>
+  worldStateSetAccount world (executorTestAddress address)
+    (accountSetSlot (accountWithCode (accountMake (nonceValue (u256ReadBe nonce 0)) (executorTestWord balance)) code) u256Zero (executorTestWord slot))
+def executorTestBlock : Nat -> Bytes -> Bytes -> Bytes -> Bytes -> Bytes -> EvmBlock :=
+  fun (fork : Nat) (coinbase : Bytes) (basefeeAddress : Bytes) (chain : Bytes) (gasLimit : Bytes) (baseFee : Bytes) =>
+  let spec : EvmSpec := case (natEq fork 0) with
+    | 1 (unit : prod ()) => evmShanghai | 0 (unit : prod ()) => case (natEq fork 1) with
+    | 1 (unit : prod ()) => evmCancun | 0 (unit : prod ()) => evmPrague
+  in evmBlockMakeAtSpec spec (executorTestAddress coinbase) u256One u256One u256Zero
+    (executorTestWord gasLimit) (executorTestWord baseFee) (executorTestAddress basefeeAddress) (executorTestWord chain) u256Zero blockHashesEmpty
+def executorTestTx : Nat -> Bytes -> Bytes -> Bytes -> Bytes -> Bytes -> Bytes -> Bytes -> Bytes -> Bytes -> Bytes -> Bytes -> TxResult Transaction :=
+  fun (mode : Nat) (sender : Bytes) (nonce : Bytes) (gasLimit : Bytes) (target : Bytes) (value : Bytes) (data : Bytes)
+    (accessList : Bytes) (chain : Bytes) (maximum : Bytes) (priority : Bytes) (authorizations : Bytes) =>
+  case (rlpDecodeExact accessList) with
+  | 0 (error : RlpError) => inj 0 of 2 (txRlpError error)
+  | 1 (accessItem : RlpItem) => case (txReadAccessList accessItem) with
+    | 0 (error : TxDecodeError) => inj 0 of 2 error
+    | 1 (access : TxAccessEntries) => case (rlpDecodeExact authorizations) with
+      | 0 (error : RlpError) => inj 0 of 2 (txRlpError error)
+      | 1 (authItem : RlpItem) => case (txReadAuthorizations authItem) with
+        | 0 (error : TxDecodeError) => inj 0 of 2 error
+        | 1 (auths : SignedAuthorizations) =>
+          let kind : TransactionKind := case (natEq (bytesLength target) 0) with
+            | 1 (unit : prod ()) => transactionCreate | 0 (unit : prod ()) => transactionCall (executorTestAddress target)
+          in let chainId : ValueOption U256 := case (natEq (bytesLength chain) 0) with
+            | 1 (unit : prod ()) => valueNone U256 | 0 (unit : prod ()) => valueSome U256 (executorTestWord chain)
+          in let fee : TransactionFee := case (natEq mode 0) with
+            | 1 (unit : prod ()) => transactionLegacyFee (executorTestWord maximum) | 0 (unit : prod ()) => case (natEq mode 1) with
+            | 1 (unit : prod ()) => transactionAccessFee (executorTestWord maximum) | 0 (unit : prod ()) => case (natEq mode 2) with
+            | 1 (unit : prod ()) => transactionDynamicFee (executorTestWord maximum) (valueNone U256) | 0 (unit : prod ()) => case (natEq mode 3) with
+            | 1 (unit : prod ()) => transactionDynamicFee (executorTestWord maximum) (valueSome U256 (executorTestWord priority)) | 0 (unit : prod ()) =>
+              transactionSetCodeFee (executorTestWord maximum) (executorTestWord priority) (executorTestAddress target) auths
+          in inj 1 of 2 (transactionMake (executorTestAddress sender) (nonceValue (u256ReadBe nonce 0))
+            (executorTestInt gasLimit) kind (executorTestWord value) data access chainId fee)
+def rec executorTestStorageText : StorageSlots -> Bytes := fun (slots : StorageSlots) => match slots as self in StorageSlots return Bytes with
+  | storageSlotsNil => bytesNil
+  | storageSlotsCons head tail => append (u256Hex head.0) (append b"=" (append (u256Hex head.1) (append b"," (executorTestStorageText tail))))
+def executorTestAccountText : prod (Address, Account) -> Bytes := fun (entry : prod (Address, Account)) =>
+  append (bytesHex (addressBytes entry.0)) (append b":" (append (nonceText (accountNonce entry.1))
+    (append b":" (append (u256Hex (accountBalance entry.1)) (append b":"
+      (append (bytesHex (accountCode entry.1)) (append b":" (append (executorTestStorageText (accountStorage entry.1)) b";"))))))))
+def executorTestWorldText : WorldState -> Bytes := fun (world : WorldState) => seqWorldAccountWrite executorTestAccountText (worldStateAccounts world)
+def executorTestResultText : ExecutorResult -> Bytes := fun (result : ExecutorResult) => case result with
+  | 0 (error : ExecutorError) => append b"error:" (executorErrorText error)
+  | 1 (output : prod (Receipt, WorldState)) => append (receiptText output.0) (append b"|" (executorTestWorldText output.1))

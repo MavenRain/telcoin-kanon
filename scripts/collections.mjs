@@ -166,7 +166,35 @@ const envFamilies = [
 ];
 const blockFamilies = [['Withdrawals', 'seqWithdrawal', 'Withdrawal', 'withdrawalsNil', 'withdrawalsCons', true]];
 const receiptFamilies = [['ReceiptPairs', 'seqReceiptPair', 'prod (HostInt, Receipt)', 'receiptPairsNil', 'receiptPairsCons', true]];
-for (const [name, group] of [['collections', families], ['crypto_collections', cryptoFamilies], ['vertex_collections', vertexFamilies], ['consensus_collections', consensusFamilies], ['machine_collections', machineFamilies], ['node_collections', nodeFamilies], ['execution_collections', executionFamilies], ['sim_collections', simFamilies], ['storage_collections', storageFamilies], ['state_collections', stateFamilies], ['evm_collections', evmFamilies], ['rlp_collections', rlpFamilies], ['trie_collections', trieFamilies], ['log_collections', logFamilies], ['env_collections', envFamilies], ['block_collections', blockFamilies], ['receipt_collections', receiptFamilies]]) {
+const authorizationFamilies = [
+  ['SignedAuthorizations', 'seqSignedAuthorization', 'SignedAuthorization', 'signedAuthorizationsNil', 'signedAuthorizationsCons', true],
+  ['AuthDispositions', 'seqAuthDisposition', 'AuthDisposition', 'authDispositionsNil', 'authDispositionsCons', true],
+];
+const transactionFamilies = [
+  ['TxEnvelopes', 'seqTxEnvelope', 'TxEnvelope', 'txEnvelopesNil', 'txEnvelopesCons', true],
+  ['EvmTransactions', 'seqEvmTransaction', 'Transaction', 'evmTransactionsNil', 'evmTransactionsCons', true],
+  ['BlockReceipts', 'seqBlockReceipt', 'Receipt', 'blockReceiptsNil', 'blockReceiptsCons', true],
+];
+const registryFamilies = [
+  ['ValidatorInfos', 'seqValidatorInfo', 'ValidatorInfo', 'validatorInfosNil', 'validatorInfosCons', true],
+  ['RewardPairs', 'seqRewardPair', 'prod (Address, HostInt)', 'rewardPairsNil', 'rewardPairsCons', true],
+];
+const blockExecutionFamilies = [['BlockInvalidTxs', 'seqBlockInvalidTx', 'BlockInvalidTx', 'blockInvalidTxsNil', 'blockInvalidTxsCons', true]];
+const outputFamilies = [
+  ['ResolvedBatches', 'seqResolvedBatch', 'prod (BatchDigest, Batch)', 'resolvedBatchesNil', 'resolvedBatchesCons', true],
+  ['OutputEntries', 'seqOutputEntry', 'prod (Address, ResolvedBatches)', 'outputEntriesNil', 'outputEntriesCons', true],
+  ['CertifiedBatches', 'seqCertifiedBatch', 'prod (Address, Batches)', 'certifiedBatchesNil', 'certifiedBatchesCons', true],
+  ['OutputFlatBatches', 'seqOutputFlatBatch', 'prod (BatchDigest, Address, Batch)', 'outputFlatBatchesNil', 'outputFlatBatchesCons', true],
+];
+const blockPlanFamilies = [['BlockPlanSpecs', 'seqBlockPlanSpec', 'BlockPlanSpec', 'blockPlanSpecsNil', 'blockPlanSpecsCons', true]];
+const executionEngineFamilies = [
+  ['ExecutedBlocks', 'seqExecutedBlock', 'ExecutedBlock', 'executedBlocksNil', 'executedBlocksCons', true],
+  ['LeaderCounts', 'seqLeaderCount', 'prod (AuthorityId, HostInt)', 'leaderCountsNil', 'leaderCountsCons', true],
+];
+const driverFamilies = [['AddressEntries', 'seqAddressEntry', 'prod (AuthorityId, Address)', 'addressEntriesNil', 'addressEntriesCons', true]];
+const driverOutcomeFamilies = [['DriverAdvances', 'seqDriverAdvance', 'DriverAdvance', 'driverAdvancesNil', 'driverAdvancesCons', true]];
+const durableFrameFamilies = [['FrameEntries', 'seqFrameEntry', 'prod (FrameHead, Bytes)', 'frameEntriesNil', 'frameEntriesCons', true]];
+for (const [name, group] of [['collections', families], ['crypto_collections', cryptoFamilies], ['vertex_collections', vertexFamilies], ['consensus_collections', consensusFamilies], ['machine_collections', machineFamilies], ['node_collections', nodeFamilies], ['execution_collections', executionFamilies], ['sim_collections', simFamilies], ['storage_collections', storageFamilies], ['state_collections', stateFamilies], ['evm_collections', evmFamilies], ['rlp_collections', rlpFamilies], ['trie_collections', trieFamilies], ['log_collections', logFamilies], ['env_collections', envFamilies], ['block_collections', blockFamilies], ['receipt_collections', receiptFamilies], ['authorization_collections', authorizationFamilies], ['transaction_collections', transactionFamilies], ['registry_collections', registryFamilies], ['block_execution_collections', blockExecutionFamilies], ['output_collections', outputFamilies], ['block_plan_collections', blockPlanFamilies], ['execution_engine_collections', executionEngineFamilies], ['driver_collections', driverFamilies], ['driver_outcome_collections', driverOutcomeFamilies], ['durable_frame_collections', durableFrameFamilies]]) {
   const output = renderCollections(group);
   const destination = resolve(root, `src/${name}.kan`);
   if (process.argv.includes('--check')) {

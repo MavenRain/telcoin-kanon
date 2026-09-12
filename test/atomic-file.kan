@@ -1,0 +1,8 @@
+def atomicTestInt : Bytes -> HostInt := fun (text : Bytes) => case (hostIntParse text) with
+  | 0 (unit : prod ()) => hostIntPositive 0 | 1 (value : HostInt) => value
+def atomicTestEncode : Bytes -> Bytes -> Bytes -> Bytes -> Bytes := fun (magic : Bytes) (format : Bytes) (generation : Bytes) (payload : Bytes) =>
+  bytesHex (atomicFileEncode magic (atomicTestInt format) (atomicTestInt generation) payload)
+def atomicTestDecode : Bytes -> Bytes -> Bytes -> Bytes -> Bytes := fun (path : Bytes) (magic : Bytes) (format : Bytes) (buf : Bytes) =>
+  case (atomicFileDecode path magic (atomicTestInt format) buf) with
+  | 0 (error : AtomicFileError) => append b"error:" (atomicFileErrorText error)
+  | 1 (decoded : prod (HostInt, Bytes)) => append (hostIntText decoded.0) (append b":" (bytesHex decoded.1))

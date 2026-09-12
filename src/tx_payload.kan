@@ -1,0 +1,81 @@
+-- Distinct payload records preserve the four consensus wire layouts.
+mu TxPayloadVariant : Type 0 :=
+| txLegacyVariant (chainId : ValueOption U256) (gasPrice : U256) : TxPayloadVariant
+| txEip2930Variant (chainId : U256) (gasPrice : U256) : TxPayloadVariant
+| txEip1559Variant (chainId : U256) (maxPriority : U256) (maxFee : U256) : TxPayloadVariant
+| txEip7702Variant (chainId : U256) (maxPriority : U256) (maxFee : U256) : TxPayloadVariant
+def TxLegacy : Type 0 := prod (Nonce, U256, HostInt, TransactionKind, U256, Bytes, ValueOption U256)
+def TxEip2930 : Type 0 := prod (U256, Nonce, U256, HostInt, TransactionKind, U256, Bytes, TxAccessEntries)
+def TxEip1559 : Type 0 := prod (U256, Nonce, U256, U256, HostInt, TransactionKind, U256, Bytes, TxAccessEntries)
+def TxEip7702 : Type 0 := prod (U256, Nonce, U256, U256, HostInt, Address, U256, Bytes, TxAccessEntries, SignedAuthorizations)
+mu TxPayload : Type 0 :=
+| txPayloadLegacyValue (fields : TxLegacy) : TxPayload
+| txPayloadEip2930Value (fields : TxEip2930) : TxPayload
+| txPayloadEip1559Value (fields : TxEip1559) : TxPayload
+| txPayloadEip7702Value (fields : TxEip7702) : TxPayload
+def txPayloadLegacy : Nonce -> U256 -> HostInt -> TransactionKind -> U256 -> Bytes -> ValueOption U256 -> TxPayload :=
+  fun (nonce : Nonce) (gasPrice : U256) (gasLimit : HostInt) (kind : TransactionKind) (value : U256) (data : Bytes) (chainId : ValueOption U256) => txPayloadLegacyValue (tuple (nonce, gasPrice, gasLimit, kind, value, data, chainId))
+def txPayloadEip2930 : U256 -> Nonce -> U256 -> HostInt -> TransactionKind -> U256 -> Bytes -> TxAccessEntries -> TxPayload :=
+  fun (chainId : U256) (nonce : Nonce) (gasPrice : U256) (gasLimit : HostInt) (kind : TransactionKind) (value : U256) (data : Bytes) (accessList : TxAccessEntries) => txPayloadEip2930Value (tuple (chainId, nonce, gasPrice, gasLimit, kind, value, data, accessList))
+def txPayloadEip1559 : U256 -> Nonce -> U256 -> U256 -> HostInt -> TransactionKind -> U256 -> Bytes -> TxAccessEntries -> TxPayload :=
+  fun (chainId : U256) (nonce : Nonce) (maxPriority : U256) (maxFee : U256) (gasLimit : HostInt) (kind : TransactionKind) (value : U256) (data : Bytes) (accessList : TxAccessEntries) => txPayloadEip1559Value (tuple (chainId, nonce, maxPriority, maxFee, gasLimit, kind, value, data, accessList))
+def txPayloadEip7702 : U256 -> Nonce -> U256 -> U256 -> HostInt -> Address -> U256 -> Bytes -> TxAccessEntries -> SignedAuthorizations -> TxPayload :=
+  fun (chainId : U256) (nonce : Nonce) (maxPriority : U256) (maxFee : U256) (gasLimit : HostInt) (target : Address) (value : U256) (data : Bytes) (accessList : TxAccessEntries) (authorizations : SignedAuthorizations) => txPayloadEip7702Value (tuple (chainId, nonce, maxPriority, maxFee, gasLimit, target, value, data, accessList, authorizations))
+def txPayloadTypeByte : TxPayload -> HostInt := fun (payload : TxPayload) => match payload as self in TxPayload return HostInt with
+  | txPayloadLegacyValue fields => hostIntPositive 0
+  | txPayloadEip2930Value fields => hostIntPositive 1
+  | txPayloadEip1559Value fields => hostIntPositive 2
+  | txPayloadEip7702Value fields => hostIntPositive 4
+def txPayloadChainId : TxPayload -> ValueOption U256 := fun (payload : TxPayload) => match payload as self in TxPayload return ValueOption U256 with
+  | txPayloadLegacyValue fields => fields.6
+  | txPayloadEip2930Value fields => valueSome U256 fields.0
+  | txPayloadEip1559Value fields => valueSome U256 fields.0
+  | txPayloadEip7702Value fields => valueSome U256 fields.0
+def txPayloadNonce : TxPayload -> Nonce := fun (payload : TxPayload) => match payload as self in TxPayload return Nonce with
+  | txPayloadLegacyValue fields => fields.0
+  | txPayloadEip2930Value fields => fields.1
+  | txPayloadEip1559Value fields => fields.1
+  | txPayloadEip7702Value fields => fields.1
+def txPayloadGasLimit : TxPayload -> HostInt := fun (payload : TxPayload) => match payload as self in TxPayload return HostInt with
+  | txPayloadLegacyValue fields => fields.2
+  | txPayloadEip2930Value fields => fields.3
+  | txPayloadEip1559Value fields => fields.4
+  | txPayloadEip7702Value fields => fields.4
+def txPayloadKind : TxPayload -> TransactionKind := fun (payload : TxPayload) => match payload as self in TxPayload return TransactionKind with
+  | txPayloadLegacyValue fields => fields.3
+  | txPayloadEip2930Value fields => fields.4
+  | txPayloadEip1559Value fields => fields.5
+  | txPayloadEip7702Value fields => transactionCall fields.5
+def txPayloadValue : TxPayload -> U256 := fun (payload : TxPayload) => match payload as self in TxPayload return U256 with
+  | txPayloadLegacyValue fields => fields.4
+  | txPayloadEip2930Value fields => fields.5
+  | txPayloadEip1559Value fields => fields.6
+  | txPayloadEip7702Value fields => fields.6
+def txPayloadData : TxPayload -> Bytes := fun (payload : TxPayload) => match payload as self in TxPayload return Bytes with
+  | txPayloadLegacyValue fields => fields.5
+  | txPayloadEip2930Value fields => fields.6
+  | txPayloadEip1559Value fields => fields.7
+  | txPayloadEip7702Value fields => fields.7
+def txPayloadAccessList : TxPayload -> TxAccessEntries := fun (payload : TxPayload) => match payload as self in TxPayload return TxAccessEntries with
+  | txPayloadLegacyValue fields => txAccessEntriesNil
+  | txPayloadEip2930Value fields => fields.7
+  | txPayloadEip1559Value fields => fields.8
+  | txPayloadEip7702Value fields => fields.8
+def txPayloadAuthorizations : TxPayload -> SignedAuthorizations := fun (payload : TxPayload) => match payload as self in TxPayload return SignedAuthorizations with
+  | txPayloadLegacyValue fields => signedAuthorizationsNil
+  | txPayloadEip2930Value fields => signedAuthorizationsNil
+  | txPayloadEip1559Value fields => signedAuthorizationsNil
+  | txPayloadEip7702Value fields => fields.9
+def txPayloadFee : TxPayload -> TransactionFee := fun (payload : TxPayload) => match payload as self in TxPayload return TransactionFee with
+  | txPayloadLegacyValue fields => transactionLegacyFee fields.1
+  | txPayloadEip2930Value fields => transactionAccessFee fields.2
+  | txPayloadEip1559Value fields => transactionDynamicFee fields.3 (valueSome U256 fields.2)
+  | txPayloadEip7702Value fields => transactionSetCodeFee fields.3 fields.2 fields.5 fields.9
+def txPayloadToTransaction : TxPayload -> Address -> Transaction := fun (payload : TxPayload) (sender : Address) =>
+  transactionMake sender (txPayloadNonce payload) (txPayloadGasLimit payload) (txPayloadKind payload)
+    (txPayloadValue payload) (txPayloadData payload) (txPayloadAccessList payload) (txPayloadChainId payload) (txPayloadFee payload)
+def txPayloadVariant : TxPayload -> TxPayloadVariant := fun (payload : TxPayload) => match payload as self in TxPayload return TxPayloadVariant with
+  | txPayloadLegacyValue fields => txLegacyVariant fields.6 fields.1
+  | txPayloadEip2930Value fields => txEip2930Variant fields.0 fields.2
+  | txPayloadEip1559Value fields => txEip1559Variant fields.0 fields.2 fields.3
+  | txPayloadEip7702Value fields => txEip7702Variant fields.0 fields.2 fields.3

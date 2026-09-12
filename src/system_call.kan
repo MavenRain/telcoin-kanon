@@ -1,0 +1,33 @@
+-- System calls expose only the two source-defined retained worlds.
+mu SystemCallError : Type 0 :=
+  | systemCallRejected (error : ExecutorError) : SystemCallError
+def systemCallErrorText : SystemCallError -> Bytes := fun (error : SystemCallError) =>
+  match error as self in SystemCallError return Bytes with
+  | systemCallRejected inner => append b"system call rejected: " (executorErrorText inner)
+def systemCallGasLimit : HostInt := hostIntPositive 30000000
+def systemCallGasLimitWord : U256 := u256Value 30000000
+def SystemCallOutcome : Type 0 := prod (Receipt, WorldState, WorldState)
+def systemCallReceipt : SystemCallOutcome -> Receipt := fun (outcome : SystemCallOutcome) => outcome.0
+def systemCallSucceeded : SystemCallOutcome -> Bool := fun (outcome : SystemCallOutcome) => receiptStatus outcome.0
+def systemCallWorld : SystemCallOutcome -> WorldState := fun (outcome : SystemCallOutcome) => outcome.1
+def systemCallWorldKeepingAllButSystem : SystemCallOutcome -> WorldState := fun (outcome : SystemCallOutcome) => outcome.2
+def systemCallBlock : EvmBlock -> EvmBlock := fun (block : EvmBlock) =>
+  evmBlockMakeAtSpec (evmBlockSpec block) (evmBlockCoinbase block) (evmBlockTimestamp block)
+    (evmBlockNumber block) (evmBlockPrevrandao block) systemCallGasLimitWord u256Zero
+    (evmBlockBasefeeAddress block) (evmBlockChainId block) (evmBlockBlobGasprice block) (evmBlockHashes block)
+def systemCallRetainTarget : WorldState -> WorldState -> Address -> WorldState :=
+  fun (before : WorldState) (after : WorldState) (contract : Address) =>
+    worldStateSetAccount before contract (worldStateAccount after contract)
+def systemCallKeepAllButSystem : WorldState -> WorldState -> WorldState :=
+  fun (before : WorldState) (after : WorldState) =>
+    worldStateSetAccount after systemAddress (worldStateAccount before systemAddress)
+def systemCallRun : WorldState -> EvmBlock -> Address -> Bytes -> sum (SystemCallError, SystemCallOutcome) :=
+  fun (before : WorldState) (block : EvmBlock) (contract : Address) (data : Bytes) =>
+    let tx : Transaction := transactionMake systemAddress (worldStateNonce before systemAddress)
+      systemCallGasLimit (transactionCall contract) u256Zero data txAccessEntriesNil
+      (valueNone U256) (transactionLegacyFee u256Zero) in
+    case (executorExecute before (systemCallBlock block) tx) with
+    | 0 (error : ExecutorError) => inj 0 of 2 (systemCallRejected error)
+    | 1 (executed : prod (Receipt, WorldState)) =>
+      inj 1 of 2 (tuple (executed.0, systemCallRetainTarget before executed.1 contract,
+        systemCallKeepAllButSystem before executed.1))

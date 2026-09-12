@@ -1,0 +1,55 @@
+def rec batchOutputResolvePayload : BatchWorkers -> (BatchDigest -> ValueOption Batch) -> ResolvedBatches -> BatchOutputResult ResolvedBatches :=
+  fun (values : BatchWorkers) (lookup : BatchDigest -> ValueOption Batch) (reversed : ResolvedBatches) =>
+    match values as self in BatchWorkers return BatchOutputResult ResolvedBatches with
+    | batchWorkersNil => inj 1 of 2 (seqResolvedBatchReverse reversed)
+    | batchWorkersCons head tail => case (lookup (head.0)) with
+      | 0 (unit : prod ()) => inj 0 of 2 (batchOutputMissingBatch (head.0))
+      | 1 (batch : Batch) => batchOutputResolvePayload tail lookup (resolvedBatchesCons (tuple (head.0, batch)) reversed)
+def batchOutputResolveEntry : Header -> (BatchDigest -> ValueOption Batch) -> (AuthorityId -> ValueOption Address) -> BatchOutputResult (prod (Address, ResolvedBatches)) :=
+  fun (header : Header) (lookup : BatchDigest -> ValueOption Batch) (addressOf : AuthorityId -> ValueOption Address) =>
+    case (addressOf (headerAuthor header)) with
+    | 0 (unit : prod ()) => inj 0 of 2 (batchOutputUnknownAuthority (headerAuthor header))
+    | 1 (address : Address) => case (batchOutputResolvePayload (headerPayload header) lookup resolvedBatchesNil) with
+      | 0 (error : BatchOutputError) => inj 0 of 2 error
+      | 1 (resolved : ResolvedBatches) => inj 1 of 2 (tuple (address, resolved))
+def rec batchOutputResolveHeaders : Headers -> (BatchDigest -> ValueOption Batch) -> (AuthorityId -> ValueOption Address) -> OutputEntries -> BatchOutputResult OutputEntries :=
+  fun (values : Headers) (lookup : BatchDigest -> ValueOption Batch) (addressOf : AuthorityId -> ValueOption Address) (reversed : OutputEntries) =>
+    match values as self in Headers return BatchOutputResult OutputEntries with
+    | headersNil => inj 1 of 2 (seqOutputEntryReverse reversed)
+    | headersCons head tail => case (batchOutputResolveEntry head lookup addressOf) with
+      | 0 (error : BatchOutputError) => inj 0 of 2 error
+      | 1 (entry : prod (Address, ResolvedBatches)) => batchOutputResolveHeaders tail lookup addressOf (outputEntriesCons entry reversed)
+def batchOutputAttach : ConsensusBlock -> (BatchDigest -> ValueOption Batch) -> (AuthorityId -> ValueOption Address) -> BatchOutputResult BatchOutput :=
+  fun (consensus : ConsensusBlock) (lookup : BatchDigest -> ValueOption Batch) (addressOf : AuthorityId -> ValueOption Address) =>
+    let dag : SubDag := consensusBlockSubDag consensus in
+    case (batchOutputResolveHeaders (nonemptyToList Header Headers seqHeaderOps (subDagHeaders dag)) lookup addressOf outputEntriesNil) with
+    | 0 (error : BatchOutputError) => inj 0 of 2 error
+    | 1 (entries : OutputEntries) => case (addressOf (headerAuthor (subDagLeader dag))) with
+      | 0 (unit : prod ()) => inj 0 of 2 (batchOutputUnknownAuthority (headerAuthor (subDagLeader dag)))
+      | 1 (leader : Address) => inj 1 of 2 (tuple (consensus, entries, leader))
+def rec batchOutputFlattenEntry : ResolvedBatches -> Address -> OutputFlatBatches -> OutputFlatBatches :=
+  fun (values : ResolvedBatches) (address : Address) (reversed : OutputFlatBatches) =>
+    match values as self in ResolvedBatches return OutputFlatBatches with
+    | resolvedBatchesNil => reversed
+    | resolvedBatchesCons head tail => batchOutputFlattenEntry tail address
+        (outputFlatBatchesCons (tuple (head.0, address, head.1)) reversed)
+def rec batchOutputFlattenAcc : OutputEntries -> OutputFlatBatches -> OutputFlatBatches :=
+  fun (values : OutputEntries) (reversed : OutputFlatBatches) => match values as self in OutputEntries return OutputFlatBatches with
+    | outputEntriesNil => seqOutputFlatBatchReverse reversed
+    | outputEntriesCons head tail => batchOutputFlattenAcc tail (batchOutputFlattenEntry (head.1) (head.0) reversed)
+def batchOutputFlat : BatchOutput -> OutputFlatBatches := fun (value : BatchOutput) => batchOutputFlattenAcc (batchOutputEntries value) outputFlatBatchesNil
+def rec batchOutputDigestsAcc : OutputFlatBatches -> BatchDigests -> BatchDigests :=
+  fun (values : OutputFlatBatches) (reversed : BatchDigests) => match values as self in OutputFlatBatches return BatchDigests with
+    | outputFlatBatchesNil => seqBatchDigestReverse reversed
+    | outputFlatBatchesCons head tail => batchOutputDigestsAcc tail (batchDigestsCons (head.0) reversed)
+def batchOutputBatchDigests : BatchOutput -> BatchDigests := fun (value : BatchOutput) => batchOutputDigestsAcc (batchOutputFlat value) batchDigestsNil
+def rec batchOutputBatchesAcc : ResolvedBatches -> Batches -> Batches :=
+  fun (values : ResolvedBatches) (reversed : Batches) => match values as self in ResolvedBatches return Batches with
+    | resolvedBatchesNil => seqBatchReverse reversed
+    | resolvedBatchesCons head tail => batchOutputBatchesAcc tail (batchesCons (head.1) reversed)
+def rec batchOutputCertifiedAcc : OutputEntries -> CertifiedBatches -> CertifiedBatches :=
+  fun (values : OutputEntries) (reversed : CertifiedBatches) => match values as self in OutputEntries return CertifiedBatches with
+    | outputEntriesNil => seqCertifiedBatchReverse reversed
+    | outputEntriesCons head tail => batchOutputCertifiedAcc tail
+        (certifiedBatchesCons (tuple (head.0, batchOutputBatchesAcc (head.1) batchesNil)) reversed)
+def batchOutputCertified : BatchOutput -> CertifiedBatches := fun (value : BatchOutput) => batchOutputCertifiedAcc (batchOutputEntries value) certifiedBatchesNil

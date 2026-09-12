@@ -1,0 +1,57 @@
+def executorFrameSuccess : EvmEffects -> Gas -> Bytes -> ValueOption Address -> ExecutorFrameOutcome :=
+  fun (effects : EvmEffects) (gas : Gas) (output : Bytes) (created : ValueOption Address) =>
+  executorRanSuccess (effectsWorld effects) (gasAmount gas) (refundAmount (effectsRefund effects))
+    (logJournalToList (effectsLogs effects)) output created
+def executorCallOutcome : WorldState -> EvmOutcome -> ExecutorFrameOutcome := fun (checkpoint : WorldState) (outcome : EvmOutcome) =>
+  match outcome as self in EvmOutcome return ExecutorFrameOutcome with
+  | evmStopped gas effects => executorFrameSuccess effects gas bytesNil (valueNone Address)
+  | evmReturned output gas effects => executorFrameSuccess effects gas output (valueNone Address)
+  | evmReverted output gas => executorRanRevert checkpoint (gasAmount gas) output
+  | evmFailed error => executorRanHalt checkpoint (receiptFrameHalt error)
+def executorRunCall : WorldState -> EvmBlock -> EvmTx -> Transaction -> Gas -> EvmEffects -> Address -> ExecutorFrameOutcome :=
+  fun (checkpoint : WorldState) (block : EvmBlock) (txEnv : EvmTx) (tx : Transaction) (forwarded : Gas) (start : EvmEffects) (target : Address) =>
+  case (effectsTransfer start (transactionSender tx) target (transactionValue tx)) with
+  | 0 (unit : prod ()) => executorRanHalt checkpoint receiptValueOverflow
+  | 1 (effects : EvmEffects) => match (precompileInvoke target (transactionData tx) (gasAmount forwarded)) as outcome in PrecompileOutcome return ExecutorFrameOutcome with
+    | precompileSucceeded used output => (case (gasCharge used forwarded) with
+      | 0 (unit : prod ()) => executorRanHalt checkpoint (receiptFrameHalt evmOutOfGas)
+      | 1 (left : Gas) => executorFrameSuccess effects left output (valueNone Address))
+    | precompileRejected => executorRanHalt checkpoint (receiptFrameHalt evmOutOfGas)
+    | notAPrecompile =>
+      let load : EffectLoad Account := effectsExtAccount effects target in
+      let resolved : CallTarget := callTargetResolve (effectWarmed Account load) (effectLoaded Account load) in
+      let env : EvmEnv := evmEnvMake block txEnv
+        (evmCallMake target (transactionSender tx) (transactionValue tx) (evmDataValue (transactionData tx)) evmMutable) in
+      executorCallOutcome checkpoint (interpreterRun env (callTargetCode resolved) forwarded (callTargetEffects resolved))
+def executorDeposit : EvmEffects -> MutabilityPermit -> Address -> Bytes -> Gas -> EvmEffects -> ExecutorFrameOutcome :=
+  fun (warmed : EvmEffects) (permit : MutabilityPermit) (created : Address) (output : Bytes) (gas : Gas) (effects : EvmEffects) =>
+  case (bytecodeValidateDeployment output) with
+  | 0 (error : DeploymentError) => (match error as self in DeploymentError return ExecutorFrameOutcome with
+    | deploymentReservedPrefix => executorRanHalt (effectsWorld warmed) receiptCreateReservedPrefix
+    | deploymentTooLarge length => executorRanHalt (effectsWorld warmed) (receiptCreateCodeSizeLimit (hostIntPositive length)))
+  | 1 (unit : prod ()) => case (gasCharge (gasCodeDepositCost (hostIntPositive (bytesLength output))) gas) with
+    | 0 (unit : prod ()) => executorRanHalt (effectsWorld warmed) receiptCreateDepositOutOfGas
+    | 1 (paid : Gas) => executorFrameSuccess (effectsDeployCode effects permit created output) paid output (valueSome Address created)
+def executorCreateOutcome : EvmEffects -> MutabilityPermit -> Address -> EvmOutcome -> ExecutorFrameOutcome :=
+  fun (warmed : EvmEffects) (permit : MutabilityPermit) (created : Address) (outcome : EvmOutcome) =>
+  match outcome as self in EvmOutcome return ExecutorFrameOutcome with
+  | evmStopped gas effects => executorDeposit warmed permit created bytesNil gas effects
+  | evmReturned output gas effects => executorDeposit warmed permit created output gas effects
+  | evmReverted output gas => executorRanRevert (effectsWorld warmed) (gasAmount gas) output
+  | evmFailed error => executorRanHalt (effectsWorld warmed) (receiptFrameHalt error)
+def executorRunCreate : WorldState -> EvmBlock -> EvmTx -> Transaction -> Gas -> EvmEffects -> MutabilityPermit -> ExecutorFrameOutcome :=
+  fun (checkpoint : WorldState) (block : EvmBlock) (txEnv : EvmTx) (tx : Transaction) (forwarded : Gas) (start : EvmEffects) (permit : MutabilityPermit) =>
+  case (effectsBumpNonce start (transactionSender tx)) with
+  | 0 (unit : prod ()) => executorRanHalt checkpoint receiptCreateNonceExhausted
+  | 1 (bumped : EvmEffects) =>
+    let created : Address := contractAddressDerive (transactionSender tx) (contractFromNonce (transactionNonce tx)) in
+    let load : EffectLoad Account := effectsExtAccount bumped created in
+    let warmed : EvmEffects := effectWarmed Account load in
+    case (accountIsOccupied (effectLoaded Account load)) with
+    | 1 (unit : prod ()) => executorRanHalt (effectsWorld warmed) receiptCreateCollision
+    | 0 (unit : prod ()) => case (effectsBeginCreation warmed permit (transactionSender tx) created (transactionValue tx)) with
+      | 0 (unit : prod ()) => executorRanHalt (effectsWorld warmed) receiptValueOverflow
+      | 1 (effects : EvmEffects) =>
+        let env : EvmEnv := evmEnvMake block txEnv
+          (evmCallMake created (transactionSender tx) (transactionValue tx) evmDataEmpty evmMutable) in
+        executorCreateOutcome warmed permit created (interpreterRun env (evmCodeOfBytes (transactionData tx)) forwarded effects)

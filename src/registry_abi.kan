@@ -1,0 +1,35 @@
+-- Fixed-width words preserve OCaml's signed count widening.
+def registryWordSize : Nat := 32
+def registryWordOfNat : Nat -> Bytes := fun (n : Nat) => u256ToBeBytes (u256Value n)
+def registryWordOfInt : HostInt -> Bytes := fun (n : HostInt) =>
+  case (hostIntNonnegative n) with
+  | 1 (positive : Nat) => registryWordOfNat positive
+  | 0 (unit : prod ()) => registryWordOfNat (natAdd 115792089237316195423570985008687907853269984665640564039448360635876274864128 (hostIntBits n))
+def registryWordOfAddress : Address -> Bytes := fun (address : Address) => u256ToBeBytes (addressToWord address)
+def registryWordOfStatus : ValidatorStatus -> Bytes := fun (status : ValidatorStatus) => registryWordOfNat (validatorStatusByte status)
+def registrySelector : Bytes -> Bytes := fun (signature : Bytes) => take 4 (keccak256 signature)
+def registryConcludeEpochSelector : Bytes := (consBytes 123 (consBytes 85 (consBytes 163 (consBytes 0 emptyBytes))))
+def registryApplyIncentivesSelector : Bytes := (consBytes 10 (consBytes 54 (consBytes 205 (consBytes 239 emptyBytes))))
+def registryGetValidatorsInfoSelector : Bytes := (consBytes 40 (consBytes 112 (consBytes 37 (consBytes 157 emptyBytes))))
+def registryGetValidatorsSelector : Bytes := (consBytes 140 (consBytes 192 (consBytes 94 (consBytes 218 emptyBytes))))
+def registryGetNextCommitteeSizeSelector : Bytes := (consBytes 235 (consBytes 133 (consBytes 53 (consBytes 194 emptyBytes))))
+def rec registryEncodeAddresses : Addresses -> Bytes := fun (addresses : Addresses) =>
+  match addresses as self in Addresses return Bytes with
+  | addressesNil => emptyBytes
+  | addressesCons head tail => append (registryWordOfAddress head) (registryEncodeAddresses tail)
+def registryConcludeEpochCalldata : Addresses -> Bytes := fun (addresses : Addresses) =>
+  append registryConcludeEpochSelector (append (registryWordOfNat 32)
+    (append (registryWordOfNat (seqAddressLength addresses)) (registryEncodeAddresses addresses)))
+def rec registryEncodeRewards : RewardPairs -> Bytes := fun (rewards : RewardPairs) =>
+  match rewards as self in RewardPairs return Bytes with
+  | rewardPairsNil => emptyBytes
+  | rewardPairsCons head tail => append (registryWordOfAddress head.0)
+      (append (registryWordOfInt head.1) (registryEncodeRewards tail))
+def registryApplyIncentivesCalldata : RewardPairs -> Bytes := fun (rewards : RewardPairs) =>
+  append registryApplyIncentivesSelector (append (registryWordOfNat 32)
+    (append (registryWordOfNat (seqRewardPairLength rewards)) (registryEncodeRewards rewards)))
+def registryGetValidatorsInfoCalldata : EligibleStatus -> Bytes := fun (status : EligibleStatus) =>
+  append registryGetValidatorsInfoSelector (registryWordOfStatus (eligibleToStatus status))
+def registryGetValidatorsCalldata : EligibleStatus -> Bytes := fun (status : EligibleStatus) =>
+  append registryGetValidatorsSelector (registryWordOfStatus (eligibleToStatus status))
+def registryGetNextCommitteeSizeCalldata : Bytes := registryGetNextCommitteeSizeSelector

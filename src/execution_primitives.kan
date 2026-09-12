@@ -27,8 +27,11 @@ mu IntrinsicKind : Type 0 :=
 | intrinsicCreate : IntrinsicKind
 def intrinsicNumWords : HostInt -> HostInt := fun (length : HostInt) => case (natEq (hostIntLess (hostIntPositive 0) length) 1) with
   | 0 (unit : prod ()) => hostIntPositive 0 | 1 (unit : prod ()) => hostIntDividePositive (hostIntAdd length (hostIntPositive 31)) 32
-def rec intrinsicTokens : Bytes -> Nat := fun (data : Bytes) => match data as self in Bytes return Nat with
-  | bytesNil => 0 | bytesCons head tail => natAdd (case (natEq head 0) with | 1 (unit : prod ()) => 1 | 0 (unit : prod ()) => 4) (intrinsicTokens tail)
+def rec intrinsicTokensAcc : Bytes -> Nat -> Nat := fun (data : Bytes) (acc : Nat) =>
+  match data as self in Bytes return Nat with
+  | bytesNil => acc
+  | bytesCons head tail => intrinsicTokensAcc tail (natAdd acc (choose (natEq head 0) 1 4))
+def intrinsicTokens : Bytes -> Nat := fun (data : Bytes) => intrinsicTokensAcc data 0
 -- Authorization count is the number listed on the wire, including skipped entries.
 def intrinsicInitialGas : IntrinsicKind -> Bytes -> TxAccessEntries -> Nat -> HostInt := fun (kind : IntrinsicKind) (data : Bytes) (accessList : TxAccessEntries) (authorizations : Nat) =>
   let slots : Nat := listFoldLeft (prod (Address, Words)) TxAccessEntries Nat seqTxAccessEntryOps (fun (count : Nat) (entry : prod (Address, Words)) => natAdd count (seqWordLength entry.1)) 0 accessList in

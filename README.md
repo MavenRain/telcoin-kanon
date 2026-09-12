@@ -19,8 +19,12 @@ JavaScript transports bytes and supplies the CLI and test harness.
 The interpreter includes instruction dispatch, calls, creation and rollback, with
 all nine source-supported precompiles: ECRECOVER, SHA-256, RIPEMD-160, identity,
 MODEXP, BN254 addition, multiplication and pairing, and BLAKE2F.
-Transaction execution and encoding, the execution driver,
-production consensus crypto, durability and networking remain. The source has 178 implementation modules
+All four signed transaction formats, sender recovery, EIP-7702 authorization and
+transaction execution now pass focused OCaml comparisons. Batch validation,
+payload attachment/filtering, block planning, registry ABI, shuffle and engine
+state transitions also pass differential tests. Block execution, header assembly,
+epoch closing and the driver are implemented and undergoing integration checks.
+Production consensus crypto, durability and networking remain. The source has 178 implementation modules
 across 25 libraries. [PORTING.md](PORTING.md) records module coverage and the
 next acceptance target. [VALIDATION.md](VALIDATION.md) records tested behavior.
 

@@ -1,0 +1,100 @@
+def blockTestExtend : EvmBlock -> Bytes -> Bytes -> Bytes -> EvmBlock :=
+  fun (block : EvmBlock) (number : Bytes) (timestamp : Bytes) (blob : Bytes) =>
+    evmBlockMakeAtSpec (evmBlockSpec block) (evmBlockCoinbase block) (executorTestWord timestamp)
+      (executorTestWord number) (u256Value 17) (evmBlockGasLimit block) (evmBlockBasefee block)
+      (evmBlockBasefeeAddress block) (evmBlockChainId block) (executorTestWord blob) (evmBlockHashes block)
+def BlockTestContext : Type 0 := sum (Bytes, BlockContext)
+def blockTestContext : EvmBlock -> Bytes -> Bytes -> Bytes -> Bytes -> Nat -> BlockTestContext :=
+  fun (block : EvmBlock) (parent : Bytes) (root : Bytes) (position : Bytes) (extra : Bytes) (withdrawalCount : Nat) =>
+    case (epochBoundaryOfExtraData extra (contextTestWithdrawals withdrawalCount)) with
+    | 0 (error : EpochBoundaryError) => inj 0 of 2 (epochBoundaryErrorText error)
+    | 1 (boundary : EpochBoundary) => case (blockContextMake block (keccakValue parent) (outputDigestValue root)
+        (sequenceNumber (epochValue 0) (roundValue 0)) (batchDigestValue (u256ToBeBytes (u256Value 19)))
+        (evmBatchPositionValue (executorTestWord position)) boundary) with
+      | 0 (error : BlockContextError) => inj 0 of 2 (blockContextErrorText error)
+      | 1 (context : BlockContext) => inj 1 of 2 context
+def blockTestRootText : BlockPreRoot -> Bytes := fun (root : BlockPreRoot) =>
+  match root as self in BlockPreRoot return Bytes with
+  | blockRootSkippedAfterFirstBatch => b"batch"
+  | blockRootSkippedBeforeCancun => b"fork"
+  | blockRootSkippedAtGenesis => b"genesis"
+  | blockRootWritten outcome => append b"written:" (receiptText (systemCallReceipt outcome))
+def blockTestHashesText : BlockPreHashes -> Bytes := fun (hashes : BlockPreHashes) =>
+  match hashes as self in BlockPreHashes return Bytes with
+  | blockHashSkippedBeforePrague => b"fork"
+  | blockHashSkippedAtGenesis => b"genesis"
+  | blockHashWritten outcome => append b"written:" (receiptText (systemCallReceipt outcome))
+def blockTestPreText : BlockPreState -> Bytes := fun (pre : BlockPreState) =>
+  append (blockTestRootText (blockPreConsensusRoot pre)) (append b":" (blockTestHashesText (blockPreBlockhashes pre)))
+def blockTestPre : WorldState -> BlockTestContext -> Bytes := fun (world : WorldState) (checked : BlockTestContext) =>
+  case checked with
+  | 0 (error : Bytes) => append b"error:" error
+  | 1 (context : BlockContext) => case (blockExecutionApplyPreBlock world context) with
+    | 0 (error : BlockExecutionError) => append b"error:" (blockExecutionErrorText error)
+    | 1 (pre : BlockPreState) => append (blockTestPreText pre) (append b"|" (executorTestWorldText (blockPreWorld pre)))
+def blockTestSystem : WorldState -> EvmBlock -> Bytes -> Bytes -> Bytes :=
+  fun (world : WorldState) (block : EvmBlock) (contract : Bytes) (data : Bytes) =>
+    case (systemCallRun world block (executorTestAddress contract) data) with
+    | 0 (error : SystemCallError) => append b"error:" (systemCallErrorText error)
+    | 1 (outcome : SystemCallOutcome) => append (receiptText (systemCallReceipt outcome))
+        (append b"|" (append (executorTestWorldText (systemCallWorld outcome))
+          (append b"|" (executorTestWorldText (systemCallWorldKeepingAllButSystem outcome)))))
+def blockTestRewardCons : Bytes -> Bytes -> RewardPairs -> RewardPairs :=
+  fun (address : Bytes) (count : Bytes) (tail : RewardPairs) =>
+    rewardPairsCons (tuple (executorTestAddress address, executorTestInt count)) tail
+def blockTestClose : WorldState -> EvmBlock -> RewardPairs -> Bytes -> Bytes :=
+  fun (world : WorldState) (block : EvmBlock) (rewards : RewardPairs) (randomness : Bytes) =>
+    case (epochClose world block rewards (hash32Value randomness)) with
+    | 0 (error : EpochCloseError) => append b"error:" (epochCloseErrorText error)
+    | 1 (closed : prod (WorldState, EpochCloseDisposition)) => append (executorTestWorldText closed.0)
+        (append b"|" (append (bytesHex (epochCloseFirstCalldata closed.1))
+          (append b"|" (bytesHex (epochCloseSecondCalldata closed.1)))))
+def blockTestEnvelopesEmpty : TxResult TxEnvelopes := inj 1 of 2 txEnvelopesNil
+def blockTestEnvelopeCons : Bytes -> TxResult TxEnvelopes -> TxResult TxEnvelopes :=
+  fun (bytes : Bytes) (checked : TxResult TxEnvelopes) =>
+    case (txEnvelopeDecode2718 bytes) with
+    | 0 (error : TxDecodeError) => inj 0 of 2 error
+    | 1 (envelope : TxEnvelope) => case checked with
+      | 0 (error : TxDecodeError) => inj 0 of 2 error
+      | 1 (tail : TxEnvelopes) => inj 1 of 2 (txEnvelopesCons envelope tail)
+def rec blockTestEnvelopesText : TxEnvelopes -> Bytes := fun (envelopes : TxEnvelopes) =>
+  match envelopes as self in TxEnvelopes return Bytes with
+  | txEnvelopesNil => emptyBytes
+  | txEnvelopesCons head tail => append (bytesHex (txEnvelopeEncode2718 head)) (append b"," (blockTestEnvelopesText tail))
+def rec blockTestReceiptsText : ReceiptPairs -> Bytes := fun (receipts : ReceiptPairs) =>
+  match receipts as self in ReceiptPairs return Bytes with
+  | receiptPairsNil => emptyBytes
+  | receiptPairsCons head tail => append (blockExecutionIntText head.0) (append b":" (append (receiptText head.1) (append b";" (blockTestReceiptsText tail))))
+def rec blockTestSkippedText : BlockInvalidTxs -> Bytes := fun (invalid : BlockInvalidTxs) =>
+  match invalid as self in BlockInvalidTxs return Bytes with
+  | blockInvalidTxsNil => emptyBytes
+  | blockInvalidTxsCons head tail => append (blockInvalidText head) (append b";" (blockTestSkippedText tail))
+def blockTestHeaderText : BlockHeader -> Bytes := fun (header : BlockHeader) =>
+  append (bytesHex (blockHeaderEncodeRlp header)) (append b"|" (keccakHex (blockHeaderHash header)))
+def blockTestOutcomeText : BlockExecutionOutcome -> Bytes := fun (outcome : BlockExecutionOutcome) =>
+  append (blockTestEnvelopesText (blockExecutionTransactions outcome)) (append b"|" (append (blockTestReceiptsText (blockExecutionReceipts outcome)) (append b"|" (append (blockExecutionIntText (blockExecutionGasUsed outcome)) (append b"|" (bytesHex (bloomBytes (blockExecutionLogsBloom outcome))))))))
+def blockTestCompletedText : BlockPreState -> BlockFinished -> BlockExecutionOutcome -> BlockInvalidTxs -> BlockHeader -> Bytes :=
+  fun (pre : BlockPreState) (finished : BlockFinished) (outcome : BlockExecutionOutcome) (invalid : BlockInvalidTxs) (header : BlockHeader) =>
+    append (blockTestPreText pre) (append b"|" (append (executorTestWorldText (blockFinishedWorld finished)) (append b"|" (append (blockTestOutcomeText outcome) (append b"|" (append (blockTestHeaderText header) (append b"|" (blockTestSkippedText invalid))))))))
+def blockTestComplete : BlockPreState -> BlockContext -> BlockExecutionOutcome -> BlockInvalidTxs -> Bytes :=
+  fun (pre : BlockPreState) (context : BlockContext) (outcome : BlockExecutionOutcome) (invalid : BlockInvalidTxs) =>
+    case (blockExecutionFinish outcome context) with
+    | 0 (error : BlockExecutionError) => append b"error:" (blockExecutionErrorText error)
+    | 1 (finished : BlockFinished) => case (blockHeaderAssemble context finished) with
+      | 0 (error : BlockHeaderError) => append b"error:" (blockHeaderErrorText error)
+      | 1 (header : BlockHeader) => blockTestCompletedText pre finished outcome invalid header
+def blockTestRun : Nat -> WorldState -> BlockTestContext -> TxResult TxEnvelopes -> Bytes :=
+  fun (mode : Nat) (world : WorldState) (checked : BlockTestContext) (envelopes : TxResult TxEnvelopes) =>
+    case checked with
+    | 0 (error : Bytes) => append b"error:" error
+    | 1 (context : BlockContext) => case envelopes with
+      | 0 (error : TxDecodeError) => append b"error:" (txDecodeErrorText error)
+      | 1 (transactions : TxEnvelopes) => case (blockExecutionApplyPreBlock world context) with
+        | 0 (error : BlockExecutionError) => append b"error:" (blockExecutionErrorText error)
+        | 1 (pre : BlockPreState) => case (natEq mode 0) with
+          | 1 (unit : prod ()) => (case (blockExecutionRunTransactions pre context transactions) with
+            | 0 (error : BlockExecutionError) => append b"error:" (blockExecutionErrorText error)
+            | 1 (outcome : BlockExecutionOutcome) => blockTestComplete pre context outcome blockInvalidTxsNil)
+          | 0 (unit : prod ()) => case (blockExecutionRunSkippingInvalid pre context transactions) with
+            | 0 (error : BlockExecutionError) => append b"error:" (blockExecutionErrorText error)
+            | 1 (outcome : prod (BlockExecutionOutcome, BlockInvalidTxs)) => blockTestComplete pre context outcome.0 outcome.1

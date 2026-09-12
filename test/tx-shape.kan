@@ -1,0 +1,15 @@
+def txShapeTestDescribe : TxShape -> Bytes := fun (tx : TxShape) =>
+  append (bytesHex (keccakBytes (txShapeHash tx)))
+    (append b"|" (append (decimal64 (boolNat (txShapeIsEip4844 tx)))
+      (append b"|" (bytesHex (drop (u256ToBeBytes (u256Value (txShapeGasLimit tx))) 24)))))
+def txShapeTestDecode : Bytes -> Bytes := fun (input : Bytes) => case (txShapeDecode input) with
+  | 0 (error : TxShapeError) => append b"error:" (txShapeErrorText error)
+  | 1 (tx : TxShape) => txShapeTestDescribe tx
+def txShapeTestRecover : Bytes -> Bytes := fun (input : Bytes) => case (txShapeDecode input) with
+  | 0 (error : TxShapeError) => append b"error:" (txShapeErrorText error)
+  | 1 (tx : TxShape) => case (txShapeRecoverSigner tx) with
+    | 0 (error : TxShapeError) => append b"error:" (txShapeErrorText error)
+    | 1 (address : Address) => bytesHex (addressBytes address)
+def txShapeTestChecked : Bytes -> Bytes := fun (input : Bytes) => case (txShapeDecodeAndRecover input) with
+  | 0 (error : TxShapeError) => append b"error:" (txShapeErrorText error)
+  | 1 (tx : TxShape) => txShapeTestDescribe tx

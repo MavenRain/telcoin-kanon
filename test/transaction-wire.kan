@@ -1,0 +1,30 @@
+def txWireTestWord : Bytes -> U256 := fun (bytes : Bytes) => u256Value (u256ReadBe bytes 0)
+def txWireTestDecode : Bytes -> Bytes := fun (input : Bytes) => case (txEnvelopeDecode2718 input) with
+  | 0 (error : TxDecodeError) => append b"error:" (txDecodeErrorText error)
+  | 1 (envelope : TxEnvelope) => append (bytesHex (txEnvelopeEncode2718 envelope))
+      (append b"|" (append (bytesHex (txEnvelopeSigningPayload (txEnvelopePayload envelope)))
+        (append b"|" (append (bytesHex (txEnvelopeSignatureHash (txEnvelopePayload envelope)))
+          (append b"|" (bytesHex (txEnvelopeHash envelope)))))))
+def txWireTestParity : Bytes -> Bytes := fun (input : Bytes) => case (txSignatureOfEip155 (txWireTestWord input)) with
+  | 0 (unit : prod ()) => b"none"
+  | 1 (decoded : prod (Bool, ValueOption U256)) =>
+    append (decimal64 (choose decoded.0 1 0)) (append b":" (case decoded.1 with
+      | 0 (unit : prod ()) => b"none" | 1 (chain : U256) => bytesHex (u256ToBeBytes chain)))
+def txWireTestV : Nat -> Nat -> Bytes -> Bytes := fun (parity : Nat) (hasChain : Nat) (input : Bytes) =>
+  let chain : ValueOption U256 := case (natEq hasChain 0) with
+    | 1 (unit : prod ()) => valueNone U256 | 0 (unit : prod ()) => valueSome U256 (txWireTestWord input)
+  in bytesHex (u256ToBeBytes (txSignatureToEip155 (natEq parity 1) chain))
+def txWireTestPrice : Nat -> Bytes -> Bytes -> Bytes -> Bytes := fun (mode : Nat) (maxBytes : Bytes) (priorityBytes : Bytes) (baseBytes : Bytes) =>
+  let maximum : U256 := txWireTestWord maxBytes in
+  let priority : U256 := txWireTestWord priorityBytes in
+  let fee : TransactionFee := case (natEq mode 0) with
+    | 1 (unit : prod ()) => transactionLegacyFee maximum | 0 (unit : prod ()) => case (natEq mode 1) with
+    | 1 (unit : prod ()) => transactionAccessFee maximum | 0 (unit : prod ()) => case (natEq mode 2) with
+    | 1 (unit : prod ()) => transactionDynamicFee maximum (valueNone U256) | 0 (unit : prod ()) => case (natEq mode 3) with
+    | 1 (unit : prod ()) => transactionDynamicFee maximum (valueSome U256 priority) | 0 (unit : prod ()) =>
+      transactionSetCodeFee maximum priority addressZero signedAuthorizationsNil
+  in let tx : Transaction := transactionMake addressZero nonceZero (hostIntPositive 0) transactionCreate u256Zero bytesNil txAccessEntriesNil (valueNone U256) fee in
+  let kind : Bytes := match (transactionKind tx) as self in TransactionKind return Bytes with
+    | transactionCreate => b"create" | transactionCall address => bytesHex (addressBytes address)
+  in append (bytesHex (u256ToBeBytes (transactionEffectiveGasPrice tx (txWireTestWord baseBytes))))
+    (append b":" (append (bytesHex (u256ToBeBytes (transactionMaxFeePerGas tx))) (append b":" kind)))

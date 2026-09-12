@@ -1,0 +1,13 @@
+def AddressBook : Type 0 := AddressEntries
+def addressBookOfCommittee : Committee -> AddressBook := fun (committee : Committee) =>
+  listFoldLeft Authority Authorities AddressBook seqAuthorityOps
+    (fun (book : AddressBook) (authority : Authority) =>
+      mapAdd AuthorityId Address AddressEntries seqAddressEntryOps authorityIdCompare
+        (authorityId authority) (authorityAddress authority) book)
+    addressEntriesNil (committeeAuthorities committee)
+def addressBookUnion : AddressBook -> AddressBook -> AddressBook := fun (newer : AddressBook) (older : AddressBook) =>
+  listFoldLeft (prod (AuthorityId, Address)) AddressEntries AddressBook seqAddressEntryOps
+    (fun (book : AddressBook) (entry : prod (AuthorityId, Address)) =>
+      mapAdd AuthorityId Address AddressEntries seqAddressEntryOps authorityIdCompare entry.0 entry.1 book) older newer
+def addressBookFind : AddressBook -> AuthorityId -> ValueOption Address := fun (book : AddressBook) (id : AuthorityId) =>
+  mapLookup AuthorityId Address AddressEntries seqAddressEntryOps authorityIdEqual id book

@@ -1,0 +1,48 @@
+def TxEnvelope : Type 0 := prod (TxPayload, TxSignature)
+def txEnvelopeMake : TxPayload -> TxSignature -> TxEnvelope := fun (payload : TxPayload) (signature : TxSignature) => tuple (payload, signature)
+def txEnvelopePayload : TxEnvelope -> TxPayload := fun (envelope : TxEnvelope) => envelope.0
+def txEnvelopeSignature : TxEnvelope -> TxSignature := fun (envelope : TxEnvelope) => envelope.1
+def txEncodeNonce : Nonce -> Bytes := fun (nonce : Nonce) => rlpEncodeNat (hostIntPositive (nonceNat nonce))
+def txEncodeKind : TransactionKind -> Bytes := fun (kind : TransactionKind) => match kind as self in TransactionKind return Bytes with
+  | transactionCreate => rlpEncodeBytes bytesNil
+  | transactionCall address => rlpEncodeBytes (addressBytes address)
+def txEncodeAccessItem : prod (Address, Words) -> Bytes := fun (entry : prod (Address, Words)) =>
+  rlpEncodeListPayload (append (rlpEncodeBytes (addressBytes entry.0))
+    (rlpEncodeListPayload (seqWordWrite (fun (word : U256) => rlpEncodeBytes (u256ToBeBytes word)) entry.1)))
+def txEncodeAccessList : TxAccessEntries -> Bytes := fun (entries : TxAccessEntries) => rlpEncodeListPayload (seqTxAccessEntryWrite txEncodeAccessItem entries)
+def txEncodeAuthorizationList : SignedAuthorizations -> Bytes := fun (entries : SignedAuthorizations) => rlpEncodeListPayload (seqSignedAuthorizationWrite authorizationEncodeSigned entries)
+def txEnvelopeCommonBody : TxPayload -> Bytes := fun (payload : TxPayload) =>
+  append (rlpEncodeNat (txPayloadGasLimit payload)) (append (txEncodeKind (txPayloadKind payload))
+    (append (txEncodeWord (txPayloadValue payload)) (rlpEncodeBytes (txPayloadData payload))))
+def txEnvelopeBody : TxPayload -> Bytes := fun (payload : TxPayload) =>
+  let common : Bytes := txEnvelopeCommonBody payload in
+  match payload as self in TxPayload return Bytes with
+  | txPayloadLegacyValue fields => append (txEncodeNonce fields.0) (append (txEncodeWord fields.1) common)
+  | txPayloadEip2930Value fields => append (txEncodeWord fields.0) (append (txEncodeNonce fields.1)
+      (append (txEncodeWord fields.2) (append common (txEncodeAccessList fields.7))))
+  | txPayloadEip1559Value fields => append (txEncodeWord fields.0) (append (txEncodeNonce fields.1)
+      (append (txEncodeWord fields.2) (append (txEncodeWord fields.3) (append common (txEncodeAccessList fields.8)))))
+  | txPayloadEip7702Value fields => append (txEncodeWord fields.0) (append (txEncodeNonce fields.1)
+      (append (txEncodeWord fields.2) (append (txEncodeWord fields.3)
+        (append common (append (txEncodeAccessList fields.8) (txEncodeAuthorizationList fields.9))))))
+def txEnvelopeSigningTail : TxPayload -> Bytes := fun (payload : TxPayload) => match payload as self in TxPayload return Bytes with
+  | txPayloadLegacyValue fields => (case fields.6 with
+    | 0 (unit : prod ()) => bytesNil
+    | 1 (chainId : U256) => append (txEncodeWord chainId) (consBytes 128 (consBytes 128 bytesNil)))
+  | txPayloadEip2930Value fields => bytesNil
+  | txPayloadEip1559Value fields => bytesNil
+  | txPayloadEip7702Value fields => bytesNil
+def txEnvelopeSigningPayload : TxPayload -> Bytes := fun (payload : TxPayload) =>
+  eip2718Frame (txPayloadTypeByte payload) (rlpEncodeListPayload (append (txEnvelopeBody payload) (txEnvelopeSigningTail payload)))
+def txEnvelopeSignatureHash : TxPayload -> Bytes := fun (payload : TxPayload) => keccak256 (txEnvelopeSigningPayload payload)
+def txEnvelopeSignatureTail : TxPayload -> TxSignature -> Bytes := fun (payload : TxPayload) (signature : TxSignature) =>
+  let parity : Bytes := match payload as self in TxPayload return Bytes with
+    | txPayloadLegacyValue fields => txEncodeWord (txSignatureToEip155 (txSignatureParity signature) fields.6)
+    | txPayloadEip2930Value fields => rlpEncodeNat (hostIntPositive (choose (txSignatureParity signature) 1 0))
+    | txPayloadEip1559Value fields => rlpEncodeNat (hostIntPositive (choose (txSignatureParity signature) 1 0))
+    | txPayloadEip7702Value fields => rlpEncodeNat (hostIntPositive (choose (txSignatureParity signature) 1 0))
+  in append parity (append (txEncodeWord (txSignatureR signature)) (txEncodeWord (txSignatureS signature)))
+def txEnvelopeEncode2718 : TxEnvelope -> Bytes := fun (envelope : TxEnvelope) =>
+  eip2718Frame (txPayloadTypeByte envelope.0) (rlpEncodeListPayload (append (txEnvelopeBody envelope.0) (txEnvelopeSignatureTail envelope.0 envelope.1)))
+def txEnvelopeHashOf2718 : Bytes -> Bytes := keccak256
+def txEnvelopeHash : TxEnvelope -> Bytes := fun (envelope : TxEnvelope) => txEnvelopeHashOf2718 (txEnvelopeEncode2718 envelope)

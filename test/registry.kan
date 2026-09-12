@@ -1,0 +1,64 @@
+def registryTestHost : Bytes -> HostInt := fun (bits : Bytes) => hostIntFromBits (registryBeNat bits)
+def registryTestInfoText : ValidatorInfo -> Bytes := fun (info : ValidatorInfo) =>
+  append (bytesHex (addressBytes info.0)) (append b":" (append (decimal64 info.1) (append b":" (append (decimal64 info.2) (append b":" (append (decimal64 (validatorStatusByte info.3)) (append b":" (append (decimal64 (boolNat info.4)) (append b":" (append (decimal64 info.5) (append b":" ((decimal64 info.6)))))))))))))
+def rec registryTestInfosText : ValidatorInfos -> Bytes := fun (infos : ValidatorInfos) =>
+  match infos as self in ValidatorInfos return Bytes with
+  | validatorInfosNil => emptyBytes
+  | validatorInfosCons head tail => append (registryTestInfoText head)
+    (match tail as rest in ValidatorInfos return Bytes with
+      | validatorInfosNil => emptyBytes
+      | validatorInfosCons next remaining => append b"|" (registryTestInfosText tail))
+def registryTestDecode : Bytes -> Bytes := fun (data : Bytes) =>
+  case (registryDecodeValidatorInfoArray data) with
+  | 0 (error : RegistryDecodeError) => append b"error:" (registryErrorText error)
+  | 1 (infos : ValidatorInfos) => registryTestInfosText infos
+def registryTestUint16 : Bytes -> Bytes := fun (data : Bytes) =>
+  case (registryDecodeUint16 data) with
+  | 0 (error : RegistryDecodeError) => append b"error:" (registryErrorText error)
+  | 1 (n : Nat) => decimal64 n
+def registryTestStatus : Nat -> Bytes := fun (byte : Nat) =>
+  case (validatorStatusOfByte byte) with
+  | 0 (unit : prod ()) => b"none"
+  | 1 (status : ValidatorStatus) => decimal64 (validatorStatusByte status)
+def registryTestAddress : Bytes -> Address := fun (data : Bytes) =>
+  case (addressOfBytes data) with
+  | 0 (unit : prod ()) => addressZero
+  | 1 (address : Address) => address
+def registryTestAddressCons : Bytes -> Addresses -> Addresses := fun (data : Bytes) (tail : Addresses) =>
+  addressesCons (registryTestAddress data) tail
+def registryTestRewardCons : Bytes -> Bytes -> RewardPairs -> RewardPairs := fun (address : Bytes) (count : Bytes) (tail : RewardPairs) =>
+  rewardPairsCons (tuple (registryTestAddress address, registryTestHost count)) tail
+def registryTestMake : Bytes -> Bytes -> Bytes -> Nat -> Nat -> Bytes -> Bytes -> Bytes :=
+  fun (address : Bytes) (activation : Bytes) (exit : Bytes) (status : Nat) (retired : Nat) (stake : Bytes) (region : Bytes) =>
+    case (validatorStatusOfByte status) with
+    | 0 (unit : prod ()) => b"none"
+    | 1 (value : ValidatorStatus) => case (validatorInfoMake (registryTestAddress address) (registryTestHost activation)
+        (registryTestHost exit) value (natEq retired 1) (registryTestHost stake) (registryTestHost region)) with
+      | 0 (unit : prod ()) => b"none"
+      | 1 (info : ValidatorInfo) => registryTestInfoText info
+def registryTestSelectors : Bytes :=
+  append (bytesHex registryConcludeEpochSelector) (append b"|" (append (bytesHex registryApplyIncentivesSelector) (append b"|" (append (bytesHex registryGetValidatorsInfoSelector) (append b"|" (append (bytesHex registryGetValidatorsSelector) (append b"|" ((bytesHex registryGetNextCommitteeSizeSelector)))))))))
+def registryTestEligible : Nat -> EligibleStatus := fun (n : Nat) =>
+  case (natEq n 0) with
+  | 1 (unit : prod ()) => eligibleActive
+  | 0 (unit : prod ()) => case (natEq n 1) with
+    | 1 (unit : prod ()) => eligiblePendingActivation
+    | 0 (unit : prod ()) => eligiblePendingExit
+def registryTestGet : Nat -> Bytes := fun (status : Nat) =>
+  append (bytesHex (registryGetValidatorsInfoCalldata (registryTestEligible status))) (append b"|"
+    (bytesHex (registryGetValidatorsCalldata (registryTestEligible status))))
+def rec registryTestAddressesText : Addresses -> Bytes := fun (addresses : Addresses) =>
+  match addresses as self in Addresses return Bytes with
+  | addressesNil => emptyBytes
+  | addressesCons head tail => append (bytesHex (addressBytes head))
+    (match tail as rest in Addresses return Bytes with
+      | addressesNil => emptyBytes
+      | addressesCons next remaining => append b"," (registryTestAddressesText tail))
+def registryTestShuffle : Bytes -> Bytes -> Bytes -> Bytes := fun (pool : Bytes) (size : Bytes) (randomness : Bytes) =>
+  case (registryDecodeValidatorInfoArray pool) with
+  | 0 (error : RegistryDecodeError) => append b"error:" (registryErrorText error)
+  | 1 (infos : ValidatorInfos) => case (hash32OfBytes randomness) with
+    | 0 (unit : prod ()) => b"error:bad randomness"
+    | 1 (seed : Hash32) => registryTestAddressesText (committeeShuffle infos (registryTestHost size) seed)
+def registryTestConclude : Addresses -> Bytes := fun (addresses : Addresses) => bytesHex (registryConcludeEpochCalldata addresses)
+def registryTestRewards : RewardPairs -> Bytes := fun (rewards : RewardPairs) => bytesHex (registryApplyIncentivesCalldata rewards)

@@ -4,6 +4,28 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const lock = JSON.parse(readFileSync(resolve(root, 'source-lock.json'), 'utf8'));
 const coverage = {
+  'lib/durable/frame.ml': 'Ported: BLAKE2b tags, exact framing, decode precedence, sequence checks and recovery scan, src/durable_frame*.kan; 268 frame/digest OCaml rows plus OpenSSL checks',
+  'lib/durable/atomic_file.ml': 'Partial: container encoding and decoding pass 194 OCaml rows, src/atomic_file_codec.kan; save/load filesystem effects pending',
+  'lib/durable/io.ml': 'Partial: operation and error types/renderers defined in src/durable_io_types.kan; guarded syscalls and counters pending',
+  'lib/batch/tx_shape.ml': 'Ported: all five batch grammars, full u64/u128 scalars, canonical hashes and checked recovery, src/tx_shape*.kan; 1157 OCaml differential rows in six groups',
+  'lib/batch/batch_validator.ml': 'Ported: generic decoder dictionary, ordered validation and peer penalties, src/batch_validator*.kan; 193 generic and 11 default-validator OCaml differential rows',
+  'lib/batch/batch_payload.ml': 'Ported: checked recovery, canonical legacy bytes and executable-envelope filtering, src/batch_payload.kan; 15 OCaml differential rows',
+  'lib/batch/output.ml': 'Ported: ordered payload attachment and missing-batch/authority errors, src/batch_output*.kan; 54 shared output/planning OCaml differential rows',
+  'lib/batch/block_plan.ml': 'Ported: empty-output decisions, ordered specifications, worker positions and final-only closing, src/block_plan*.kan; 54 shared output/planning OCaml differential rows',
+  'lib/engine/block_number.ml': 'Ported: native signed block heights and wrapping successor, src/execution_engine_types.kan; seven OCaml boundary comparisons',
+  'lib/engine/executed_block.ml': 'Implemented: executed block fields and header hash, src/execution_engine_types.kan; runtime validation pending',
+  'lib/engine/anchor.ml': 'Partial: genesis anchors validated with engine snapshots; header conversion implemented and pending integration, src/execution_engine_types.kan',
+  'lib/engine/recent_hashes.ml': 'Ported: nonempty capped hash window and newest/ancestor projections, src/execution_engine_types.kan; 126 OCaml differential rows',
+  'lib/engine/config.ml': 'Partial: default configuration and restoration validated with 144 snapshot cases; explicit schedule execution validation pending, src/execution_engine_types.kan',
+  'lib/engine/engine.ml': 'Partial: state creation, epoch transitions and normalized restoration validated in 144 cases; atomic output execution implemented and pending integration, src/execution_engine*.kan',
+  'lib/evm/rewards_counter.ml': 'Ported: ordered leader counts, shared-address aggregation and withdrawals, src/rewards_counter.kan; 66 OCaml differential rows including signed overflow',
+  'lib/driver/address_book.ml': 'Ported: committee address maps and newer-preferred union, src/address_book.kan; 36 OCaml differential rows',
+  'lib/driver/batch_store.ml': 'Ported: digest-keyed body storage and lookup, src/batch_store.kan; 15 OCaml differential rows',
+  'lib/driver/chain_spec.ml': 'Implemented: genesis allocation precedence, system predeploys, fork schedule and saturating boundaries, src/chain_spec.kan; typechecked, runtime validation pending',
+  'lib/driver/checkpoint.ml': 'Implemented: persisted engine and executed consensus tip with derived watermark, accumulator and phase, src/checkpoint.kan; typechecked, runtime validation pending',
+  'lib/driver/subscriber.ml': 'Ported: shared mint operation and atomic payload attachment, src/subscriber.kan; 36 OCaml differential rows',
+  'lib/driver/outcome.ml': 'Implemented: generic advance/sealed/halted outcomes and typed errors, src/driver_types.kan and src/driver_outcome.kan; runtime validation pending',
+  'lib/driver/driver.ml': 'Implemented: admission, atomic execution, sealing, handoff and guarded replay from checkpoints, src/driver.kan; runtime validation pending',
   'lib/std/nonempty.ml': 'Ported: generic operations with typed collection dictionaries, src/nonempty.kan; OCaml differential tests',
   'lib/std/prng.ml': 'Ported: full-width SplitMix64, split and signed inclusive ranges, src/prng.kan; OCaml differential tests',
   'lib/codec/bcs.ml': 'Ported: primitive and composite codecs, refinement, enums, list/map/set canonicality, src/bcs.kan, src/codec.kan, src/sequence.kan; OCaml differential tests',
@@ -91,6 +113,22 @@ const coverage = {
   'lib/evm/blake2.ml': 'Ported: BLAKE2b compression, counters, final flags and variable rounds, src/blake2b*.kan; OCaml comparisons and independent BLAKE2b digest',
   'lib/evm/precompile.ml': 'Ported: addresses 1 through 9, exact gas gates, padding, rejection and output, src/precompile*.kan; all 28 upstream BN254 goldens, OCaml comparisons and complete EVM calls',
   'lib/evm/receipt.ml': 'Ported: typed success/revert/halt receipts, src/receipt.kan; OCaml comparisons',
+  'lib/evm/tx_signature.ml': 'Ported: parity, EIP-155 chain extraction and exact wrapping, src/tx_signature.kan; OCaml wire comparisons',
+  'lib/evm/public_key.ml': 'Ported: checked 64-byte admission and Keccak address derivation, src/tx_signature.kan; recovery comparisons',
+  'lib/evm/tx_payload.ml': 'Ported: legacy, EIP-2930, EIP-1559 and EIP-7702 values, projections and signing, src/tx_payload.kan; OCaml wire comparisons',
+  'lib/evm/tx_envelope.ml': 'Ported: exact EIP-2718 wire encoding and decoding with source error precedence, signing and consensus hashes, src/tx_envelope.kan and src/tx_decode*.kan; 1199 OCaml rows including upstream goldens',
+  'lib/evm/tx_recovery.ml': 'Ported: low-S admission, sender recovery and transaction construction, src/tx_recovery.kan; OCaml comparisons',
+  'lib/evm/transaction.ml': 'Ported: fee variants, type-4 call target and saturated effective prices, src/transaction.kan; OCaml comparisons',
+  'lib/evm/authorization.ml': 'Ported: wire values, signing, scalar admission, screening and authority recovery, src/authorization*.kan; OCaml comparisons',
+  'lib/evm/auth_list.ml': 'Ported: ordered screening, authority warming, nonce threading, replacement, revocation and refunds, src/auth_list.kan; 99 authorization/recovery differential rows',
+  'lib/evm/system_contracts.ml': 'Ported: system constants and predeployment, src/system_contracts.kan; OCaml comparisons in the executor validation suite',
+  'lib/evm/executor.ml': 'Ported: ordered validation, calls, creation, authorization checkpoints, rollback, settlement and receipts, src/executor*.kan; 282 OCaml differential rows in 12 groups',
+  'lib/evm/system_call.ml': 'Implemented: system environment and both retained-world rules, src/system_call.kan; integration validation pending',
+  'lib/evm/registry_abi.ml': 'Ported: selectors, static tuple ABI, constructor bounds and exact decoder errors, src/registry*.kan; 655 OCaml differential rows in five groups',
+  'lib/evm/committee_shuffle.ml': 'Ported: ordered partition, reservoir top-up, Fisher-Yates and truncation, src/committee_shuffle.kan; 84 OCaml differential rows',
+  'lib/evm/epoch_close.ml': 'Ported: mandatory writes, noncommitting reads, committee selection and sorted conclusion calldata, src/epoch_close*.kan; nine dedicated OCaml rows and finished-header comparisons',
+  'lib/evm/block_execution.ml': 'Partial: strict/skipping folds, gas metering, receipts, bloom and finished-world tokens pass ten integrated OCaml rows; pre-block system gates still under validation',
+  'lib/evm/block_header.ml': 'Partial: finished-world assembly, root gates, persistence constructor, 21-field RLP, hash and equality, src/block_header.kan; ten integrated OCaml rows pass, full engine integration pending',
   'lib/evm/receipt_envelope.ml': 'Ported: log RLP and EIP-2718 receipt encoding, src/receipt.kan; OCaml byte comparisons',
   'lib/evm/block_gas.ml': 'Ported: source-compatible receipt gas accounting, src/receipt_roots.kan; OCaml boundary comparisons',
   'lib/rlp/rlp.ml': 'Ported: canonical encoding, recursive-item views and iterative validating decode with exact errors, src/rlp.kan; 393 OCaml comparisons',
@@ -115,9 +153,9 @@ not a claim of complete module parity.
 | 1 | Complete tn_std, tn_codec and tn_types. Add general codecs, scalars, SplitMix64, digests, authorities, committees, batches and anchors. Match vectors and constructor rejections. | Value and codec behavior tested. General Round/Authority Map/Set APIs remain. |
 | 2 | Port tn_vertex and tn_consensus pure state machines, plus deterministic tn_sim and the CLI. Compare complete seeded output transcripts. | Consensus, node composition, seeded simulator and public simulator CLI tested within the configuration bounds recorded below. |
 | 3 | Timing, consensus recovery and tn_execution. Compare durable-before-action transitions, restart transcripts and consensus-chain hashes. | Pure execution, replay, reference store and consensus recovery tested. Durable shells remain. |
-| 4 | tn_state and EVM ALU/interpreter, then environment, access/refund, storage, calls, creation and transaction execution. Preserve full U256 arithmetic, gas, rollback and fork-specific outcomes. | Account state, EVM primitives, environments, instruction execution, calls, creation, rollback, fork schedules and all nine precompiles tested. Transaction execution remains. |
-| 5 | RLP, Keccak, trie/state roots, transaction envelopes, signatures and source-supported precompiles. Reuse existing golden fixtures; compare acceptance, output, gas and errors separately. | RLP, Keccak, tries, account/state roots, withdrawals, blooms, receipt encoding/roots, secp256k1 recovery and source-supported precompiles tested. Signed envelopes remain. |
-| 6 | Batch validation, executed blocks, engine, driver, registry and epoch transitions. Compare complete committed/executed output and checkpoint consistency. | Planned |
+| 4 | tn_state and EVM ALU/interpreter, then environment, access/refund, storage, calls, creation and transaction execution. Preserve full U256 arithmetic, gas, rollback and fork-specific outcomes. | Account state, EVM primitives, environments, instruction execution, calls, creation, rollback, fork schedules, all nine precompiles and transaction execution tested. |
+| 5 | RLP, Keccak, trie/state roots, transaction envelopes, signatures and source-supported precompiles. Reuse existing golden fixtures; compare acceptance, output, gas and errors separately. | RLP, Keccak, tries, account/state roots, withdrawals, blooms, receipt encoding/roots, secp256k1 recovery, source-supported precompiles and all four signed envelope types tested. Typed block transaction wrappers remain. |
+| 6 | Batch validation, executed blocks, engine, driver, registry and epoch transitions. Compare complete committed/executed output and checkpoint consistency. | Batch validation, attachment, planning, payload filtering, registry ABI, shuffle and engine state tested. Block, complete engine execution and driver integration validation remain. |
 | 7 | Durable file framing, logs, locks and checkpoints. Audit the host's fsync, atomic replacement, locking and recovery guarantees before porting the IO shell. Test interrupted writes and restart behavior. | Planned |
 | 8 | tn_network and Snappy pure codecs through chunk 44, then integrate source-supported crypto implementations and shells. Compare wire vectors, canonicality, corruption and size-limit cases. | Planned |
 

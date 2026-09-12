@@ -1,0 +1,32 @@
+mu DurableIoOp : Type 0 :=
+| durableOpen : DurableIoOp
+| durableClose : DurableIoOp
+| durableWrite : DurableIoOp
+| durableRead : DurableIoOp
+| durableFsync : DurableIoOp
+| durableFsyncDir : DurableIoOp
+| durableFtruncate : DurableIoOp
+| durableLseek : DurableIoOp
+| durableRename : DurableIoOp
+| durableMkdir : DurableIoOp
+| durableUnlink : DurableIoOp
+| durableLockf : DurableIoOp
+| durableStat : DurableIoOp
+| durableRealpath : DurableIoOp
+def durableIoOpText : DurableIoOp -> Bytes := fun (op : DurableIoOp) =>
+  match op as self in DurableIoOp return Bytes with
+  | durableOpen => b"open" | durableClose => b"close" | durableWrite => b"write" | durableRead => b"read"
+  | durableFsync => b"fsync" | durableFsyncDir => b"fsync-dir" | durableFtruncate => b"ftruncate"
+  | durableLseek => b"lseek" | durableRename => b"rename" | durableMkdir => b"mkdir" | durableUnlink => b"unlink"
+  | durableLockf => b"lockf" | durableStat => b"stat" | durableRealpath => b"realpath"
+mu DurableIoError : Type 0 :=
+| durableIoFailed (op : DurableIoOp) (path : Bytes) (code : Bytes) : DurableIoError
+| durableIoShortWrite (path : Bytes) (wanted : HostInt) (wrote : HostInt) : DurableIoError
+| durableIoShortRead (path : Bytes) (at : HostInt) (wanted : HostInt) (got : HostInt) : DurableIoError
+| durableIoWouldBlock (op : DurableIoOp) (path : Bytes) : DurableIoError
+def durableIoErrorText : DurableIoError -> Bytes := fun (error : DurableIoError) =>
+  match error as self in DurableIoError return Bytes with
+  | durableIoFailed op path code => append (durableIoOpText op) (append b" failed on " (append path (append b": " code)))
+  | durableIoShortWrite path wanted wrote => append b"short write on " (append path (append b": wanted " (append (hostIntText wanted) (append b" bytes, the device took " (hostIntText wrote)))))
+  | durableIoShortRead path at wanted got => append b"short read on " (append path (append b" at " (append (hostIntText at) (append b": wanted " (append (hostIntText wanted) (append b" bytes, got " (hostIntText got)))))))
+  | durableIoWouldBlock op path => append (durableIoOpText op) (append b" on " (append path b" would block: another holder has it"))

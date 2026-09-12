@@ -1,0 +1,18 @@
+mu BatchOutputError : Type 0 :=
+  | batchOutputMissingBatch (digest : BatchDigest) : BatchOutputError
+  | batchOutputUnknownAuthority (id : AuthorityId) : BatchOutputError
+def batchOutputErrorText : BatchOutputError -> Bytes := fun (error : BatchOutputError) =>
+  match error as self in BatchOutputError return Bytes with
+  | batchOutputMissingBatch digest => append b"missing fetched batch 0x" (bytesHex (batchDigestBytes digest))
+  | batchOutputUnknownAuthority id => append b"unknown authority " (bytesHex (authorityIdBytes id))
+def BatchOutputResult : Type 0 -> Type 0 := fun (A : Type 0) => sum (BatchOutputError, A)
+def BatchOutput : Type 0 := prod (ConsensusBlock, OutputEntries, Address)
+def batchOutputConsensus : BatchOutput -> ConsensusBlock := fun (value : BatchOutput) => value.0
+def batchOutputEntries : BatchOutput -> OutputEntries := fun (value : BatchOutput) => value.1
+def batchOutputLeaderAddress : BatchOutput -> Address := fun (value : BatchOutput) => value.2
+def batchOutputDigest : BatchOutput -> OutputDigest := fun (value : BatchOutput) => consensusBlockDigest (batchOutputConsensus value)
+def batchOutputLeaderEpoch : BatchOutput -> Epoch := fun (value : BatchOutput) => subDagLeaderEpoch (consensusBlockSubDag (batchOutputConsensus value))
+def batchOutputCommittedAt : BatchOutput -> Timestamp := fun (value : BatchOutput) => subDagCommitTimestamp (consensusBlockSubDag (batchOutputConsensus value))
+def batchOutputNonce : BatchOutput -> SequenceNumber := fun (value : BatchOutput) => subDagSequenceNumber (consensusBlockSubDag (batchOutputConsensus value))
+def batchOutputClosesEpoch : BatchOutput -> Timestamp -> Bool := fun (value : BatchOutput) (boundary : Timestamp) =>
+  boolNot (natLt (timestampNat (batchOutputCommittedAt value)) (timestampNat boundary))

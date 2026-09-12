@@ -1,0 +1,102 @@
+-- ConsensusRegistry static ABI values and exact admission errors.
+mu ValidatorStatus : Type 0 :=
+  | validatorUndefined : ValidatorStatus
+  | validatorStaked : ValidatorStatus
+  | validatorPendingActivation : ValidatorStatus
+  | validatorActive : ValidatorStatus
+  | validatorPendingExit : ValidatorStatus
+  | validatorExited : ValidatorStatus
+  | validatorAny : ValidatorStatus
+def validatorStatusByte : ValidatorStatus -> Nat := fun (status : ValidatorStatus) =>
+  match status as self in ValidatorStatus return Nat with
+  | validatorUndefined => 0
+  | validatorStaked => 1
+  | validatorPendingActivation => 2
+  | validatorActive => 3
+  | validatorPendingExit => 4
+  | validatorExited => 5
+  | validatorAny => 6
+def validatorStatusOfByte : Nat -> ValueOption ValidatorStatus := fun (byte : Nat) =>
+  case (natEq byte 0) with
+  | 1 (unit : prod ()) => valueSome ValidatorStatus validatorUndefined
+  | 0 (unit : prod ()) =>
+    case (natEq byte 1) with
+    | 1 (unit : prod ()) => valueSome ValidatorStatus validatorStaked
+    | 0 (unit : prod ()) =>
+      case (natEq byte 2) with
+      | 1 (unit : prod ()) => valueSome ValidatorStatus validatorPendingActivation
+      | 0 (unit : prod ()) =>
+        case (natEq byte 3) with
+        | 1 (unit : prod ()) => valueSome ValidatorStatus validatorActive
+        | 0 (unit : prod ()) =>
+          case (natEq byte 4) with
+          | 1 (unit : prod ()) => valueSome ValidatorStatus validatorPendingExit
+          | 0 (unit : prod ()) =>
+            case (natEq byte 5) with
+            | 1 (unit : prod ()) => valueSome ValidatorStatus validatorExited
+            | 0 (unit : prod ()) =>
+              case (natEq byte 6) with
+              | 1 (unit : prod ()) => valueSome ValidatorStatus validatorAny
+              | 0 (unit : prod ()) => valueNone ValidatorStatus
+def validatorStatusEqual : ValidatorStatus -> ValidatorStatus -> Bool := fun (a : ValidatorStatus) (b : ValidatorStatus) => natEq (validatorStatusByte a) (validatorStatusByte b)
+mu EligibleStatus : Type 0 :=
+  | eligibleActive : EligibleStatus
+  | eligiblePendingActivation : EligibleStatus
+  | eligiblePendingExit : EligibleStatus
+def eligibleToStatus : EligibleStatus -> ValidatorStatus := fun (status : EligibleStatus) =>
+  match status as self in EligibleStatus return ValidatorStatus with
+  | eligibleActive => validatorActive
+  | eligiblePendingActivation => validatorPendingActivation
+  | eligiblePendingExit => validatorPendingExit
+def ValidatorInfo : Type 0 := prod (Address, Nat, Nat, ValidatorStatus, Bool, Nat, Nat)
+def validatorInfoMake : Address -> HostInt -> HostInt -> ValidatorStatus -> Bool -> HostInt -> HostInt -> ValueOption ValidatorInfo :=
+  fun (address : Address) (activation : HostInt) (exit : HostInt) (status : ValidatorStatus) (retired : Bool) (stake : HostInt) (region : HostInt) =>
+    case (natLt (hostIntBits activation) 4294967296) with
+    | 0 (unit : prod ()) => valueNone ValidatorInfo
+    | 1 (unit : prod ()) =>
+      case (natLt (hostIntBits exit) 4294967296) with
+      | 0 (unit : prod ()) => valueNone ValidatorInfo
+      | 1 (unit : prod ()) =>
+        case (natLt (hostIntBits stake) 256) with
+        | 0 (unit : prod ()) => valueNone ValidatorInfo
+        | 1 (unit : prod ()) =>
+          case (natLt (hostIntBits region) 256) with
+          | 0 (unit : prod ()) => valueNone ValidatorInfo
+          | 1 (unit : prod ()) => valueSome ValidatorInfo (tuple (address, hostIntBits activation, hostIntBits exit, status, retired, hostIntBits stake, hostIntBits region))
+def validatorInfoAddress : ValidatorInfo -> Address := fun (info : ValidatorInfo) => info.0
+def validatorInfoStatus : ValidatorInfo -> ValidatorStatus := fun (info : ValidatorInfo) => info.3
+mu RegistryDecodeError : Type 0 :=
+  | registryTruncated (need : Nat) (got : Nat) : RegistryDecodeError
+  | registryHeadOffsetNot32 : RegistryDecodeError
+  | registryLengthWordOverflow : RegistryDecodeError
+  | registryStatusByte (byte : Nat) : RegistryDecodeError
+  | registryPaddingNonzero : RegistryDecodeError
+  | registryTrailingBytes (count : Nat) : RegistryDecodeError
+def RegistryResult : Type 0 -> Type 0 := fun (A : Type 0) => sum (RegistryDecodeError, A)
+def registryErrorText : RegistryDecodeError -> Bytes := fun (error : RegistryDecodeError) =>
+  match error as self in RegistryDecodeError return Bytes with
+  | registryTruncated need got => append b"return truncated: need " (append (decimal64 need) (append b" bytes, got " (decimal64 got)))
+  | registryHeadOffsetNot32 => b"head offset word is not 0x20"
+  | registryLengthWordOverflow => b"array length word exceeds the u32 range"
+  | registryStatusByte byte => append b"validator status byte " (append (decimal64 byte) b" outside 0..6")
+  | registryPaddingNonzero => b"nonzero bytes outside a static value's width"
+  | registryTrailingBytes count => append (decimal64 count) b" trailing bytes after the encoded value"
+def validatorInfoEqual : ValidatorInfo -> ValidatorInfo -> Bool := fun (a : ValidatorInfo) (b : ValidatorInfo) =>
+  case (addressEqual a.0 b.0) with
+  | 0 (unit : prod ()) => natEq 0 1
+  | 1 (unit : prod ()) =>
+    case (natEq a.1 b.1) with
+    | 0 (unit : prod ()) => natEq 0 1
+    | 1 (unit : prod ()) =>
+      case (natEq a.2 b.2) with
+      | 0 (unit : prod ()) => natEq 0 1
+      | 1 (unit : prod ()) =>
+        case (validatorStatusEqual a.3 b.3) with
+        | 0 (unit : prod ()) => natEq 0 1
+        | 1 (unit : prod ()) =>
+          case (natEq (boolNat a.4) (boolNat b.4)) with
+          | 0 (unit : prod ()) => natEq 0 1
+          | 1 (unit : prod ()) =>
+            case (natEq a.5 b.5) with
+            | 0 (unit : prod ()) => natEq 0 1
+            | 1 (unit : prod ()) => natEq a.6 b.6

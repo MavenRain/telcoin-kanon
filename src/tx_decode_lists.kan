@@ -1,0 +1,45 @@
+def rec txReadKeysScan : RlpItems -> Words -> TxResult Words := fun (items : RlpItems) (acc : Words) =>
+  match items as self in RlpItems return TxResult Words with
+  | rlpItemsNil => inj 1 of 2 (seqWordReverse acc)
+  | rlpItemsCons head tail => case (txReadKey head) with
+    | 0 (error : TxDecodeError) => inj 0 of 2 error
+    | 1 (value : U256) => txReadKeysScan tail (wordsCons value acc)
+def txReadKeys : RlpItem -> TxResult Words := fun (item : RlpItem) => case (txReadList item) with
+  | 0 (error : TxDecodeError) => inj 0 of 2 error
+  | 1 (items : RlpItems) => txReadKeysScan items wordsNil
+def txReadAccessItem : RlpItem -> TxResult (prod (Address, Words)) := fun (item : RlpItem) => case (txReadList item) with
+  | 0 (error : TxDecodeError) => inj 0 of 2 error
+  | 1 (items : RlpItems) =>
+    let short : TxDecodeError := txFieldCount 2 (seqRlpItemLength items) in
+    txReadField Address (prod (Address, Words)) short txReadAddress items (fun (address : Address) (items : RlpItems) =>
+    txReadField Words (prod (Address, Words)) short txReadKeys items (fun (keys : Words) (items : RlpItems) =>
+    txReadFinish (prod (Address, Words)) short items (tuple (address, keys))))
+def rec txReadAccessListScan : RlpItems -> TxAccessEntries -> TxResult TxAccessEntries := fun (items : RlpItems) (acc : TxAccessEntries) =>
+  match items as self in RlpItems return TxResult TxAccessEntries with
+  | rlpItemsNil => inj 1 of 2 (seqTxAccessEntryReverse acc)
+  | rlpItemsCons head tail => case (txReadAccessItem head) with
+    | 0 (error : TxDecodeError) => inj 0 of 2 error
+    | 1 (value : prod (Address, Words)) => txReadAccessListScan tail (txAccessEntriesCons value acc)
+def txReadAccessList : RlpItem -> TxResult TxAccessEntries := fun (item : RlpItem) => case (txReadList item) with
+  | 0 (error : TxDecodeError) => inj 0 of 2 error
+  | 1 (items : RlpItems) => txReadAccessListScan items txAccessEntriesNil
+def txReadSignedAuthorization : RlpItem -> TxResult SignedAuthorization := fun (item : RlpItem) => case (txReadList item) with
+  | 0 (error : TxDecodeError) => inj 0 of 2 error
+  | 1 (items : RlpItems) =>
+    let short : TxDecodeError := txFieldCount 6 (seqRlpItemLength items) in
+    txReadField U256 SignedAuthorization short (txReadWord 32) items (fun (chainId : U256) (items : RlpItems) =>
+    txReadField Address SignedAuthorization short txReadAddress items (fun (address : Address) (items : RlpItems) =>
+    txReadField U256 SignedAuthorization short (txReadWord 8) items (fun (nonce : U256) (items : RlpItems) =>
+    txReadField U256 SignedAuthorization short (txReadWord 1) items (fun (parity : U256) (items : RlpItems) =>
+    txReadField U256 SignedAuthorization short (txReadWord 32) items (fun (r : U256) (items : RlpItems) =>
+    txReadField U256 SignedAuthorization short (txReadWord 32) items (fun (s : U256) (items : RlpItems) =>
+    txReadFinish SignedAuthorization short items (authorizationSign (tuple (chainId, address, nonce)) parity r s)))))))
+def rec txReadAuthorizationsScan : RlpItems -> SignedAuthorizations -> TxResult SignedAuthorizations := fun (items : RlpItems) (acc : SignedAuthorizations) =>
+  match items as self in RlpItems return TxResult SignedAuthorizations with
+  | rlpItemsNil => inj 1 of 2 (seqSignedAuthorizationReverse acc)
+  | rlpItemsCons head tail => case (txReadSignedAuthorization head) with
+    | 0 (error : TxDecodeError) => inj 0 of 2 error
+    | 1 (value : SignedAuthorization) => txReadAuthorizationsScan tail (signedAuthorizationsCons value acc)
+def txReadAuthorizations : RlpItem -> TxResult SignedAuthorizations := fun (item : RlpItem) => case (txReadList item) with
+  | 0 (error : TxDecodeError) => inj 0 of 2 error
+  | 1 (items : RlpItems) => txReadAuthorizationsScan items signedAuthorizationsNil

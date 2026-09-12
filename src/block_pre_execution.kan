@@ -1,0 +1,29 @@
+-- The EIP-4788 gates precede EIP-2935, which is independent of batch position.
+def blockExecutionSpec : BlockContext -> EvmSpec := fun (context : BlockContext) => evmBlockSpec (blockContextBlock context)
+def blockExecutionRootStep : WorldState -> BlockContext -> BlockExecutionResult (prod (WorldState, BlockPreRoot)) :=
+  fun (world : WorldState) (context : BlockContext) =>
+    case (blockContextFirstBatch context) with
+    | 0 (unit : prod ()) => inj 1 of 2 (tuple (world, blockRootSkippedAfterFirstBatch))
+    | 1 (unit : prod ()) => case (evmSpecEnabled (blockExecutionSpec context) evmCancun) with
+      | 0 (unit : prod ()) => inj 1 of 2 (tuple (world, blockRootSkippedBeforeCancun))
+      | 1 (unit : prod ()) => case (blockContextIsGenesis context) with
+        | 1 (unit : prod ()) => inj 1 of 2 (tuple (world, blockRootSkippedAtGenesis))
+        | 0 (unit : prod ()) => case (systemCallRun world (blockContextBlock context) beaconRootsAddress (outputDigestBytes (blockContextConsensusRoot context))) with
+          | 0 (error : SystemCallError) => inj 0 of 2 (blockConsensusRootCall error)
+          | 1 (outcome : SystemCallOutcome) => inj 1 of 2 (tuple (systemCallWorld outcome, blockRootWritten outcome))
+def blockExecutionHashStep : WorldState -> BlockContext -> BlockExecutionResult (prod (WorldState, BlockPreHashes)) :=
+  fun (world : WorldState) (context : BlockContext) =>
+    case (evmSpecEnabled (blockExecutionSpec context) evmPrague) with
+    | 0 (unit : prod ()) => inj 1 of 2 (tuple (world, blockHashSkippedBeforePrague))
+    | 1 (unit : prod ()) => case (blockContextIsGenesis context) with
+      | 1 (unit : prod ()) => inj 1 of 2 (tuple (world, blockHashSkippedAtGenesis))
+      | 0 (unit : prod ()) => case (systemCallRun world (blockContextBlock context) historyStorageAddress (keccakBytes (blockContextParentHash context))) with
+        | 0 (error : SystemCallError) => inj 0 of 2 (blockBlockhashesCall error)
+        | 1 (outcome : SystemCallOutcome) => inj 1 of 2 (tuple (systemCallWorld outcome, blockHashWritten outcome))
+def blockExecutionApplyPreBlock : WorldState -> BlockContext -> BlockExecutionResult BlockPreState :=
+  fun (world : WorldState) (context : BlockContext) =>
+    case (blockExecutionRootStep world context) with
+    | 0 (error : BlockExecutionError) => inj 0 of 2 error
+    | 1 (rootStep : prod (WorldState, BlockPreRoot)) => case (blockExecutionHashStep rootStep.0 context) with
+      | 0 (error : BlockExecutionError) => inj 0 of 2 error
+      | 1 (hashStep : prod (WorldState, BlockPreHashes)) => inj 1 of 2 (tuple (hashStep.0, rootStep.1, hashStep.1))

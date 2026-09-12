@@ -1,0 +1,51 @@
+mu EpochDuration : Type 0 :=
+| epochDurationValue (seconds : Nat) : EpochDuration
+def epochDurationNat : EpochDuration -> Nat := fun (duration : EpochDuration) =>
+  match duration as self in EpochDuration return Nat with | epochDurationValue seconds => seconds
+def epochDurationOfSecs : HostInt -> ValueOption EpochDuration := fun (seconds : HostInt) =>
+  case (hostIntNonnegative seconds) with | 0 (unit : prod ()) => valueNone EpochDuration
+  | 1 (value : Nat) => case (natEq value 0) with
+    | 1 (unit : prod ()) => valueNone EpochDuration
+    | 0 (unit : prod ()) => valueSome EpochDuration (epochDurationValue value)
+def epochDurationSecs : EpochDuration -> HostInt := fun (duration : EpochDuration) => hostIntPositive (epochDurationNat duration)
+def epochDurationEqual : EpochDuration -> EpochDuration -> Bool := fun (left : EpochDuration) (right : EpochDuration) =>
+  natEq (epochDurationNat left) (epochDurationNat right)
+def ChainSpec : Type 0 := prod (U256, Address, ExecutionAnchor, WorldState, Timestamp, EpochDuration, Keccaks, ForkSchedule)
+def chainSpecChainId : ChainSpec -> U256 := fun (spec : ChainSpec) => spec.0
+def chainSpecBasefeeAddress : ChainSpec -> Address := fun (spec : ChainSpec) => spec.1
+def chainSpecAnchor : ChainSpec -> ExecutionAnchor := fun (spec : ChainSpec) => spec.2
+def chainSpecWorld : ChainSpec -> WorldState := fun (spec : ChainSpec) => spec.3
+def chainSpecGenesisTimestamp : ChainSpec -> Timestamp := fun (spec : ChainSpec) => spec.4
+def chainSpecEpochDuration : ChainSpec -> EpochDuration := fun (spec : ChainSpec) => spec.5
+def chainSpecAncestors : ChainSpec -> Keccaks := fun (spec : ChainSpec) => spec.6
+def chainSpecForkSchedule : ChainSpec -> ForkSchedule := fun (spec : ChainSpec) => spec.7
+mu ChainSpecError : Type 0 :=
+| chainSpecAlloc (error : GenesisAllocError) : ChainSpecError
+def chainSpecErrorText : ChainSpecError -> Bytes := fun (error : ChainSpecError) =>
+  match error as self in ChainSpecError return Bytes with
+  | chainSpecAlloc failure => append b"chain spec alloc: " (genesisAllocErrorText failure)
+def chainSpecCreateOnSchedule : U256 -> Address -> Keccak -> U256 -> HostInt -> Timestamp -> EpochDuration ->
+  Keccaks -> ForkSchedule -> GenesisAccount -> GenesisEntries -> sum (ChainSpecError, ChainSpec) :=
+  fun (chainId : U256) (feeAddress : Address) (genesisHash : Keccak) (baseFee : U256) (gasLimit : HostInt)
+    (timestamp : Timestamp) (duration : EpochDuration) (ancestors : Keccaks) (schedule : ForkSchedule)
+    (registry : GenesisAccount) (extra : GenesisEntries) =>
+    case (worldStateOfGenesisAlloc (listAppend (prod (Address, GenesisAccount)) GenesisEntries seqGenesisEntryOps
+      extra (genesisEntriesCons (tuple (consensusRegistryAddress, registry)) genesisEntriesNil))) with
+    | 0 (error : GenesisAllocError) => inj 0 of 2 (chainSpecAlloc error)
+    | 1 (world : WorldState) => inj 1 of 2 (tuple (chainId, feeAddress,
+        executionAnchorOfGenesis genesisHash baseFee gasLimit, systemContractsPredeploy world, timestamp,
+        duration, ancestors, schedule))
+def chainSpecCreate : U256 -> Address -> Keccak -> U256 -> HostInt -> Timestamp -> EpochDuration ->
+  GenesisAccount -> GenesisEntries -> sum (ChainSpecError, ChainSpec) :=
+  fun (chainId : U256) (feeAddress : Address) (genesisHash : Keccak) (baseFee : U256) (gasLimit : HostInt)
+    (timestamp : Timestamp) (duration : EpochDuration) (registry : GenesisAccount) (extra : GenesisEntries) =>
+    chainSpecCreateOnSchedule chainId feeAddress genesisHash baseFee gasLimit timestamp duration keccaksNil forkScheduleTestnet registry extra
+def chainSpecBoundaryAfter : ChainSpec -> Timestamp -> Timestamp := fun (spec : ChainSpec) (timestamp : Timestamp) =>
+  let next : Nat := natAdd (timestampNat timestamp) (epochDurationNat (chainSpecEpochDuration spec)) in
+  timestampValue (case (natLt 9223372036854775807 next) with
+    | 1 (unit : prod ()) => 9223372036854775807
+    | 0 (unit : prod ()) => next)
+def chainSpecFirstBoundary : ChainSpec -> Timestamp := fun (spec : ChainSpec) =>
+  chainSpecBoundaryAfter spec (chainSpecGenesisTimestamp spec)
+def chainSpecEngineConfig : ChainSpec -> Committee -> ExecutionConfig := fun (spec : ChainSpec) (committee : Committee) =>
+  executionConfigMake spec.2 spec.6 spec.3 spec.0 spec.1 (chainSpecFirstBoundary spec) committee spec.7

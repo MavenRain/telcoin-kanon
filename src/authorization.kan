@@ -1,0 +1,45 @@
+def authorizationMake : U256 -> Address -> U256 -> ValueOption Authorization := fun (chainId : U256) (address : Address) (nonce : U256) =>
+  case (natLt (u256Nat nonce) 18446744073709551616) with
+  | 0 (unit : prod ()) => valueNone Authorization
+  | 1 (unit : prod ()) => valueSome Authorization (tuple (chainId, address, nonce))
+def authorizationChainId : Authorization -> U256 := fun (auth : Authorization) => auth.0
+def authorizationAddress : Authorization -> Address := fun (auth : Authorization) => auth.1
+def authorizationNonce : Authorization -> U256 := fun (auth : Authorization) => auth.2
+def authorizationSign : Authorization -> U256 -> U256 -> U256 -> SignedAuthorization := fun (auth : Authorization) (parity : U256) (r : U256) (s : U256) => tuple (auth, parity, r, s)
+def authorizationUnsigned : SignedAuthorization -> Authorization := fun (signature : SignedAuthorization) => signature.0
+def authorizationYParity : SignedAuthorization -> U256 := fun (signature : SignedAuthorization) => signature.1
+def authorizationR : SignedAuthorization -> U256 := fun (signature : SignedAuthorization) => signature.2
+def authorizationS : SignedAuthorization -> U256 := fun (signature : SignedAuthorization) => signature.3
+def txEncodeWord : U256 -> Bytes := fun (word : U256) => rlpEncodeScalar (u256ToBeBytes word)
+def authorizationBody : Authorization -> Bytes := fun (auth : Authorization) =>
+  append (txEncodeWord auth.0) (append (rlpEncodeBytes (addressBytes auth.1)) (txEncodeWord auth.2))
+def authorizationEncode : Authorization -> Bytes := fun (auth : Authorization) => rlpEncodeListPayload (authorizationBody auth)
+def authorizationSignatureHash : Authorization -> Bytes := fun (auth : Authorization) => keccak256 (consBytes 5 (authorizationEncode auth))
+def authorizationEncodeSigned : SignedAuthorization -> Bytes := fun (signature : SignedAuthorization) =>
+  rlpEncodeListPayload (append (authorizationBody signature.0)
+    (append (txEncodeWord signature.1) (append (txEncodeWord signature.2) (txEncodeWord signature.3))))
+def authorizationSignature : SignedAuthorization -> ValueOption TxSignature := fun (signature : SignedAuthorization) =>
+  case (natLt (u256Nat signature.1) 2) with
+  | 0 (unit : prod ()) => valueNone TxSignature
+  | 1 (unit : prod ()) => valueSome TxSignature (txSignatureMake (u256Equal signature.1 u256One) signature.2 signature.3)
+def authorizationSecp256k1Half : U256 := u256Value (divQuotient (divide256 secpOrder 2))
+def authorizationScreen : U256 -> SignedAuthorization -> ValueOption ScreenedAuthorization := fun (chainId : U256) (signature : SignedAuthorization) =>
+  let auth : Authorization := signature.0 in
+  case (boolOr (u256Equal auth.0 u256Zero) (u256Equal auth.0 chainId)) with
+  | 0 (unit : prod ()) => valueNone ScreenedAuthorization
+  | 1 (unit : prod ()) => case (u256Equal auth.2 (u256Value 18446744073709551615)) with
+    | 1 (unit : prod ()) => valueNone ScreenedAuthorization
+    | 0 (unit : prod ()) => case (authorizationSignature signature) with
+      | 0 (unit : prod ()) => valueNone ScreenedAuthorization
+      | 1 (sg : TxSignature) => case (secpSIsHigh (u256ToBeBytes (txSignatureS sg))) with
+        | 1 (unit : prod ()) => valueNone ScreenedAuthorization
+        | 0 (unit : prod ()) => case (secpRecover (authorizationSignatureHash auth)
+            (hostIntPositive (choose (txSignatureParity sg) 1 0)) (u256ToBeBytes (txSignatureR sg)) (u256ToBeBytes (txSignatureS sg))) with
+          | 0 (unit : prod ()) => valueNone ScreenedAuthorization
+          | 1 (key : Bytes) => case (evmPublicKeyToAddress key) with
+            | 0 (unit : prod ()) => valueNone ScreenedAuthorization
+            | 1 (authority : Address) => valueSome ScreenedAuthorization (tuple (auth, authority))
+def authorizationAuthority : ScreenedAuthorization -> Address := fun (screened : ScreenedAuthorization) => screened.1
+def authorizationScreenedNonce : ScreenedAuthorization -> U256 := fun (screened : ScreenedAuthorization) => authorizationNonce screened.0
+def authorizationAssignment : ScreenedAuthorization -> DelegationAssignment := fun (screened : ScreenedAuthorization) => delegationAssignment (authorizationAddress screened.0)
+def authorizationScreenedAssignment : ScreenedAuthorization -> DelegationAssignment := authorizationAssignment

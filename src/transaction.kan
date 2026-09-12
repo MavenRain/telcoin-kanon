@@ -1,0 +1,46 @@
+mu TransactionKind : Type 0 :=
+| transactionCall (target : Address) : TransactionKind
+| transactionCreate : TransactionKind
+mu TransactionFee : Type 0 :=
+| transactionLegacyFee (gasPrice : U256) : TransactionFee
+| transactionAccessFee (gasPrice : U256) : TransactionFee
+| transactionDynamicFee (maxFee : U256) (maxPriority : ValueOption U256) : TransactionFee
+| transactionSetCodeFee (maxFee : U256) (maxPriority : U256) (target : Address) (authorizations : SignedAuthorizations) : TransactionFee
+def Transaction : Type 0 := prod (Address, Nonce, HostInt, TransactionKind, U256, Bytes, TxAccessEntries, ValueOption U256, TransactionFee)
+def transactionMake : Address -> Nonce -> HostInt -> TransactionKind -> U256 -> Bytes -> TxAccessEntries -> ValueOption U256 -> TransactionFee -> Transaction :=
+  fun (sender : Address) (nonce : Nonce) (gasLimit : HostInt) (kind : TransactionKind) (value : U256) (data : Bytes) (accessList : TxAccessEntries) (chainId : ValueOption U256) (fee : TransactionFee) =>
+  tuple (sender, nonce, gasLimit, kind, value, data, accessList, chainId, fee)
+def transactionSender : Transaction -> Address := fun (tx : Transaction) => tx.0
+def transactionNonce : Transaction -> Nonce := fun (tx : Transaction) => tx.1
+def transactionGasLimit : Transaction -> HostInt := fun (tx : Transaction) => tx.2
+def transactionKind : Transaction -> TransactionKind := fun (tx : Transaction) => match tx.8 as fee in TransactionFee return TransactionKind with
+  | transactionLegacyFee gasPrice => tx.3
+  | transactionAccessFee gasPrice => tx.3
+  | transactionDynamicFee maxFee maxPriority => tx.3
+  | transactionSetCodeFee maxFee maxPriority target authorizations => transactionCall target
+def transactionValue : Transaction -> U256 := fun (tx : Transaction) => tx.4
+def transactionData : Transaction -> Bytes := fun (tx : Transaction) => tx.5
+def transactionAccessList : Transaction -> TxAccessEntries := fun (tx : Transaction) => tx.6
+def transactionChainId : Transaction -> ValueOption U256 := fun (tx : Transaction) => tx.7
+def transactionFee : Transaction -> TransactionFee := fun (tx : Transaction) => tx.8
+def transactionSaturatingAdd : U256 -> U256 -> U256 := fun (a : U256) (b : U256) => case (u256CheckedAdd a b) with
+  | 0 (unit : prod ()) => u256Value (natSub u256Modulus 1) | 1 (value : U256) => value
+def transactionCappedPrice : U256 -> U256 -> U256 -> U256 := fun (baseFee : U256) (priority : U256) (maxFee : U256) =>
+  let capped : U256 := transactionSaturatingAdd baseFee priority in
+  case (natLt (u256Nat capped) (u256Nat maxFee)) with | 1 (unit : prod ()) => capped | 0 (unit : prod ()) => maxFee
+def transactionEffectiveGasPrice : Transaction -> U256 -> U256 := fun (tx : Transaction) (baseFee : U256) => match tx.8 as fee in TransactionFee return U256 with
+  | transactionLegacyFee gasPrice => gasPrice
+  | transactionAccessFee gasPrice => gasPrice
+  | transactionDynamicFee maxFee maxPriority => (case maxPriority with
+    | 0 (unit : prod ()) => maxFee | 1 (priority : U256) => transactionCappedPrice baseFee priority maxFee)
+  | transactionSetCodeFee maxFee maxPriority target authorizations => transactionCappedPrice baseFee maxPriority maxFee
+def transactionMaxFeePerGas : Transaction -> U256 := fun (tx : Transaction) => match tx.8 as fee in TransactionFee return U256 with
+  | transactionLegacyFee gasPrice => gasPrice | transactionAccessFee gasPrice => gasPrice
+  | transactionDynamicFee maxFee maxPriority => maxFee | transactionSetCodeFee maxFee maxPriority target authorizations => maxFee
+def transactionAuthorizations : Transaction -> SignedAuthorizations := fun (tx : Transaction) => match tx.8 as fee in TransactionFee return SignedAuthorizations with
+  | transactionLegacyFee gasPrice => signedAuthorizationsNil | transactionAccessFee gasPrice => signedAuthorizationsNil
+  | transactionDynamicFee maxFee maxPriority => signedAuthorizationsNil
+  | transactionSetCodeFee maxFee maxPriority target authorizations => authorizations
+def transactionSetCode : Address -> Nonce -> HostInt -> Address -> U256 -> Bytes -> TxAccessEntries -> U256 -> U256 -> U256 -> SignedAuthorizations -> Transaction :=
+  fun (sender : Address) (nonce : Nonce) (gasLimit : HostInt) (target : Address) (value : U256) (data : Bytes) (accessList : TxAccessEntries) (chainId : U256) (maxPriority : U256) (maxFee : U256) (authorizations : SignedAuthorizations) =>
+  transactionMake sender nonce gasLimit (transactionCall target) value data accessList (valueSome U256 chainId) (transactionSetCodeFee maxFee maxPriority target authorizations)

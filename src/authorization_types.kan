@@ -1,0 +1,10 @@
+def Authorization : Type 0 := prod (U256, Address, U256)
+def SignedAuthorization : Type 0 := prod (Authorization, U256, U256, U256)
+def ScreenedAuthorization : Type 0 := prod (Authorization, Address)
+mu AuthDisposition : Type 0 :=
+| authChainIdMismatch : AuthDisposition
+| authNonceSaturated : AuthDisposition
+| authUnrecoverable : AuthDisposition
+| authHasCode : AuthDisposition
+| authNonceMismatch : AuthDisposition
+| authApplied (refunded : Bool) : AuthDisposition

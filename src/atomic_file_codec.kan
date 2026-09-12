@@ -1,0 +1,62 @@
+mu AtomicFileError : Type 0 :=
+| atomicFileIo (error : DurableIoError) : AtomicFileError
+| atomicFileBadMagic (path : Bytes) : AtomicFileError
+| atomicFileBadFormat (path : Bytes) (found : HostInt) (supported : HostInt) : AtomicFileError
+| atomicFileBadBodyTag (path : Bytes) : AtomicFileError
+| atomicFileShort (path : Bytes) (have : HostInt) (need : HostInt) : AtomicFileError
+| atomicFileBadGeneration (path : Bytes) : AtomicFileError
+def atomicFileErrorText : AtomicFileError -> Bytes := fun (error : AtomicFileError) =>
+  match error as self in AtomicFileError return Bytes with
+  | atomicFileIo error => durableIoErrorText error
+  | atomicFileBadMagic path => append path b": not the expected magic"
+  | atomicFileBadFormat path found supported => append path (append b": format " (append (hostIntText found) (append b", this reader supports " (hostIntText supported))))
+  | atomicFileBadBodyTag path => append path b": the payload does not match its own tag"
+  | atomicFileShort path have need => append path (append b": " (append (hostIntText have) (append b" bytes on disk, the header declares " (hostIntText need))))
+  | atomicFileBadGeneration path => append path b": the stored generation is out of range"
+def atomicFileTempOf : Bytes -> Bytes := fun (name : Bytes) => append name b".tmp"
+def atomicFileEncode : Bytes -> HostInt -> HostInt -> Bytes -> Bytes :=
+  fun (magic : Bytes) (format : HostInt) (generation : HostInt) (payload : Bytes) =>
+    append magic (append (reverse (bcsEncodeU32 (hostIntBits format))) (append (reverse (bcsEncodeU64 (hostIntBits generation)))
+      (append (reverse (bcsEncodeU32 (bytesLength payload))) (append (frameTag8 payload) payload))))
+def atomicFileDecodeBody : Bytes -> Bytes -> HostInt -> Nat -> sum (AtomicFileError, prod (HostInt, Bytes)) :=
+  fun (path : Bytes) (buf : Bytes) (generation : HostInt) (length : Nat) =>
+    let total : Nat := natAdd 32 length in
+    case (natEq (bytesLength buf) total) with
+    | 0 (unit : prod ()) => inj 0 of 2 (atomicFileShort path (hostIntPositive (bytesLength buf)) (hostIntPositive total))
+    | 1 (unit : prod ()) =>
+      let payload : Bytes := drop buf 32 in
+      case (bytesEqual (take 8 (drop buf 24)) (frameTag8 payload)) with
+      | 0 (unit : prod ()) => inj 0 of 2 (atomicFileBadBodyTag path)
+      | 1 (unit : prod ()) => inj 1 of 2 (tuple (generation, payload))
+def atomicFileDecodeGeneration : Bytes -> Bytes -> sum (AtomicFileError, prod (HostInt, Bytes)) :=
+  fun (path : Bytes) (buf : Bytes) =>
+    let high : HostInt := frameUintAt buf (hostIntPositive 12) 4 in
+    case (natLt 1073741823 (hostIntClampZero high)) with
+    | 1 (unit : prod ()) => inj 0 of 2 (atomicFileBadGeneration path)
+    | 0 (unit : prod ()) =>
+      let generation : HostInt := frameUintAt buf (hostIntPositive 12) 8 in
+      atomicFileDecodeBody path buf generation (hostIntClampZero (frameUintAt buf (hostIntPositive 20) 4))
+def atomicFileDecode : Bytes -> Bytes -> HostInt -> Bytes -> sum (AtomicFileError, prod (HostInt, Bytes)) :=
+  fun (path : Bytes) (magic : Bytes) (format : HostInt) (buf : Bytes) =>
+    case (natLt (bytesLength buf) 32) with
+    | 1 (unit : prod ()) => inj 0 of 2 (atomicFileShort path (hostIntPositive (bytesLength buf)) (hostIntPositive 32))
+    | 0 (unit : prod ()) => case (bytesEqual (take 8 buf) magic) with
+      | 0 (unit : prod ()) => inj 0 of 2 (atomicFileBadMagic path)
+      | 1 (unit : prod ()) =>
+        let stored : HostInt := frameUintAt buf (hostIntPositive 8) 4 in
+        case (hostIntEqual stored format) with
+        | 0 (unit : prod ()) => inj 0 of 2 (atomicFileBadFormat path stored format)
+        | 1 (unit : prod ()) => atomicFileDecodeGeneration path buf
+def atomicFileValidateSave : Bytes -> Bytes -> HostInt -> HostInt -> sum (AtomicFileError, prod ()) :=
+  fun (path : Bytes) (magic : Bytes) (format : HostInt) (generation : HostInt) =>
+    case (natEq (bytesLength magic) 8) with
+    | 0 (unit : prod ()) => inj 0 of 2 (atomicFileBadMagic path)
+    | 1 (unit : prod ()) => match format as self in HostInt return sum (AtomicFileError, prod ()) with
+      | hostIntNegative magnitude => inj 0 of 2 (atomicFileBadFormat path format (hostIntPositive 4294967295))
+      | hostIntPositive number => case (natLt 4294967295 number) with
+        | 1 (unit : prod ()) => inj 0 of 2 (atomicFileBadFormat path format (hostIntPositive 4294967295))
+        | 0 (unit : prod ()) => match generation as current in HostInt return sum (AtomicFileError, prod ()) with
+          | hostIntNegative magnitude => inj 0 of 2 (atomicFileBadGeneration path)
+          | hostIntPositive value => case (natLt hostIntMax value) with
+            | 1 (unit : prod ()) => inj 0 of 2 (atomicFileBadGeneration path)
+            | 0 (unit : prod ()) => inj 1 of 2 (tuple ())

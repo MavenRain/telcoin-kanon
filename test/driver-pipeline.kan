@@ -1,0 +1,65 @@
+def driverPipelineCommittee : ByteStrings -> Nat -> CommitteeResult := fun (members : ByteStrings) (epoch : Nat) =>
+  case (engineTestAuthorities members 0 1) with
+  | 0 (unit : prod ()) => committeeError (committeeTooSmall 0)
+  | 1 (authorities : Authorities) => committeeCreate (epochValue epoch) authorities
+def driverPipelineSpec : Timestamp -> Nat -> HostInt -> Bytes -> sum (ChainSpecError, ChainSpec) :=
+  fun (timestamp : Timestamp) (duration : Nat) (gasLimit : HostInt) (registryCode : Bytes) =>
+    chainSpecCreate (u256Value 42) (addressOfWord (u256Value 9)) (keccakValue (u256ToBeBytes (u256Value 1)))
+      (u256Value 7) gasLimit timestamp (epochDurationValue duration)
+      (tuple (nonceZero, u256Zero, valueSome Bytes registryCode, storageEmpty)) genesisEntriesNil
+def driverPipelineState : Driver -> Bytes := fun (driver : Driver) =>
+  let last : Bytes := case driver.3 with
+    | 0 (unit : prod ()) => b"none"
+    | 1 (block : ConsensusBlock) => bytesHex (outputDigestBytes (consensusBlockDigest block)) in
+  engineTestField (consensusBlockNumberText (driverLastForwarded driver))
+    (engineTestField last (engineTestField (bytesHex (blockStateRoot driver.2.3)) (engineTestStateText driver.2)))
+def driverPipelineBlock : ExecutedBlock -> Bytes := fun (block : ExecutedBlock) =>
+  engineTestField (hostIntText (executedBlockNumber block))
+    (engineTestField (bytesHex (blockHeaderEncodeRlp (executedBlockHeader block)))
+      (engineTestField (decimal64 (seqTxEnvelopeLength (executedBlockTransactions block)))
+        (engineTestField (decimal64 (seqReceiptPairLength (executedBlockReceipts block)))
+          (decimal64 (seqBlockInvalidTxLength (executedBlockSkipped block))))))
+def rec driverPipelineBlocks : ExecutedBlocks -> Bytes := fun (blocks : ExecutedBlocks) =>
+  match blocks as self in ExecutedBlocks return Bytes with
+  | executedBlocksNil => emptyBytes
+  | executedBlocksCons head tail => append b"[" (append (driverPipelineBlock head) (append b"]" (driverPipelineBlocks tail)))
+def driverPipelineAdvance : DriverAdvance -> Bytes := fun (advance : DriverAdvance) =>
+  engineTestField (consensusBlockNumberText (consensusBlockNumberOf advance.0))
+    (engineTestField (bytesHex (outputDigestBytes (consensusBlockDigest advance.0)))
+      (engineTestField (evmTestBool advance.3) (driverPipelineBlocks advance.2)))
+def rec driverPipelineAdvances : DriverAdvances -> Bytes := fun (advances : DriverAdvances) =>
+  match advances as self in DriverAdvances return Bytes with
+  | driverAdvancesNil => emptyBytes
+  | driverAdvancesCons head tail => append b"{" (append (driverPipelineAdvance head) (append b"}" (driverPipelineAdvances tail)))
+def driverPipelineOutcome : DriverOutcome Driver -> Bytes := fun (outcome : DriverOutcome Driver) =>
+  case outcome with
+  | 0 (advanced : prod (Driver, DriverAdvances)) =>
+    engineTestField b"advance" (engineTestField (driverPipelineState advanced.0) (driverPipelineAdvances advanced.1))
+  | 1 (sealed : prod (Driver, DriverAdvances, SubDags)) =>
+    engineTestField b"sealed" (engineTestField (driverPipelineState sealed.0)
+      (engineTestField (driverPipelineAdvances sealed.1) (bytesHex (codecWrite SubDags (codecList SubDag SubDags seqSubDagOps subDagCodec) sealed.2))))
+  | 2 (halted : prod (DriverAdvances, DriverError)) =>
+    engineTestField b"halted" (engineTestField (driverErrorText halted.1) (driverPipelineAdvances halted.0))
+def driverPipelineFold : Driver -> SubDags -> Batches -> Nat -> Bytes :=
+  fun (initial : Driver) (subdags : SubDags) (bodies : Batches) (sealed : Nat) =>
+    let engine : ExecutionEngine := initial.2 in
+    let phase : ExecutionPhase := case (natEq sealed 1) with
+      | 0 (unit : prod ()) => engine.6
+      | 1 (unit : prod ()) => executionSealed (executionEngineFrontier engine) (executionEngineCommittee engine) in
+    let driver : Driver := tuple (initial.0, initial.1,
+      tuple (engine.0, engine.1, engine.2, engine.3, engine.4, engine.5, phase), initial.3) in
+    let book : AddressBook := addressBookOfCommittee (executionEngineCommittee engine) in
+    driverPipelineOutcome (driverFold driver subdags (batchStoreOfBodies bodies) (fun (id : AuthorityId) => addressBookFind book id))
+def driverTestPipeline : ByteStrings -> Nat -> Bytes -> Nat -> Bytes -> Bytes -> Bytes -> Bytes -> Nat -> Bytes :=
+  fun (members : ByteStrings) (epoch : Nat) (timestampRaw : Bytes) (duration : Nat) (gasRaw : Bytes)
+    (registryCode : Bytes) (subdagsRaw : Bytes) (bodiesRaw : Bytes) (sealed : Nat) =>
+    match (driverPipelineCommittee members epoch) as result in CommitteeResult return Bytes with
+    | committeeError error => append b"error:" (committeeErrorText error)
+    | committeeOk committee => executionWith Timestamp timestampCodec timestampRaw (fun (timestamp : Timestamp) =>
+      case (hostIntParse gasRaw) with | 0 (unit : prod ()) => b"error:bad gas"
+      | 1 (gasLimit : HostInt) => case (driverPipelineSpec timestamp duration gasLimit registryCode) with
+        | 0 (error : ChainSpecError) => append b"error:" (chainSpecErrorText error)
+        | 1 (spec : ChainSpec) =>
+          executionWith SubDags (codecList SubDag SubDags seqSubDagOps subDagCodec) subdagsRaw (fun (subdags : SubDags) =>
+          executionWith Batches (codecList Batch Batches seqBatchOps batchCodec) bodiesRaw (fun (bodies : Batches) =>
+            driverPipelineFold (driverCreate spec committee) subdags bodies sealed)))

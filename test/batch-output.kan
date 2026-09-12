@@ -1,0 +1,50 @@
+def rec batchOutputTestLookup : Batches -> BatchDigest -> ValueOption Batch :=
+  fun (values : Batches) (digest : BatchDigest) => match values as self in Batches return ValueOption Batch with
+  | batchesNil => valueNone Batch
+  | batchesCons head tail => case (batchDigestEqual (batchDigest head) digest) with
+    | 1 (unit : prod ()) => valueSome Batch head
+    | 0 (unit : prod ()) => batchOutputTestLookup tail digest
+def batchOutputTestAddress : Bytes -> AuthorityId -> ValueOption Address :=
+  fun (missing : Bytes) (id : AuthorityId) => case (authorityIdEqual id (authorityIdValue missing)) with
+    | 1 (unit : prod ()) => valueNone Address
+    | 0 (unit : prod ()) => valueSome Address (addressValue (take 20 (authorityIdBytes id)))
+def batchOutputTestWith : Bytes -> Bytes -> Bytes -> (BatchOutput -> Bytes) -> Bytes :=
+  fun (raw : Bytes) (bodies : Bytes) (missing : Bytes) (done : BatchOutput -> Bytes) =>
+    case (codecDecode ConsensusBlock consensusBlockCodec raw) with
+    | 0 (error : BcsError) => append b"fixture:" (bcsErrorText error)
+    | 1 (block : prod (ConsensusBlock, BcsReader)) =>
+      case (codecDecode Batches (codecList Batch Batches seqBatchOps batchCodec) bodies) with
+      | 0 (error : BcsError) => append b"fixture:" (bcsErrorText error)
+      | 1 (decoded : prod (Batches, BcsReader)) => case (batchOutputAttach block.0 (batchOutputTestLookup decoded.0) (batchOutputTestAddress missing)) with
+        | 0 (error : BatchOutputError) => append b"error:" (batchOutputErrorText error)
+        | 1 (output : BatchOutput) => done output
+def rec batchOutputTestFlatText : OutputFlatBatches -> Bytes :=
+  fun (values : OutputFlatBatches) => match values as self in OutputFlatBatches return Bytes with
+  | outputFlatBatchesNil => emptyBytes
+  | outputFlatBatchesCons head tail => (append (append (bytesHex (batchDigestBytes head.0)) (append b":" (append (bytesHex (addressBytes head.1)) (append b":" (bytesHex (batchPreimage head.2)))))) (append b";" (batchOutputTestFlatText tail)))
+def batchOutputTestDescribe : BatchOutput -> Bytes := fun (output : BatchOutput) => (append (bytesHex (outputDigestBytes (batchOutputDigest output))) (append b"|" (append (bytesHex (addressBytes (batchOutputLeaderAddress output))) (append b"|" (append (decimal64 (epochNat (batchOutputLeaderEpoch output))) (append b"|" (append (decimal64 (timestampNat (batchOutputCommittedAt output))) (append b"|" (append (decimal64 (sequenceBits (batchOutputNonce output))) (append b"|" (batchOutputTestFlatText (batchOutputFlat output))))))))))))
+def batchOutputTestAttach : Bytes -> Bytes -> Bytes -> Bytes :=
+  fun (raw : Bytes) (bodies : Bytes) (missing : Bytes) => batchOutputTestWith raw bodies missing batchOutputTestDescribe
+def batchOutputTestSpecText : BlockPlanSpec -> Bytes := fun (spec : BlockPlanSpec) => (append (bytesHex (batchDigestBytes (blockPlanSpecBatchDigest spec))) (append b":" (append (bytesHex (addressBytes (blockPlanSpecBeneficiary spec))) (append b":" (append (decimal64 (blockPlanSpecGasLimit spec)) (append b":" (append (decimal64 (baseFeeNat (blockPlanSpecBaseFee spec))) (append b":" (append (bytesHex (blockPlanSpecMixHash spec)) (append b":" (append (bytesHex (u256ToBeBytes (evmBatchPositionWord (blockPlanSpecPosition spec)))) (append b":" (append (decimal64 (sequenceBits (blockPlanSpecNonce spec))) (append b":" (append (bytesHex (outputDigestBytes (blockPlanSpecConsensusRoot spec))) (append b":" (append (decimal64 (timestampNat (blockPlanSpecTimestamp spec))) (append b":" (decimal64 (boolNat (blockPlanSpecClosesEpoch spec)))))))))))))))))))))
+def rec batchOutputTestSpecsText : BlockPlanSpecs -> Bytes := fun (values : BlockPlanSpecs) =>
+  match values as self in BlockPlanSpecs return Bytes with
+  | blockPlanSpecsNil => emptyBytes
+  | blockPlanSpecsCons head tail => append (batchOutputTestSpecText head) (append b";" (batchOutputTestSpecsText tail))
+def batchOutputTestPlanText : Bool -> BatchOutput -> Bytes := fun (closing : Bool) (output : BatchOutput) =>
+  case (blockPlan output closing) with
+  | 0 (error : BlockPlanError) => append b"error:" (blockPlanErrorText error)
+  | 1 (plan : BlockPlan) => match plan as self in BlockPlan return Bytes with
+    | blockPlanSkip => b"skip"
+    | blockPlanCloseBlock spec => append b"close:" (append (bytesHex (addressBytes (blockCloseSpecBeneficiary spec))) (append b":" (append (bytesHex (blockCloseSpecMixHash spec)) (append b":" (append (bytesHex (outputDigestBytes (blockCloseSpecConsensusRoot spec))) (append b":" (append (decimal64 (sequenceBits (blockCloseSpecNonce spec))) (append b":" (decimal64 (timestampNat (blockCloseSpecTimestamp spec)))))))))))
+    | blockPlanBatchBlocks specs => append b"batches:" (batchOutputTestSpecsText (nonemptyToList BlockPlanSpec BlockPlanSpecs seqBlockPlanSpecOps specs))
+def batchOutputTestPlan : Bytes -> Bytes -> Bytes -> Nat -> Bytes :=
+  fun (raw : Bytes) (bodies : Bytes) (missing : Bytes) (closing : Nat) =>
+    batchOutputTestWith raw bodies missing (batchOutputTestPlanText (natEq closing 1))
+def rec batchOutputTestPayloadText : TxEnvelopes -> Bytes := fun (values : TxEnvelopes) =>
+  match values as self in TxEnvelopes return Bytes with
+  | txEnvelopesNil => emptyBytes
+  | txEnvelopesCons head tail => append (bytesHex (txEnvelopeEncode2718 head)) (append b";" (batchOutputTestPayloadText tail))
+def batchOutputTestPayload : Bytes -> Bytes := fun (raw : Bytes) =>
+  case (codecDecode Batch batchCodec raw) with
+  | 0 (error : BcsError) => append b"fixture:" (bcsErrorText error)
+  | 1 (batch : prod (Batch, BcsReader)) => append b"payload:" (batchOutputTestPayloadText (batchPayloadExecutableTxs batch.0))

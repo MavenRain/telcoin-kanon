@@ -1,0 +1,111 @@
+def frameSubAt : Bytes -> HostInt -> HostInt -> Bytes := fun (buf : Bytes) (offset : HostInt) (length : HostInt) =>
+  let bound : Nat := bytesLength buf in
+  let start : Nat := minNat (hostIntClampZero offset) bound in
+  let limit : HostInt := hostIntAdd offset (hostIntPositive (hostIntClampZero length)) in
+  let stop : Nat := minNat (maxNat start (hostIntClampZero limit)) bound in
+  take (natSub stop start) (drop buf start)
+def rec frameUintScan : Bytes -> HostInt -> HostInt := fun (bytes : Bytes) (acc : HostInt) =>
+  match bytes as self in Bytes return HostInt with
+  | bytesNil => acc
+  | bytesCons head tail => frameUintScan tail (hostIntAdd (hostIntMul acc (hostIntPositive 256)) (hostIntPositive head))
+def frameUintAt : Bytes -> HostInt -> Nat -> HostInt := fun (buf : Bytes) (offset : HostInt) (width : Nat) =>
+  frameUintScan (frameSubAt buf offset (hostIntPositive width)) (hostIntPositive 0)
+def frameTag8 : Bytes -> Bytes := fun (bytes : Bytes) => take 8 (blake2b512 bytes)
+def frameKindByte : FrameKind -> Nat := fun (kind : FrameKind) => match kind as self in FrameKind return Nat with
+  | frameRecord => 1 | frameEpochOpen => 2
+def frameKindOfByte : HostInt -> ValueOption FrameKind := fun (byte : HostInt) =>
+  case (hostIntEqual byte (hostIntPositive 1)) with
+  | 1 (unit : prod ()) => valueSome FrameKind frameRecord
+  | 0 (unit : prod ()) => case (hostIntEqual byte (hostIntPositive 2)) with
+    | 1 (unit : prod ()) => valueSome FrameKind frameEpochOpen
+    | 0 (unit : prod ()) => valueNone FrameKind
+def frameHeadBytes : FrameKind -> HostInt -> Nat -> Bytes := fun (kind : FrameKind) (seq : HostInt) (length : Nat) =>
+  append (reverse (bcsEncodeU32 length)) (append (bytesCons (frameKindByte kind) (bytesCons 0 (bytesCons 0 (bytesCons 0 bytesNil))))
+    (reverse (bcsEncodeU64 (hostIntBits seq))))
+def frameEncode : FrameKind -> HostInt -> Bytes -> Bytes := fun (kind : FrameKind) (seq : HostInt) (payload : Bytes) =>
+  let length : Nat := bytesLength payload in
+  let prefix : Bytes := frameHeadBytes kind seq length in
+  append prefix (append (frameTag8 prefix) (append payload (append (frameTag8 payload) (append (reverse (bcsEncodeU32 length)) b"TNCE"))))
+def frameReadHeadTag : Bytes -> HostInt -> FrameHead -> sum (FrameBad, FrameHead) := fun (buf : Bytes) (at : HostInt) (head : FrameHead) =>
+  let stored : Bytes := frameSubAt buf (hostIntAdd at (hostIntPositive 16)) (hostIntPositive 8) in
+  let computed : Bytes := frameTag8 (frameSubAt buf at (hostIntPositive 16)) in
+  case (bytesEqual stored computed) with
+  | 0 (unit : prod ()) => inj 0 of 2 (frameBadHeadTag at)
+  | 1 (unit : prod ()) => inj 1 of 2 head
+def frameReadHead : Bytes -> HostInt -> sum (FrameBad, FrameHead) := fun (buf : Bytes) (at : HostInt) =>
+  let have : HostInt := hostIntSub (hostIntPositive (bytesLength buf)) at in
+  let length : HostInt := frameUintAt buf at 4 in
+  case (natEq (hostIntLess have (hostIntPositive 24)) 1) with
+  | 1 (unit : prod ()) => inj 0 of 2 (frameShort at (hostIntPositive (hostIntClampZero have)) (hostIntPositive 24))
+  | 0 (unit : prod ()) => case (natEq (hostIntLess length (hostIntPositive 1)) 1) with
+    | 1 (unit : prod ()) => inj 0 of 2 (frameOversize at length (hostIntPositive frameMaxPayload))
+    | 0 (unit : prod ()) => case (natEq (hostIntLess (hostIntPositive frameMaxPayload) length) 1) with
+      | 1 (unit : prod ()) => inj 0 of 2 (frameOversize at length (hostIntPositive frameMaxPayload))
+      | 0 (unit : prod ()) =>
+        let byte : HostInt := frameUintAt buf (hostIntAdd at (hostIntPositive 4)) 1 in
+        case (frameKindOfByte byte) with
+        | 0 (unit : prod ()) => inj 0 of 2 (frameBadKind at byte)
+        | 1 (kind : FrameKind) => frameReadHeadTag buf at (tuple (kind, frameUintAt buf (hostIntAdd at (hostIntPositive 8)) 8, length))
+def frameReadTrailer : Bytes -> HostInt -> FrameHead -> Bytes -> HostInt -> sum (FrameBad, prod (Bytes, HostInt)) :=
+  fun (buf : Bytes) (at : HostInt) (head : FrameHead) (payload : Bytes) (trailerAt : HostInt) =>
+    let stored : Bytes := frameSubAt buf trailerAt (hostIntPositive 8) in
+    case (bytesEqual stored (frameTag8 payload)) with
+    | 0 (unit : prod ()) => inj 0 of 2 (frameBadBodyTag at)
+    | 1 (unit : prod ()) =>
+      let echo : HostInt := frameUintAt buf (hostIntAdd trailerAt (hostIntPositive 8)) 4 in
+      case (hostIntEqual echo head.2) with
+      | 0 (unit : prod ()) => inj 0 of 2 (frameLengthDisagrees at head.2 echo)
+      | 1 (unit : prod ()) =>
+        case (bytesEqual (frameSubAt buf (hostIntAdd trailerAt (hostIntPositive 12)) (hostIntPositive 4)) b"TNCE") with
+        | 0 (unit : prod ()) => inj 0 of 2 (frameMissingEndMagic at)
+        | 1 (unit : prod ()) => inj 1 of 2 (tuple (payload, hostIntAdd at (frameSize head.2)))
+def frameReadBody : Bytes -> HostInt -> FrameHead -> sum (FrameBad, prod (Bytes, HostInt)) := fun (buf : Bytes) (at : HostInt) (head : FrameHead) =>
+  let total : HostInt := frameSize head.2 in
+  let have : HostInt := hostIntSub (hostIntPositive (bytesLength buf)) at in
+  case (natEq (hostIntLess have total) 1) with
+  | 1 (unit : prod ()) => inj 0 of 2 (frameShort at (hostIntPositive (hostIntClampZero have)) total)
+  | 0 (unit : prod ()) =>
+    let payloadAt : HostInt := hostIntAdd at (hostIntPositive 24) in
+    frameReadTrailer buf at head (frameSubAt buf payloadAt head.2) (hostIntAdd payloadAt head.2)
+def FrameDecoded : Type 0 := prod (FrameHead, Bytes, HostInt)
+def frameWholeAt : Bytes -> HostInt -> sum (FrameBad, FrameDecoded) := fun (buf : Bytes) (at : HostInt) =>
+  case (frameReadHead buf at) with
+  | 0 (bad : FrameBad) => inj 0 of 2 bad
+  | 1 (head : FrameHead) => case (frameReadBody buf at head) with
+    | 0 (bad : FrameBad) => inj 0 of 2 bad
+    | 1 (body : prod (Bytes, HostInt)) => inj 1 of 2 (tuple (head, body.0, body.1))
+def frameDecodeAt : Bytes -> HostInt -> HostInt -> sum (FrameBad, FrameDecoded) := fun (buf : Bytes) (at : HostInt) (expected : HostInt) =>
+  case (frameWholeAt buf at) with
+  | 0 (bad : FrameBad) => inj 0 of 2 bad
+  | 1 (decoded : FrameDecoded) => case (hostIntEqual decoded.0.1 expected) with
+    | 0 (unit : prod ()) => inj 0 of 2 (frameSeqOutOfOrder at expected decoded.0.1)
+    | 1 (unit : prod ()) => inj 1 of 2 decoded
+def rec frameNextGoodScan : Bytes -> Bytes -> Nat -> HostInt -> ValueOption Nat :=
+  fun (remaining : Bytes) (buf : Bytes) (at : Nat) (minimum : HostInt) =>
+    match remaining as self in Bytes return ValueOption Nat with
+    | bytesNil => valueNone Nat
+    | bytesCons head tail => case (frameWholeAt buf (hostIntPositive at)) with
+      | 0 (bad : FrameBad) => frameNextGoodScan tail buf (natAdd at 1) minimum
+      | 1 (decoded : FrameDecoded) => case (natEq (hostIntLess decoded.0.1 minimum) 1) with
+        | 1 (unit : prod ()) => frameNextGoodScan tail buf (natAdd at 1) minimum
+        | 0 (unit : prod ()) => valueSome Nat at
+def FrameScan : Type 0 := prod (FrameEntries, FrameStop)
+def frameScanError : Bytes -> HostInt -> HostInt -> FrameEntries -> FrameBad -> FrameScan :=
+  fun (buf : Bytes) (at : HostInt) (expected : HostInt) (acc : FrameEntries) (bad : FrameBad) =>
+    let position : Nat := hostIntClampZero at in
+    let stop : FrameStop := case (frameNextGoodScan (drop buf position) buf position expected) with
+      | 0 (unit : prod ()) => frameTorn at bad
+      | 1 (next : Nat) => frameCorrupt at bad (hostIntPositive next)
+    in tuple (seqFrameEntryReverse acc, stop)
+def rec frameScanWalk : Bytes -> Bytes -> HostInt -> HostInt -> FrameEntries -> FrameScan :=
+  fun (fuel : Bytes) (buf : Bytes) (at : HostInt) (expected : HostInt) (acc : FrameEntries) =>
+    match fuel as self in Bytes return FrameScan with
+    | bytesNil => tuple (seqFrameEntryReverse acc, frameClean at)
+    | bytesCons head tail => case (natEq (hostIntLess at (hostIntPositive (bytesLength buf))) 1) with
+      | 0 (unit : prod ()) => tuple (seqFrameEntryReverse acc, frameClean at)
+      | 1 (unit : prod ()) => case (frameDecodeAt buf at expected) with
+        | 0 (bad : FrameBad) => frameScanError buf at expected acc bad
+        | 1 (decoded : FrameDecoded) => frameScanWalk tail buf decoded.2 (hostIntAdd expected (hostIntPositive 1))
+            (frameEntriesCons (tuple (decoded.0, decoded.1)) acc)
+def frameScan : Bytes -> HostInt -> FrameScan := fun (buf : Bytes) (from : HostInt) =>
+  frameScanWalk buf buf (hostIntPositive (hostIntClampZero from)) (hostIntPositive 0) frameEntriesNil

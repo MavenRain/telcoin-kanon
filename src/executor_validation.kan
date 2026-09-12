@@ -1,0 +1,75 @@
+def executorEffectiveAccessList : Transaction -> TxAccessEntries := fun (tx : Transaction) => match (transactionFee tx) as self in TransactionFee return TxAccessEntries with
+  | transactionLegacyFee price => txAccessEntriesNil
+  | transactionAccessFee price => transactionAccessList tx
+  | transactionDynamicFee maximum priority => transactionAccessList tx
+  | transactionSetCodeFee maximum priority target authorizations => transactionAccessList tx
+def executorInitialGas : Transaction -> HostInt := fun (tx : Transaction) =>
+  let kind : IntrinsicKind := match (transactionKind tx) as self in TransactionKind return IntrinsicKind with
+    | transactionCall target => intrinsicCall | transactionCreate => intrinsicCreate
+  in intrinsicInitialGas kind (transactionData tx) (executorEffectiveAccessList tx) (seqSignedAuthorizationLength (transactionAuthorizations tx))
+def executorFloorGas : EvmBlock -> Transaction -> HostInt := fun (block : EvmBlock) (tx : Transaction) =>
+  case (evmSpecEnabled (evmBlockSpec block) evmPrague) with
+  | 0 (unit : prod ()) => hostIntPositive 0 | 1 (unit : prod ()) => intrinsicFloorGas (transactionData tx)
+def executorValidateChain : EvmBlock -> Transaction -> ValueOption ExecutorError := fun (block : EvmBlock) (tx : Transaction) =>
+  case (transactionChainId tx) with
+  | 1 (chainId : U256) => executorRequire (u256Equal chainId (evmBlockChainId block)) executorInvalidChainId
+  | 0 (unit : prod ()) => match (transactionFee tx) as self in TransactionFee return ValueOption ExecutorError with
+    | transactionLegacyFee price => valueNone ExecutorError
+    | transactionAccessFee price => valueSome ExecutorError executorMissingChainId
+    | transactionDynamicFee maximum priority => valueSome ExecutorError executorMissingChainId
+    | transactionSetCodeFee maximum priority target authorizations => valueSome ExecutorError executorMissingChainId
+def executorValidateBaseFee : U256 -> U256 -> ValueOption ExecutorError := fun (price : U256) (baseFee : U256) =>
+  executorRequire (boolNot (natLt (u256Nat price) (u256Nat baseFee))) executorGasPriceBelowBaseFee
+def executorValidatePriority : U256 -> U256 -> U256 -> ValueOption ExecutorError := fun (maximum : U256) (priority : U256) (baseFee : U256) =>
+  case (natLt (u256Nat maximum) (u256Nat priority)) with
+  | 1 (unit : prod ()) => valueSome ExecutorError executorPriorityFeeAboveMaxFee
+  | 0 (unit : prod ()) => executorValidateBaseFee maximum baseFee
+def executorValidateFee : EvmBlock -> Transaction -> ValueOption ExecutorError := fun (block : EvmBlock) (tx : Transaction) =>
+  let baseFee : U256 := evmBlockBasefee block in
+  match (transactionFee tx) as self in TransactionFee return ValueOption ExecutorError with
+  | transactionLegacyFee price => executorValidateBaseFee price baseFee
+  | transactionAccessFee price => executorValidateBaseFee price baseFee
+  | transactionDynamicFee maximum priority => (case priority with
+    | 0 (unit : prod ()) => executorValidateBaseFee maximum baseFee
+    | 1 (value : U256) => executorValidatePriority maximum value baseFee)
+  | transactionSetCodeFee maximum priority target authorizations => case (evmSpecEnabled (evmBlockSpec block) evmPrague) with
+    | 0 (unit : prod ()) => valueSome ExecutorError executorEip7702NotActivated
+    | 1 (unit : prod ()) => case (executorValidatePriority maximum priority baseFee) with
+      | 1 (error : ExecutorError) => valueSome ExecutorError error
+      | 0 (unit : prod ()) => executorRequire (natLt 0 (seqSignedAuthorizationLength authorizations)) executorEmptyAuthorizationList
+def executorValidateInitcode : Transaction -> ValueOption ExecutorError := fun (tx : Transaction) => match (transactionKind tx) as self in TransactionKind return ValueOption ExecutorError with
+  | transactionCall target => valueNone ExecutorError
+  | transactionCreate => executorRequire (boolNot (natLt bytecodeMaxInitcodeSize (bytesLength (transactionData tx)))) executorInitCodeSizeLimit
+def executorValidatePayment : WorldState -> Transaction -> ValueOption ExecutorError := fun (world : WorldState) (tx : Transaction) =>
+  case (executorMulChecked (executorWordOfInt (transactionGasLimit tx)) (transactionMaxFeePerGas tx)) with
+  | 0 (unit : prod ()) => valueSome ExecutorError executorOverflowPayment
+  | 1 (product : U256) => case (u256CheckedAdd product (transactionValue tx)) with
+    | 0 (unit : prod ()) => valueSome ExecutorError executorOverflowPayment
+    | 1 (maximum : U256) => executorRequire
+        (boolNot (natLt (u256Nat (worldStateBalance world (transactionSender tx))) (u256Nat maximum))) executorInsufficientFunds
+def executorValidateNonce : WorldState -> Transaction -> ValueOption ExecutorError := fun (world : WorldState) (tx : Transaction) =>
+  let expected : Nonce := worldStateNonce world (transactionSender tx) in
+  case (nonceEqual (transactionNonce tx) expected) with
+  | 0 (unit : prod ()) => valueSome ExecutorError (executorNonceMismatch expected (transactionNonce tx))
+  | 1 (unit : prod ()) => executorValidatePayment world tx
+def executorValidateSender : WorldState -> Transaction -> ValueOption ExecutorError := fun (world : WorldState) (tx : Transaction) =>
+  match (accountCodeClass (worldStateAccount world (transactionSender tx))) as self in CodeClass return ValueOption ExecutorError with
+  | codeContract => valueSome ExecutorError executorSenderHasCode
+  | codeUndecodable error => valueSome ExecutorError executorSenderHasCode
+  | codeCodeless => executorValidateNonce world tx
+  | codeDelegated delegation => executorValidateNonce world tx
+def executorValidate : WorldState -> EvmBlock -> Transaction -> HostInt -> HostInt -> ValueOption ExecutorError :=
+  fun (world : WorldState) (block : EvmBlock) (tx : Transaction) (initialGas : HostInt) (floorGas : HostInt) =>
+  case (executorValidateChain block tx) with
+  | 1 (error : ExecutorError) => valueSome ExecutorError error | 0 (unit : prod ()) =>
+  case (executorValidateFee block tx) with
+  | 1 (error : ExecutorError) => valueSome ExecutorError error | 0 (unit : prod ()) =>
+  case (natLt (u256Nat (evmBlockGasLimit block)) (u256Nat (executorWordOfInt (transactionGasLimit tx)))) with
+  | 1 (unit : prod ()) => valueSome ExecutorError executorGasLimitAboveBlock | 0 (unit : prod ()) =>
+  case (executorValidateInitcode tx) with
+  | 1 (error : ExecutorError) => valueSome ExecutorError error | 0 (unit : prod ()) =>
+  case (executorIntLess (transactionGasLimit tx) initialGas) with
+  | 1 (unit : prod ()) => valueSome ExecutorError executorIntrinsicGasAboveLimit | 0 (unit : prod ()) =>
+  case (executorIntLess (transactionGasLimit tx) floorGas) with
+  | 1 (unit : prod ()) => valueSome ExecutorError executorGasFloorAboveLimit | 0 (unit : prod ()) =>
+  executorValidateSender world tx

@@ -1,0 +1,66 @@
+mu ExecutionEngineError : Type 0 :=
+  | executionEpochSealed : ExecutionEngineError
+  | executionBoundaryNotAdvanced (closedAt : Timestamp) (proposed : Timestamp) : ExecutionEngineError
+  | executionPlanError (error : BlockPlanError) : ExecutionEngineError
+  | executionWithdrawalsError (error : RewardsCounterError) : ExecutionEngineError
+  | executionContextError (number : HostInt) (error : BlockContextError) : ExecutionEngineError
+  | executionBlockError (number : HostInt) (error : BlockExecutionError) : ExecutionEngineError
+  | executionAssemblyError (number : HostInt) (error : BlockHeaderError) : ExecutionEngineError
+def executionEngineErrorText : ExecutionEngineError -> Bytes := fun (error : ExecutionEngineError) =>
+  match error as self in ExecutionEngineError return Bytes with
+  | executionEpochSealed => b"epoch sealed: the closing block is built and the next committee has not been installed"
+  | executionBoundaryNotAdvanced closedAt proposed =>
+      append b"epoch boundary " (append (decimal64 (timestampNat proposed))
+        (append b" does not advance past the timestamp " (append (decimal64 (timestampNat closedAt)) b" at which the last epoch closed")))
+  | executionPlanError cause => append b"block plan: " (blockPlanErrorText cause)
+  | executionWithdrawalsError cause => append b"withdrawals: " (rewardsCounterErrorText cause)
+  | executionContextError number cause => append b"block " (append (blockExecutionIntText number) (append b" context: " (blockContextErrorText cause)))
+  | executionBlockError number cause => append b"block " (append (blockExecutionIntText number) (append b" execution: " (blockExecutionErrorText cause)))
+  | executionAssemblyError number cause => append b"block " (append (blockExecutionIntText number) (append b" header: " (blockHeaderErrorText cause)))
+def ExecutionEngineResult : Type 0 -> Type 0 := fun (A : Type 0) => sum (ExecutionEngineError, A)
+mu ExecutionPhase : Type 0 :=
+  | executionRunning (boundary : Timestamp) (committee : Committee) : ExecutionPhase
+  | executionSealed (closedAt : Timestamp) (committee : Committee) : ExecutionPhase
+def executionPhaseCommittee : ExecutionPhase -> Committee := fun (phase : ExecutionPhase) =>
+  match phase as self in ExecutionPhase return Committee with
+  | executionRunning boundary committee => committee
+  | executionSealed closedAt committee => committee
+def executionPhaseFrontier : ExecutionPhase -> Timestamp := fun (phase : ExecutionPhase) =>
+  match phase as self in ExecutionPhase return Timestamp with
+  | executionRunning boundary committee => boundary
+  | executionSealed closedAt committee => closedAt
+def executionPhaseIsSealed : ExecutionPhase -> Bool := fun (phase : ExecutionPhase) =>
+  match phase as self in ExecutionPhase return Bool with
+  | executionRunning boundary committee => inj 0 of 2 (tuple ())
+  | executionSealed closedAt committee => inj 1 of 2 (tuple ())
+def ExecutionEngine : Type 0 := prod (ExecutionConfig, ExecutionAnchor, ValueOption ExecutedBlock, WorldState, RecentHashes, RewardsCounter, ExecutionPhase)
+def executionEngineConfig : ExecutionEngine -> ExecutionConfig := fun (value : ExecutionEngine) => value.0
+def executionEngineAnchor : ExecutionEngine -> ExecutionAnchor := fun (value : ExecutionEngine) => value.1
+def executionEngineTip : ExecutionEngine -> ValueOption ExecutedBlock := fun (value : ExecutionEngine) => value.2
+def executionEngineWorld : ExecutionEngine -> WorldState := fun (value : ExecutionEngine) => value.3
+def executionEngineRecentHashes : ExecutionEngine -> RecentHashes := fun (value : ExecutionEngine) => value.4
+def executionEngineRewards : ExecutionEngine -> RewardsCounter := fun (value : ExecutionEngine) => value.5
+def executionEnginePhase : ExecutionEngine -> ExecutionPhase := fun (value : ExecutionEngine) => value.6
+def ExecutionPersisted : Type 0 := prod (ExecutionAnchor, WorldState, RecentHashes, RewardsCounter, ExecutionPhase)
+def executionPersistedAnchor : ExecutionPersisted -> ExecutionAnchor := fun (value : ExecutionPersisted) => value.0
+def executionPersistedWorld : ExecutionPersisted -> WorldState := fun (value : ExecutionPersisted) => value.1
+def executionPersistedHashes : ExecutionPersisted -> RecentHashes := fun (value : ExecutionPersisted) => value.2
+def executionPersistedRewards : ExecutionPersisted -> RewardsCounter := fun (value : ExecutionPersisted) => value.3
+def executionPersistedPhase : ExecutionPersisted -> ExecutionPhase := fun (value : ExecutionPersisted) => value.4
+def ExecutionBuilding : Type 0 := prod (ExecutionAnchor, WorldState, RecentHashes, ExecutedBlocks)
+def executionBuildingAnchor : ExecutionBuilding -> ExecutionAnchor := fun (value : ExecutionBuilding) => value.0
+def executionBuildingWorld : ExecutionBuilding -> WorldState := fun (value : ExecutionBuilding) => value.1
+def executionBuildingHashes : ExecutionBuilding -> RecentHashes := fun (value : ExecutionBuilding) => value.2
+def executionBuildingProduced : ExecutionBuilding -> ExecutedBlocks := fun (value : ExecutionBuilding) => value.3
+def ExecutionBuildSpec : Type 0 := prod (EpochBoundary, Address, Timestamp, Bytes, Nat, U256, OutputDigest, SequenceNumber, BatchDigest, EvmBatchPosition, TxEnvelopes)
+def executionBuildSpecBoundary : ExecutionBuildSpec -> EpochBoundary := fun (value : ExecutionBuildSpec) => value.0
+def executionBuildSpecBeneficiary : ExecutionBuildSpec -> Address := fun (value : ExecutionBuildSpec) => value.1
+def executionBuildSpecTimestamp : ExecutionBuildSpec -> Timestamp := fun (value : ExecutionBuildSpec) => value.2
+def executionBuildSpecMixHash : ExecutionBuildSpec -> Bytes := fun (value : ExecutionBuildSpec) => value.3
+def executionBuildSpecGasLimit : ExecutionBuildSpec -> Nat := fun (value : ExecutionBuildSpec) => value.4
+def executionBuildSpecBaseFee : ExecutionBuildSpec -> U256 := fun (value : ExecutionBuildSpec) => value.5
+def executionBuildSpecConsensusRoot : ExecutionBuildSpec -> OutputDigest := fun (value : ExecutionBuildSpec) => value.6
+def executionBuildSpecNonce : ExecutionBuildSpec -> SequenceNumber := fun (value : ExecutionBuildSpec) => value.7
+def executionBuildSpecBatchDigest : ExecutionBuildSpec -> BatchDigest := fun (value : ExecutionBuildSpec) => value.8
+def executionBuildSpecPosition : ExecutionBuildSpec -> EvmBatchPosition := fun (value : ExecutionBuildSpec) => value.9
+def executionBuildSpecTransactions : ExecutionBuildSpec -> TxEnvelopes := fun (value : ExecutionBuildSpec) => value.10

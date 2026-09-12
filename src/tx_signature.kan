@@ -1,0 +1,28 @@
+def TxSignature : Type 0 := prod (Bool, U256, U256)
+def txSignatureMake : Bool -> U256 -> U256 -> TxSignature := fun (parity : Bool) (r : U256) (s : U256) => tuple (parity, r, s)
+def txSignatureParity : TxSignature -> Bool := fun (signature : TxSignature) => signature.0
+def txSignatureR : TxSignature -> U256 := fun (signature : TxSignature) => signature.1
+def txSignatureS : TxSignature -> U256 := fun (signature : TxSignature) => signature.2
+def txSignatureToEip155 : Bool -> ValueOption U256 -> U256 := fun (parity : Bool) (chainId : ValueOption U256) =>
+  let bit : U256 := u256Value (choose parity 1 0) in
+  case chainId with
+  | 0 (unit : prod ()) => u256Add (u256Value 27) bit
+  | 1 (chain : U256) => u256Add (u256Add (u256Value 35) (u256Add chain chain)) bit
+def txSignatureOfEip155 : U256 -> ValueOption (prod (Bool, ValueOption U256)) := fun (value : U256) =>
+  let v : Nat := u256Nat value in
+  case (boolOr (natEq v 27) (natEq v 28)) with
+  | 1 (unit : prod ()) => valueSome (prod (Bool, ValueOption U256)) (tuple (natEq v 28, valueNone U256))
+  | 0 (unit : prod ()) => case (natLt v 35) with
+    | 1 (unit : prod ()) => valueNone (prod (Bool, ValueOption U256))
+    | 0 (unit : prod ()) =>
+      let divided : DivResult := divide256 (natSub v 35) 2 in
+      case (natLt (divQuotient divided) 18446744073709551616) with
+      | 0 (unit : prod ()) => valueNone (prod (Bool, ValueOption U256))
+      | 1 (unit : prod ()) => valueSome (prod (Bool, ValueOption U256))
+          (tuple (natEq (divRemainder divided) 1, valueSome U256 (u256Value (divQuotient divided))))
+
+def evmPublicKeyLength : Nat := 64
+def evmPublicKeyToAddress : Bytes -> ValueOption Address := fun (key : Bytes) =>
+  case (natEq (bytesLength key) evmPublicKeyLength) with
+  | 0 (unit : prod ()) => valueNone Address
+  | 1 (unit : prod ()) => addressOfBytes (drop (keccak256 key) 12)

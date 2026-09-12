@@ -1,0 +1,19 @@
+def batchPayloadCanonicalBytes : Bytes -> Bytes := fun (raw : Bytes) =>
+  match raw as self in Bytes return Bytes with
+  | bytesNil => raw
+  | bytesCons head tail => case (natEq head 0) with
+    | 1 (unit : prod ()) => tail
+    | 0 (unit : prod ()) => raw
+def batchPayloadExecutable : Bytes -> ValueOption TxEnvelope := fun (raw : Bytes) =>
+  case (txShapeDecodeAndRecover raw) with
+  | 0 (error : TxShapeError) => inj 0 of 2 (tuple ())
+  | 1 (tx : TxShape) => case (txEnvelopeDecode2718 (batchPayloadCanonicalBytes raw)) with
+    | 0 (error : TxDecodeError) => inj 0 of 2 (tuple ())
+    | 1 (envelope : TxEnvelope) => inj 1 of 2 envelope
+def rec batchPayloadExecutableAcc : ByteStrings -> TxEnvelopes -> TxEnvelopes :=
+  fun (values : ByteStrings) (reversed : TxEnvelopes) => match values as self in ByteStrings return TxEnvelopes with
+    | byteStringsNil => seqTxEnvelopeReverse reversed
+    | byteStringsCons head tail => case (batchPayloadExecutable head) with
+      | 0 (unit : prod ()) => batchPayloadExecutableAcc tail reversed
+      | 1 (tx : TxEnvelope) => batchPayloadExecutableAcc tail (txEnvelopesCons tx reversed)
+def batchPayloadExecutableTxs : Batch -> TxEnvelopes := fun (batch : Batch) => batchPayloadExecutableAcc (batchTransactions batch) txEnvelopesNil

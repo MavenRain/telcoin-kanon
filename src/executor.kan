@@ -1,0 +1,55 @@
+def executorAppendAddresses : Addresses -> Addresses -> Addresses := fun (left : Addresses) (right : Addresses) => seqAddressRevAcc (seqAddressReverse left) right
+def executorPrecompileAddresses : EvmSpec -> Addresses := fun (spec : EvmSpec) =>
+  let tail : Addresses := case (evmSpecEnabled spec evmCancun) with
+    | 0 (unit : prod ()) => addressesNil
+    | 1 (unit : prod ()) => addressesCons (addressOfWord (u256Value 10)) addressesNil
+  in addressesCons (addressOfWord (u256Value 1)) (addressesCons (addressOfWord (u256Value 2))
+    (addressesCons (addressOfWord (u256Value 3)) (addressesCons (addressOfWord (u256Value 4))
+      (addressesCons (addressOfWord (u256Value 5)) (addressesCons (addressOfWord (u256Value 6))
+        (addressesCons (addressOfWord (u256Value 7)) (addressesCons (addressOfWord (u256Value 8))
+          (addressesCons (addressOfWord (u256Value 9)) tail))))))))
+def executorDeduct : WorldState -> Transaction -> U256 -> sum (ExecutorError, WorldState) := fun (world : WorldState) (tx : Transaction) (effective : U256) =>
+  let sender : Address := transactionSender tx in
+  case (accountDebit (worldStateAccount world sender) (u256Mul (executorWordOfInt (transactionGasLimit tx)) effective)) with
+  | 0 (unit : prod ()) => inj 0 of 2 executorInsufficientFunds
+  | 1 (debited : Account) =>
+    let account : Account := match (transactionKind tx) as self in TransactionKind return Account with
+      | transactionCreate => debited
+      | transactionCall target => case (accountIncrementNonceChecked debited) with
+        | 0 (unit : prod ()) => debited | 1 (bumped : Account) => bumped
+    in inj 1 of 2 (worldStateSetAccount world sender account)
+def executorWarmAddresses : WorldState -> EvmBlock -> Transaction -> EvmTx -> AuthList -> prod (Addresses, AddressSlots) :=
+  fun (world : WorldState) (block : EvmBlock) (tx : Transaction) (txEnv : EvmTx) (auth : AuthList) =>
+  let declared : prod (Addresses, AddressSlots) := evmTxDeclaredWarm txEnv in
+  let base : Addresses := addressesCons (transactionSender tx) (addressesCons (evmBlockCoinbase block)
+    (executorAppendAddresses (executorPrecompileAddresses (evmBlockSpec block))
+      (executorAppendAddresses declared.0 (authListWarmed auth)))) in
+  let addresses : Addresses := match (transactionKind tx) as self in TransactionKind return Addresses with
+    | transactionCreate => base
+    | transactionCall target => addressesCons target (case (accountDelegation (worldStateAccount world target)) with
+      | 0 (unit : prod ()) => base | 1 (delegate : Address) => addressesCons delegate base)
+  in tuple (addresses, declared.1)
+def executorExecute : WorldState -> EvmBlock -> Transaction -> ExecutorResult := fun (world : WorldState) (block : EvmBlock) (tx : Transaction) =>
+  let initialGas : HostInt := executorInitialGas tx in
+  let floorGas : HostInt := executorFloorGas block tx in
+  let effective : U256 := transactionEffectiveGasPrice tx (evmBlockBasefee block) in
+  case (executorValidate world block tx initialGas floorGas) with
+  | 1 (error : ExecutorError) => inj 0 of 2 error
+  | 0 (unit : prod ()) => case (executorDeduct world tx effective) with
+    | 0 (error : ExecutorError) => inj 0 of 2 error
+    | 1 (deducted : WorldState) =>
+      let auth : AuthList := authListApply deducted (evmBlockChainId block) (transactionAuthorizations tx) in
+      let checkpoint : WorldState := authListWorld auth in
+      let txEnv : EvmTx := evmTxMake (transactionSender tx) effective (executorEffectiveAccessList tx) in
+      let warm : prod (Addresses, AddressSlots) := executorWarmAddresses checkpoint block tx txEnv auth in
+      let effects : EvmEffects := effectsStart checkpoint (accessOfTransaction warm.0 warm.1) in
+      case (gasOfHostInt (hostIntSub (transactionGasLimit tx) initialGas)) with
+      | 0 (unit : prod ()) => inj 0 of 2 executorIntrinsicGasAboveLimit
+      | 1 (forwarded : Gas) =>
+        let outcome : ExecutorFrameOutcome := match (transactionKind tx) as self in TransactionKind return ExecutorFrameOutcome with
+          | transactionCall target => executorRunCall checkpoint block txEnv tx forwarded effects target
+          | transactionCreate => case (mutabilityPermit evmMutable) with
+            | 0 (unit : prod ()) => executorRanHalt checkpoint (receiptFrameHalt evmStaticStateChange)
+            | 1 (permit : MutabilityPermit) => executorRunCreate checkpoint block txEnv tx forwarded effects permit
+        in inj 1 of 2 (executorFinalize (transactionGasLimit tx) floorGas effective (evmBlockBasefee block)
+          (transactionSender tx) (evmBlockCoinbase block) (evmBlockBasefeeAddress block) (authListRefund auth) outcome)

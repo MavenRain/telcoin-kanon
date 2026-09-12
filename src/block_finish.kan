@@ -1,0 +1,17 @@
+-- Closing rewards come from the same withdrawals committed in the header.
+def rec blockExecutionRewardPairsAcc : Withdrawals -> RewardPairs -> RewardPairs :=
+  fun (withdrawals : Withdrawals) (reversed : RewardPairs) =>
+    match withdrawals as self in Withdrawals return RewardPairs with
+    | withdrawalsNil => seqRewardPairReverse reversed
+    | withdrawalsCons head tail => blockExecutionRewardPairsAcc tail
+      (rewardPairsCons (tuple (withdrawalAddress head, hostIntPositive (withdrawalAmount head))) reversed)
+def blockExecutionRewardPairs : Withdrawals -> RewardPairs := fun (withdrawals : Withdrawals) =>
+  blockExecutionRewardPairsAcc withdrawals rewardPairsNil
+def blockExecutionFinish : BlockExecutionOutcome -> BlockContext -> BlockExecutionResult BlockFinished :=
+  fun (outcome : BlockExecutionOutcome) (context : BlockContext) =>
+    match (blockContextBoundary context) as self in EpochBoundary return BlockExecutionResult BlockFinished with
+    | epochOpen => inj 1 of 2 (tuple (blockExecutionWorld outcome, outcome, valueNone EpochCloseDisposition))
+    | epochClosing randomness withdrawals => case (epochClose (blockExecutionWorld outcome)
+        (blockContextBlock context) (blockExecutionRewardPairs withdrawals) randomness) with
+      | 0 (error : EpochCloseError) => inj 0 of 2 (blockEpochClose error)
+      | 1 (closed : prod (WorldState, EpochCloseDisposition)) => inj 1 of 2 (tuple (closed.0, outcome, valueSome EpochCloseDisposition closed.1))

@@ -1,0 +1,14 @@
+def executorTestReceiptDetails : Receipt -> Bytes := fun (receipt : Receipt) =>
+  let payload : Bytes := match receipt as self in Receipt return Bytes with
+    | receiptSuccess output created used refunded logs => append (bytesHex output) (append b"|" (case created with
+      | 0 (unit : prod ()) => bytesNil | 1 (address : Address) => bytesHex (addressBytes address)))
+    | receiptReverted output used => append (bytesHex output) b"|"
+    | receiptHalted reason used => b"|"
+  in append payload (append b"|" (bytesHex (rlpEncodeListPayload (seqEvmLogWrite receiptEncodeLog (receiptLogs receipt)))))
+def executorTestRun : WorldState -> EvmBlock -> TxResult Transaction -> Bytes := fun (world : WorldState) (block : EvmBlock) (input : TxResult Transaction) =>
+  case input with | 0 (error : TxDecodeError) => append b"fixture:" (txDecodeErrorText error) | 1 (tx : Transaction) =>
+  let result : ExecutorResult := executorExecute world block tx in
+  case result with | 0 (error : ExecutorError) => append b"error:" (executorErrorText error)
+  | 1 (output : prod (Receipt, WorldState)) => append (executorTestResultText result) (append b"|" (executorTestReceiptDetails output.0))
+def executorTestCreatedAddress : Bytes -> Bytes -> Bytes := fun (sender : Bytes) (nonce : Bytes) =>
+  bytesHex (addressBytes (contractAddressDerive (executorTestAddress sender) (contractFromNonce (nonceValue (u256ReadBe nonce 0)))))

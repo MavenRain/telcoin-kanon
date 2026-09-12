@@ -16,6 +16,12 @@ def rlpEncodeBytes : Bytes -> Bytes := fun (bytes : Bytes) =>
 def rlpEncodeScalar : Bytes -> Bytes := fun (bytes : Bytes) => rlpEncodeBytes (rlpStripLeadingZeros bytes)
 def rlpEncodeNat : HostInt -> Bytes := fun (value : HostInt) => rlpEncodeBytes (rlpBigEndian value)
 def rlpEncodeListPayload : Bytes -> Bytes := fun (payload : Bytes) => append (rlpListHeader (bytesLength payload)) payload
+def rec rlpEncodedItemsAcc : ByteStrings -> Bytes -> Bytes := fun (values : ByteStrings) (reversed : Bytes) =>
+  match values as self in ByteStrings return Bytes with
+  | byteStringsNil => reverse reversed
+  | byteStringsCons head tail => rlpEncodedItemsAcc tail (reverseOnto head reversed)
+def rlpEncodeList : ByteStrings -> Bytes := fun (values : ByteStrings) =>
+  rlpEncodeListPayload (rlpEncodedItemsAcc values emptyBytes)
 def rlpString : Bytes -> RlpItem := fun (bytes : Bytes) => rlpItemValue (rlpEncodeBytes bytes)
 def rec rlpItemsPayload : RlpItems -> Bytes := fun (items : RlpItems) => match items as self in RlpItems return Bytes with
   | rlpItemsNil => bytesNil | rlpItemsCons head tail => append (rlpEncode head) (rlpItemsPayload tail)

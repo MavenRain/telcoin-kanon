@@ -1,0 +1,40 @@
+mu BlockPlan : Type 0 :=
+  | blockPlanSkip : BlockPlan
+  | blockPlanCloseBlock (spec : BlockCloseSpec) : BlockPlan
+  | blockPlanBatchBlocks (specs : Nonempty BlockPlanSpec BlockPlanSpecs) : BlockPlan
+def blockPlanMixHash : OutputDigest -> BatchDigest -> Bytes :=
+  fun (root : OutputDigest) (digest : BatchDigest) =>
+    u256ToBeBytes (u256Xor (u256Value (registryBeNat (outputDigestBytes root))) (u256Value (registryBeNat (batchDigestBytes digest))))
+def blockPlanSpecAt : BatchOutput -> Bool -> HostInt -> prod (BatchDigest, Address, Batch) -> BlockPlanResult BlockPlanSpec :=
+  fun (output : BatchOutput) (closing : Bool) (index : HostInt) (value : prod (BatchDigest, Address, Batch)) =>
+    case (evmBatchPositionOfBatch index (batchWorkerId (value.2))) with
+    | 0 (unit : prod ()) => inj 0 of 2 (blockPlanPositionOutOfRange index)
+    | 1 (position : EvmBatchPosition) => inj 1 of 2
+        (tuple (value.2, batchOutputLeaderEpoch output, value.0, value.1,
+          blockPlanMixHash (batchOutputDigest output) (value.0), position, batchOutputNonce output,
+          batchOutputDigest output, batchOutputCommittedAt output, closing))
+def blockPlanFlatEmpty : OutputFlatBatches -> Bool := fun (values : OutputFlatBatches) =>
+  match values as self in OutputFlatBatches return Bool with
+  | outputFlatBatchesNil => inj 1 of 2 (tuple ())
+  | outputFlatBatchesCons head tail => inj 0 of 2 (tuple ())
+def rec blockPlanSpecsAcc : OutputFlatBatches -> BatchOutput -> Bool -> HostInt -> BlockPlanSpecs -> BlockPlanResult BlockPlanSpecs :=
+  fun (values : OutputFlatBatches) (output : BatchOutput) (closing : Bool) (index : HostInt) (reversed : BlockPlanSpecs) =>
+    match values as self in OutputFlatBatches return BlockPlanResult BlockPlanSpecs with
+    | outputFlatBatchesNil => inj 1 of 2 (seqBlockPlanSpecReverse reversed)
+    | outputFlatBatchesCons head tail =>
+      case (blockPlanSpecAt output (boolAnd closing (blockPlanFlatEmpty tail)) index head) with
+      | 0 (error : BlockPlanError) => inj 0 of 2 error
+      | 1 (spec : BlockPlanSpec) => blockPlanSpecsAcc tail output closing (hostIntAdd index (hostIntFromBits 1)) (blockPlanSpecsCons spec reversed)
+def blockPlan : BatchOutput -> Bool -> BlockPlanResult BlockPlan :=
+  fun (output : BatchOutput) (closing : Bool) => match (batchOutputFlat output) as self in OutputFlatBatches return BlockPlanResult BlockPlan with
+    | outputFlatBatchesNil => (case closing with
+      | 0 (unit : prod ()) => inj 1 of 2 blockPlanSkip
+      | 1 (unit : prod ()) => inj 1 of 2 (blockPlanCloseBlock
+          (tuple (batchOutputLeaderAddress output, outputDigestBytes (batchOutputDigest output), batchOutputDigest output,
+            batchOutputNonce output, batchOutputCommittedAt output))))
+    | outputFlatBatchesCons head tail =>
+      case (blockPlanSpecAt output (boolAnd closing (blockPlanFlatEmpty tail)) (hostIntFromBits 0) head) with
+      | 0 (error : BlockPlanError) => inj 0 of 2 error
+      | 1 (first : BlockPlanSpec) => case (blockPlanSpecsAcc tail output closing (hostIntFromBits 1) blockPlanSpecsNil) with
+        | 0 (error : BlockPlanError) => inj 0 of 2 error
+        | 1 (rest : BlockPlanSpecs) => inj 1 of 2 (blockPlanBatchBlocks (tuple (first, rest)))

@@ -1,0 +1,59 @@
+def authTestWord : Bytes -> U256 := fun (bytes : Bytes) => u256Value (u256ReadBe bytes 0)
+def authTestParse : Bytes -> TxResult SignedAuthorization := fun (input : Bytes) => case (rlpDecodeExact input) with
+  | 0 (error : RlpError) => inj 0 of 2 (txRlpError error)
+  | 1 (item : RlpItem) => txReadSignedAuthorization item
+def authTestDescribe : Bytes -> Bytes := fun (input : Bytes) => case (authTestParse input) with
+  | 0 (error : TxDecodeError) => append b"error:" (txDecodeErrorText error)
+  | 1 (signature : SignedAuthorization) =>
+    let parity : Bytes := case (authorizationSignature signature) with
+      | 0 (unit : prod ()) => b"none" | 1 (sg : TxSignature) => decimal64 (choose (txSignatureParity sg) 1 0)
+    in append (bytesHex (authorizationEncode (authorizationUnsigned signature)))
+      (append b"|" (append (bytesHex (authorizationEncodeSigned signature))
+        (append b"|" (append (bytesHex (authorizationSignatureHash (authorizationUnsigned signature))) (append b"|" parity)))))
+def authTestMake : Bytes -> Bytes -> Bytes -> Bytes := fun (chain : Bytes) (target : Bytes) (nonce : Bytes) => case (addressOfBytes target) with
+  | 0 (unit : prod ()) => b"none"
+  | 1 (address : Address) => case (authorizationMake (authTestWord chain) address (authTestWord nonce)) with
+    | 0 (unit : prod ()) => b"none" | 1 (auth : Authorization) => bytesHex (authorizationEncode auth)
+def authTestScreen : Bytes -> Bytes -> Bytes := fun (chain : Bytes) (input : Bytes) => case (authTestParse input) with
+  | 0 (error : TxDecodeError) => append b"error:" (txDecodeErrorText error)
+  | 1 (signature : SignedAuthorization) => case (authorizationScreen (authTestWord chain) signature) with
+    | 0 (unit : prod ()) => b"none"
+    | 1 (screened : ScreenedAuthorization) => append (bytesHex (addressBytes (authorizationAuthority screened)))
+        (append b":" (append (bytesHex (u256ToBeBytes (authorizationScreenedNonce screened)))
+          (append b":" (bytesHex (delegationCodeOfAssignment (authorizationAssignment screened))))))
+def authTestWorld : Bytes -> Bytes -> Bytes -> Bytes -> Bytes -> WorldState := fun (rawAddress : Bytes) (rawNonce : Bytes) (rawBalance : Bytes) (code : Bytes) (slot : Bytes) =>
+  case (addressOfBytes rawAddress) with
+  | 0 (unit : prod ()) => worldStateEmpty
+  | 1 (address : Address) => case (nonceOfNat (u256ReadBe rawNonce 0)) with
+    | 0 (unit : prod ()) => worldStateEmpty
+    | 1 (nonce : Nonce) => worldStateSetAccount worldStateEmpty address
+        (accountSetSlot (accountWithCode (accountMake nonce (authTestWord rawBalance)) code) u256Zero (authTestWord slot))
+def authTestAccount : prod (Address, Account) -> Bytes := fun (entry : prod (Address, Account)) =>
+  append (bytesHex (addressBytes entry.0)) (append b":" (append (nonceText (accountNonce entry.1))
+    (append b":" (append (bytesHex (u256ToBeBytes (accountBalance entry.1))) (append b":"
+      (append (bytesHex (accountCode entry.1)) (append b":"
+        (append (bytesHex (u256ToBeBytes (storageGet (accountStorage entry.1) u256Zero))) b";"))))))))
+def authTestApply : WorldState -> Bytes -> Bytes -> Bytes := fun (world : WorldState) (chain : Bytes) (input : Bytes) =>
+  case (rlpDecodeExact input) with
+  | 0 (error : RlpError) => append b"error:" (rlpErrorText error)
+  | 1 (item : RlpItem) => case (txReadAuthorizations item) with
+    | 0 (error : TxDecodeError) => append b"error:" (txDecodeErrorText error)
+    | 1 (entries : SignedAuthorizations) =>
+      let result : AuthList := authListApply world (authTestWord chain) entries in
+      append (decimal64 (hostIntClampZero (authListRefund result))) (append b"|"
+        (append (seqAddressWrite (fun (address : Address) => append (bytesHex (addressBytes address)) b";") (authListWarmed result))
+          (append b"|" (append (seqAuthDispositionWrite (fun (disposition : AuthDisposition) => append (authDispositionText disposition) b";") (authListDispositions result))
+            (append b"|" (seqWorldAccountWrite authTestAccount (worldStateAccounts (authListWorld result))))))))
+def txRecoveryTest : Bytes -> Bytes := fun (input : Bytes) => case (txEnvelopeDecode2718 input) with
+  | 0 (error : TxDecodeError) => append b"error:" (txDecodeErrorText error)
+  | 1 (envelope : TxEnvelope) => case (txRecover envelope) with
+    | 0 (error : TxRecoveryError) => append b"error:" (txRecoveryErrorText error)
+    | 1 (tx : Transaction) =>
+      append (bytesHex (addressBytes (transactionSender tx))) (append b"|"
+        (append (nonceText (transactionNonce tx)) (append b"|"
+          (append (decimal64 (hostIntClampZero (transactionGasLimit tx))) (append b"|"
+            (append (bytesHex (txEncodeKind (transactionKind tx))) (append b"|"
+              (append (bytesHex (u256ToBeBytes (transactionValue tx))) (append b"|"
+                (append (bytesHex (transactionData tx)) (append b"|"
+                  (append (bytesHex (txEncodeAccessList (transactionAccessList tx))) (append b"|"
+                    (bytesHex (txEncodeAuthorizationList (transactionAuthorizations tx))))))))))))))))

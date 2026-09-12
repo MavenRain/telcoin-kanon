@@ -1,0 +1,31 @@
+mu TxDecodeError : Type 0 :=
+| txRlpError (error : RlpError) : TxDecodeError
+| txEmptyInput : TxDecodeError
+| txZeroTypeByte : TxDecodeError
+| txUnknownTypeByte (byte : Nat) : TxDecodeError
+| txOuterString : TxDecodeError
+| txUnexpectedString : TxDecodeError
+| txUnexpectedList : TxDecodeError
+| txFieldCount (expected : Nat) (got : Nat) : TxDecodeError
+| txLeadingZeroScalar : TxDecodeError
+| txScalarTooWide : TxDecodeError
+| txUnrepresentableScalar : TxDecodeError
+| txFixedWidth (expected : Nat) (got : Nat) : TxDecodeError
+| txInvalidBool : TxDecodeError
+| txInvalidParityValue : TxDecodeError
+def TxResult : Type 0 -> Type 0 := fun (A : Type 0) => sum (TxDecodeError, A)
+def txDecodeErrorText : TxDecodeError -> Bytes := fun (error : TxDecodeError) => match error as self in TxDecodeError return Bytes with
+  | txRlpError inner => append b"rlp: " (rlpErrorText inner)
+  | txEmptyInput => b"empty input"
+  | txZeroTypeByte => b"0x00-tagged legacy envelope (non-canonical framing)"
+  | txUnknownTypeByte byte => append b"unknown transaction type byte 0x" (bytesHex (consBytes byte bytesNil))
+  | txOuterString => b"envelope is an RLP string, not a list (non-canonical framing)"
+  | txUnexpectedString => b"byte string where a list was required"
+  | txUnexpectedList => b"list where a byte string was required"
+  | txFieldCount expected got => append b"expected " (append (decimal64 expected) (append b" fields, got " (decimal64 got)))
+  | txLeadingZeroScalar => b"integer field with a leading zero byte"
+  | txScalarTooWide => b"integer field wider than its type"
+  | txUnrepresentableScalar => b"u64 field above the native int range"
+  | txFixedWidth expected got => append b"expected a " (append (decimal64 expected) (append b"-byte string, got " (append (decimal64 got) b" bytes")))
+  | txInvalidBool => b"y_parity is neither 0x80 nor 0x01"
+  | txInvalidParityValue => b"invalid legacy v (parity value)"

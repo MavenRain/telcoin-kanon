@@ -1,0 +1,88 @@
+-- Read in wire order. Arity is checked after field errors, matching the source.
+def txReadLegacy : RlpItems -> TxResult TxEnvelope := fun (items : RlpItems) =>
+  let short : TxDecodeError := txFieldCount 9 (seqRlpItemLength items) in
+  txReadField Nonce TxEnvelope short txReadNonce items (fun (nonce : Nonce) (items : RlpItems) =>
+  txReadField U256 TxEnvelope short (txReadWord 16) items (fun (gasPrice : U256) (items : RlpItems) =>
+  txReadField HostInt TxEnvelope short txReadInt items (fun (gasLimit : HostInt) (items : RlpItems) =>
+  txReadField TransactionKind TxEnvelope short txReadKind items (fun (kind : TransactionKind) (items : RlpItems) =>
+  txReadField U256 TxEnvelope short (txReadWord 32) items (fun (value : U256) (items : RlpItems) =>
+  txReadField Bytes TxEnvelope short txReadBytes items (fun (data : Bytes) (items : RlpItems) =>
+  txReadField U256 TxEnvelope short (txReadWord 16) items (fun (v : U256) (items : RlpItems) =>
+  txReadField U256 TxEnvelope short (txReadWord 32) items (fun (r : U256) (items : RlpItems) =>
+  txReadField U256 TxEnvelope short (txReadWord 32) items (fun (s : U256) (items : RlpItems) =>
+  match items as remaining in RlpItems return TxResult TxEnvelope with
+  | rlpItemsCons head tail => inj 0 of 2 short
+  | rlpItemsNil => case (txSignatureOfEip155 v) with
+    | 0 (unit : prod ()) => inj 0 of 2 txInvalidParityValue
+    | 1 (decoded : prod (Bool, ValueOption U256)) => inj 1 of 2 (txEnvelopeMake
+        (txPayloadLegacy nonce gasPrice gasLimit kind value data decoded.1) (txSignatureMake decoded.0 r s)))))))))))
+def txReadEip2930 : RlpItems -> TxResult TxEnvelope := fun (items : RlpItems) =>
+  let short : TxDecodeError := txFieldCount 11 (seqRlpItemLength items) in
+  txReadField U256 TxEnvelope short (txReadWord 8) items (fun (chainId : U256) (items : RlpItems) =>
+  txReadField Nonce TxEnvelope short txReadNonce items (fun (nonce : Nonce) (items : RlpItems) =>
+  txReadField U256 TxEnvelope short (txReadWord 16) items (fun (gasPrice : U256) (items : RlpItems) =>
+  txReadField HostInt TxEnvelope short txReadInt items (fun (gasLimit : HostInt) (items : RlpItems) =>
+  txReadField TransactionKind TxEnvelope short txReadKind items (fun (kind : TransactionKind) (items : RlpItems) =>
+  txReadField U256 TxEnvelope short (txReadWord 32) items (fun (value : U256) (items : RlpItems) =>
+  txReadField Bytes TxEnvelope short txReadBytes items (fun (data : Bytes) (items : RlpItems) =>
+  txReadField TxAccessEntries TxEnvelope short txReadAccessList items (fun (accessList : TxAccessEntries) (items : RlpItems) =>
+  txReadField Bool TxEnvelope short txReadParity items (fun (parity : Bool) (items : RlpItems) =>
+  txReadField U256 TxEnvelope short (txReadWord 32) items (fun (r : U256) (items : RlpItems) =>
+  txReadField U256 TxEnvelope short (txReadWord 32) items (fun (s : U256) (items : RlpItems) =>
+  txReadFinish TxEnvelope short items (txEnvelopeMake
+    (txPayloadEip2930 chainId nonce gasPrice gasLimit kind value data accessList) (txSignatureMake parity r s)))))))))))))
+def txReadEip1559 : RlpItems -> TxResult TxEnvelope := fun (items : RlpItems) =>
+  let short : TxDecodeError := txFieldCount 12 (seqRlpItemLength items) in
+  txReadField U256 TxEnvelope short (txReadWord 8) items (fun (chainId : U256) (items : RlpItems) =>
+  txReadField Nonce TxEnvelope short txReadNonce items (fun (nonce : Nonce) (items : RlpItems) =>
+  txReadField U256 TxEnvelope short (txReadWord 16) items (fun (maxPriority : U256) (items : RlpItems) =>
+  txReadField U256 TxEnvelope short (txReadWord 16) items (fun (maxFee : U256) (items : RlpItems) =>
+  txReadField HostInt TxEnvelope short txReadInt items (fun (gasLimit : HostInt) (items : RlpItems) =>
+  txReadField TransactionKind TxEnvelope short txReadKind items (fun (kind : TransactionKind) (items : RlpItems) =>
+  txReadField U256 TxEnvelope short (txReadWord 32) items (fun (value : U256) (items : RlpItems) =>
+  txReadField Bytes TxEnvelope short txReadBytes items (fun (data : Bytes) (items : RlpItems) =>
+  txReadField TxAccessEntries TxEnvelope short txReadAccessList items (fun (accessList : TxAccessEntries) (items : RlpItems) =>
+  txReadField Bool TxEnvelope short txReadParity items (fun (parity : Bool) (items : RlpItems) =>
+  txReadField U256 TxEnvelope short (txReadWord 32) items (fun (r : U256) (items : RlpItems) =>
+  txReadField U256 TxEnvelope short (txReadWord 32) items (fun (s : U256) (items : RlpItems) =>
+  txReadFinish TxEnvelope short items (txEnvelopeMake
+    (txPayloadEip1559 chainId nonce maxPriority maxFee gasLimit kind value data accessList) (txSignatureMake parity r s))))))))))))))
+def txReadEip7702 : RlpItems -> TxResult TxEnvelope := fun (items : RlpItems) =>
+  let short : TxDecodeError := txFieldCount 13 (seqRlpItemLength items) in
+  txReadField U256 TxEnvelope short (txReadWord 8) items (fun (chainId : U256) (items : RlpItems) =>
+  txReadField Nonce TxEnvelope short txReadNonce items (fun (nonce : Nonce) (items : RlpItems) =>
+  txReadField U256 TxEnvelope short (txReadWord 16) items (fun (maxPriority : U256) (items : RlpItems) =>
+  txReadField U256 TxEnvelope short (txReadWord 16) items (fun (maxFee : U256) (items : RlpItems) =>
+  txReadField HostInt TxEnvelope short txReadInt items (fun (gasLimit : HostInt) (items : RlpItems) =>
+  txReadField Address TxEnvelope short txReadAddress items (fun (target : Address) (items : RlpItems) =>
+  txReadField U256 TxEnvelope short (txReadWord 32) items (fun (value : U256) (items : RlpItems) =>
+  txReadField Bytes TxEnvelope short txReadBytes items (fun (data : Bytes) (items : RlpItems) =>
+  txReadField TxAccessEntries TxEnvelope short txReadAccessList items (fun (accessList : TxAccessEntries) (items : RlpItems) =>
+  txReadField SignedAuthorizations TxEnvelope short txReadAuthorizations items (fun (authorizations : SignedAuthorizations) (items : RlpItems) =>
+  txReadField Bool TxEnvelope short txReadParity items (fun (parity : Bool) (items : RlpItems) =>
+  txReadField U256 TxEnvelope short (txReadWord 32) items (fun (r : U256) (items : RlpItems) =>
+  txReadField U256 TxEnvelope short (txReadWord 32) items (fun (s : U256) (items : RlpItems) =>
+  txReadFinish TxEnvelope short items (txEnvelopeMake
+    (txPayloadEip7702 chainId nonce maxPriority maxFee gasLimit target value data accessList authorizations) (txSignatureMake parity r s)))))))))))))))
+def txDecodeBody : Bytes -> (RlpItems -> TxResult TxEnvelope) -> TxResult TxEnvelope := fun (bytes : Bytes) (reader : RlpItems -> TxResult TxEnvelope) =>
+  case (rlpDecodeExact bytes) with
+  | 0 (error : RlpError) => inj 0 of 2 (txRlpError error)
+  | 1 (item : RlpItem) => case (rlpView item) with
+    | 0 (error : RlpError) => inj 0 of 2 (txRlpError error)
+    | 1 (view : sum (Bytes, RlpItems)) => case view with
+      | 0 (string : Bytes) => inj 0 of 2 txOuterString
+      | 1 (items : RlpItems) => reader items
+def txEnvelopeDecode2718 : Bytes -> TxResult TxEnvelope := fun (input : Bytes) =>
+  case (natEq (bytesLength input) 0) with
+  | 1 (unit : prod ()) => inj 0 of 2 txEmptyInput
+  | 0 (unit : prod ()) =>
+    let byte : Nat := rlpByteAt input 0 in
+    case (natLt 127 byte) with
+    | 1 (unit : prod ()) => txDecodeBody input txReadLegacy
+    | 0 (unit : prod ()) =>
+      let rest : Bytes := drop input 1 in
+      case (natEq byte 0) with | 1 (unit : prod ()) => inj 0 of 2 txZeroTypeByte | 0 (unit : prod ()) =>
+      case (natEq byte 1) with | 1 (unit : prod ()) => txDecodeBody rest txReadEip2930 | 0 (unit : prod ()) =>
+      case (natEq byte 2) with | 1 (unit : prod ()) => txDecodeBody rest txReadEip1559 | 0 (unit : prod ()) =>
+      case (natEq byte 4) with | 1 (unit : prod ()) => txDecodeBody rest txReadEip7702 | 0 (unit : prod ()) =>
+      inj 0 of 2 (txUnknownTypeByte byte)

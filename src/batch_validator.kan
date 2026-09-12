@@ -1,0 +1,74 @@
+def rec batchValidationByteCount : ByteStrings -> HostInt -> HostInt :=
+  fun (values : ByteStrings) (total : HostInt) => match values as self in ByteStrings return HostInt with
+  | byteStringsNil => total
+  | byteStringsCons head tail => batchValidationByteCount tail (hostIntAdd total (hostIntFromBits (bytesLength head)))
+def batchValidateSize : Batch -> BatchValidationResult (prod ()) := fun (batch : Batch) =>
+  match (batchTransactions batch) as self in ByteStrings return BatchValidationResult (prod ()) with
+  | byteStringsNil => inj 0 of 2 batchEmpty
+  | byteStringsCons head tail =>
+    let total : HostInt := batchValidationByteCount (batchTransactions batch) (hostIntFromBits 0) in
+    case (executorIntLess (hostIntFromBits (batchMaxSize (batchEpoch batch))) total) with
+    | 1 (unit : prod ()) => inj 0 of 2 (batchMaxBytesExceeded total)
+    | 0 (unit : prod ()) => inj 1 of 2 (tuple ())
+def rec batchDecodeTransactionsAcc : (0 A : Type 0) -> ByteStrings -> BatchTxDecoder A -> BatchDigest -> BatchTxObservations -> BatchValidationResult BatchTxObservations :=
+  fun (0 A : Type 0) (values : ByteStrings) (decoder : BatchTxDecoder A) (digest : BatchDigest) (reversed : BatchTxObservations) =>
+    match values as self in ByteStrings return BatchValidationResult BatchTxObservations with
+    | byteStringsNil => inj 1 of 2 (batchTxObservationsReverseOnto reversed batchTxObservationsNil)
+    | byteStringsCons head tail => case ((decoder.0) head) with
+      | 0 (message : Bytes) => inj 0 of 2 (batchRecoverTransaction digest message)
+      | 1 (tx : A) => batchDecodeTransactionsAcc A tail decoder digest
+          (batchTxObservationsCons (tuple ((decoder.1) tx, (decoder.2) tx, (decoder.3) tx)) reversed)
+def rec batchValidateNoBlobs : BatchTxObservations -> BatchValidationResult (prod ()) :=
+  fun (values : BatchTxObservations) => match values as self in BatchTxObservations return BatchValidationResult (prod ()) with
+  | batchTxObservationsNil => inj 1 of 2 (tuple ())
+  | batchTxObservationsCons head tail => case (head.1) with
+    | 1 (unit : prod ()) => inj 0 of 2 (batchInvalidBlobTransaction (head.0))
+    | 0 (unit : prod ()) => batchValidateNoBlobs tail
+def rec batchValidateGasAcc : BatchTxObservations -> Nat -> BatchValidationResult Nat :=
+  fun (values : BatchTxObservations) (total : Nat) => match values as self in BatchTxObservations return BatchValidationResult Nat with
+  | batchTxObservationsNil => inj 1 of 2 total
+  | batchTxObservationsCons head tail =>
+    let combined : Nat := natAdd total (head.2) in
+    case (natLt combined 18446744073709551616) with
+    | 0 (unit : prod ()) => inj 0 of 2 batchGasOverflow
+    | 1 (unit : prod ()) => batchValidateGasAcc tail combined
+def batchValidateGas : Epoch -> BatchTxObservations -> BatchValidationResult (prod ()) :=
+  fun (epoch : Epoch) (values : BatchTxObservations) => case (batchValidateGasAcc values 0) with
+    | 0 (error : BatchValidationError) => inj 0 of 2 error
+    | 1 (total : Nat) => case (natLt (batchMaxGas epoch) total) with
+      | 1 (unit : prod ()) => inj 0 of 2 (batchMaxGasExceeded total (batchMaxGas epoch))
+      | 0 (unit : prod ()) => inj 1 of 2 (tuple ())
+def batchValidateDecoded : BatchValidator -> Batch -> BatchDigest -> BatchTxObservations -> BatchValidationResult ValidBatch :=
+  fun (validator : BatchValidator) (batch : Batch) (digest : BatchDigest) (decoded : BatchTxObservations) =>
+    case (batchValidateNoBlobs decoded) with
+    | 0 (error : BatchValidationError) => inj 0 of 2 error
+    | 1 (unit : prod ()) => case (batchValidateGas (batchEpoch batch) decoded) with
+      | 0 (error : BatchValidationError) => inj 0 of 2 error
+      | 1 (unit : prod ()) => case (baseFeeEqual (validator.2) (batchBaseFee batch)) with
+        | 0 (unit : prod ()) => inj 0 of 2 (batchInvalidBaseFee (validator.2) (batchBaseFee batch))
+        | 1 (unit : prod ()) => inj 1 of 2 (tuple (batch, digest))
+def batchValidatePayload : (0 A : Type 0) -> BatchTxDecoder A -> BatchValidator -> Batch -> BatchDigest -> BatchValidationResult ValidBatch :=
+  fun (0 A : Type 0) (decoder : BatchTxDecoder A) (validator : BatchValidator) (batch : Batch) (digest : BatchDigest) =>
+    case (batchValidateSize batch) with
+    | 0 (error : BatchValidationError) => inj 0 of 2 error
+    | 1 (unit : prod ()) => case (batchDecodeTransactionsAcc A (batchTransactions batch) decoder digest batchTxObservationsNil) with
+      | 0 (error : BatchValidationError) => inj 0 of 2 error
+      | 1 (decoded : BatchTxObservations) => batchValidateDecoded validator batch digest decoded
+def batchValidatorValidateWith : (0 A : Type 0) -> BatchTxDecoder A -> BatchValidator -> SealedBatch -> BatchValidationResult ValidBatch :=
+  fun (0 A : Type 0) (decoder : BatchTxDecoder A) (validator : BatchValidator) (sealed : SealedBatch) =>
+    let batch : Batch := sealedBatchBatch sealed in
+    let digest : BatchDigest := sealedBatchDigest sealed in
+    case (batchDigestEqual digest (batchDigest batch)) with
+    | 0 (unit : prod ()) => inj 0 of 2 batchInvalidDigest
+    | 1 (unit : prod ()) => case (workerIdEqual (validator.0) (batchWorkerId batch)) with
+      | 0 (unit : prod ()) => inj 0 of 2 (batchInvalidWorkerId (validator.0) (batchWorkerId batch))
+      | 1 (unit : prod ()) => case (epochEqual (validator.1) (batchEpoch batch)) with
+        | 0 (unit : prod ()) => inj 0 of 2 (batchInvalidEpoch (validator.1) (batchEpoch batch))
+        | 1 (unit : prod ()) => batchValidatePayload A decoder validator batch digest
+def batchTxShapeDecode : Bytes -> sum (Bytes, TxShape) := fun (input : Bytes) => case (txShapeDecodeAndRecover input) with
+  | 0 (error : TxShapeError) => inj 0 of 2 (txShapeErrorText error)
+  | 1 (tx : TxShape) => inj 1 of 2 tx
+def batchTxShapeDecoder : BatchTxDecoder TxShape :=
+  tuple (batchTxShapeDecode, txShapeHash, txShapeIsEip4844, txShapeGasLimit)
+def batchValidatorValidate : BatchValidator -> SealedBatch -> BatchValidationResult ValidBatch :=
+  batchValidatorValidateWith TxShape batchTxShapeDecoder

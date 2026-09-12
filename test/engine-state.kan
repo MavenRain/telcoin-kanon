@@ -1,0 +1,112 @@
+-- Differential fixtures for engine persistence and rewards.
+def engineTestField : Bytes -> Bytes -> Bytes := fun (head : Bytes) (tail : Bytes) => append head (append b"|" tail)
+def rec engineTestAuthorities : ByteStrings -> Nat -> Nat -> ValueOption Authorities :=
+  fun (seeds : ByteStrings) (shared : Nat) (index : Nat) =>
+  match seeds as self in ByteStrings return ValueOption Authorities with
+  | byteStringsNil => valueSome Authorities authoritiesNil
+  | byteStringsCons head tail =>
+    case (cryptoKeyParse head) with | 0 (unit : prod ()) => valueNone Authorities
+    | 1 (key : SecretKey) =>
+      case (engineTestAuthorities tail shared (natAdd index 1)) with
+      | 0 (unit : prod ()) => valueNone Authorities
+      | 1 (rest : Authorities) => valueSome Authorities
+          (authoritiesCons (authorityMake (secretKeyPublic key)
+            (addressOfWord (u256Value (case (natEq shared 1) with | 1 (unit : prod ()) => 9 | 0 (unit : prod ()) => index)))) rest)
+def engineTestCommittee : ByteStrings -> Nat -> CommitteeResult := fun (seeds : ByteStrings) (shared : Nat) =>
+  case (engineTestAuthorities seeds shared 1) with
+  | 0 (unit : prod ()) => committeeError (committeeTooSmall 0)
+  | 1 (authorities : Authorities) => committeeCreate (epochValue 0) authorities
+def rec engineTestLeaders : ByteStrings -> RewardsCounter -> RewardsCounter :=
+  fun (seeds : ByteStrings) (counter : RewardsCounter) =>
+  match seeds as self in ByteStrings return RewardsCounter with
+  | byteStringsNil => counter
+  | byteStringsCons head tail => case (cryptoKeyParse head) with
+    | 0 (unit : prod ()) => engineTestLeaders tail counter
+    | 1 (key : SecretKey) => engineTestLeaders tail
+        (rewardsCounterIncLeader counter (authorityIdOfPublicKey (secretKeyPublic key)))
+def rec engineTestCountsText : LeaderCounts -> Bytes := fun (counts : LeaderCounts) =>
+  match counts as self in LeaderCounts return Bytes with
+  | leaderCountsNil => emptyBytes
+  | leaderCountsCons head tail => append (bytesHex (authorityIdBytes head.0))
+      (append b":" (append (hostIntText head.1) (append b";" (engineTestCountsText tail))))
+def rec engineTestAddressesText : RewardPairs -> Bytes := fun (pairs : RewardPairs) =>
+  match pairs as self in RewardPairs return Bytes with
+  | rewardPairsNil => emptyBytes
+  | rewardPairsCons head tail => append (bytesHex (addressBytes head.0))
+      (append b":" (append (hostIntText head.1) (append b";" (engineTestAddressesText tail))))
+def rec engineTestWithdrawalsText : Withdrawals -> Bytes := fun (values : Withdrawals) =>
+  match values as self in Withdrawals return Bytes with
+  | withdrawalsNil => emptyBytes
+  | withdrawalsCons head tail => append (bytesHex (withdrawalEncodeRlp head)) (append b";" (engineTestWithdrawalsText tail))
+def engineTestRewardsText : RewardsCounter -> Bytes := fun (counter : RewardsCounter) =>
+  engineTestField (engineTestCountsText (rewardsCounterLeaderCounts counter)) (engineTestField (engineTestAddressesText (rewardsCounterAddressCounts counter)) (case (rewardsCounterGenerateWithdrawals counter) with
+    | 0 (error : RewardsCounterError) => append b"error:" (rewardsCounterErrorText error)
+    | 1 (values : Withdrawals) => engineTestWithdrawalsText values))
+def engineTestRewards : ByteStrings -> ByteStrings -> Nat -> Bytes -> Nat -> Nat -> Bytes :=
+  fun (members : ByteStrings) (leaders : ByteStrings) (shared : Nat) (initialRaw : Bytes) (clear : Nat) (install : Nat) =>
+  match (engineTestCommittee members shared) as self in CommitteeResult return Bytes with
+  | committeeError error => append b"error:" (committeeErrorText error)
+  | committeeOk committee =>
+    case (hostIntParse initialRaw) with | 0 (unit : prod ()) => b"error:bad int"
+    | 1 (initial : HostInt) =>
+      case (cryptoKeyParse b"1") with | 0 (unit : prod ()) => b"error:bad key"
+      | 1 (key : SecretKey) =>
+        let base : RewardsCounter := tuple
+          ((case (natEq install 1) with | 1 (unit : prod ()) => valueSome Committee committee | 0 (unit : prod ()) => valueNone Committee),
+           leaderCountsCons (tuple (authorityIdOfPublicKey (secretKeyPublic key), initial)) leaderCountsNil) in
+        let cleared : RewardsCounter := case (natEq clear 1) with
+          | 1 (unit : prod ()) => rewardsCounterClear base | 0 (unit : prod ()) => base in
+        engineTestRewardsText (engineTestLeaders leaders cleared)
+def rec engineTestHashes : ByteStrings -> Keccaks := fun (values : ByteStrings) =>
+  match values as self in ByteStrings return Keccaks with
+  | byteStringsNil => keccaksNil
+  | byteStringsCons head tail => keccaksCons (keccakValue head) (engineTestHashes tail)
+def rec engineTestPushHashes : ByteStrings -> RecentHashes -> RecentHashes := fun (values : ByteStrings) (hashes : RecentHashes) =>
+  match values as self in ByteStrings return RecentHashes with
+  | byteStringsNil => hashes
+  | byteStringsCons head tail => engineTestPushHashes tail (recentHashesPush hashes (keccakValue head))
+def rec engineTestHashText : Keccaks -> Bytes := fun (values : Keccaks) =>
+  match values as self in Keccaks return Bytes with
+  | keccaksNil => emptyBytes
+  | keccaksCons head tail => append (bytesHex (keccakBytes head)) (append b";" (engineTestHashText tail))
+def engineTestRecent : Bytes -> ByteStrings -> ByteStrings -> Bytes -> Bytes -> Bytes :=
+  fun (newest : Bytes) (ancestors : ByteStrings) (pushes : ByteStrings) (current : Bytes) (wanted : Bytes) =>
+    let hashes : RecentHashes := engineTestPushHashes pushes (recentHashesOfGenesis (keccakValue newest) (engineTestHashes ancestors)) in
+    engineTestField (decimal64 (recentHashesDepth hashes)) (engineTestField (bytesHex (keccakBytes (recentHashesNewest hashes))) (engineTestField (engineTestHashText (recentHashesAncestors hashes)) (bytesHex (u256ToBeBytes (blockHashesLookup (recentHashesWindow hashes) (u256Value (registryBeNat current)) (u256Value (registryBeNat wanted)))))))
+def engineTestNumber : Bytes -> Bytes := fun (raw : Bytes) =>
+  case (hostIntParse raw) with | 0 (unit : prod ()) => b"error:bad int"
+  | 1 (number : HostInt) => engineTestField (hostIntText (executionBlockNumberToInt (executionBlockNumberOfInt number))) (engineTestField (hostIntText (executionBlockNumberToInt (executionBlockNumberSucc number))) (bytesHex (u256ToBeBytes (executionEngineIntWord number))))
+def rec engineTestCommitteeText : Authorities -> Bytes := fun (values : Authorities) =>
+  match values as self in Authorities return Bytes with
+  | authoritiesNil => emptyBytes
+  | authoritiesCons head tail => append (bytesHex (authorityIdBytes (authorityId head))) (append b";" (engineTestCommitteeText tail))
+def engineTestStateText : ExecutionEngine -> Bytes := fun (state : ExecutionEngine) =>
+  engineTestField (hostIntText (executionEngineHeight state)) (engineTestField (decimal64 (timestampNat (executionEngineFrontier state))) (engineTestField (evmTestBool (executionEngineIsSealed state)) (engineTestField (engineTestCommitteeText (committeeAuthorities (executionEngineCommittee state))) (engineTestField (decimal64 (timestampNat state.0.5)) (engineTestField (engineTestCommitteeText (committeeAuthorities state.0.6)) (engineTestField (bytesHex (keccakBytes (executionAnchorHash state.1))) (engineTestField (engineTestHashText (recentHashesToList state.4)) (engineTestRewardsText state.5))))))))
+def engineTestState : ByteStrings -> ByteStrings -> Bytes -> Bytes -> Nat -> Nat -> Nat -> Bytes :=
+  fun (members : ByteStrings) (next : ByteStrings) (boundaryRaw : Bytes) (proposedRaw : Bytes) (sealed : Nat) (skew : Nat) (mode : Nat) =>
+  match (engineTestCommittee members 0) as self in CommitteeResult return Bytes with
+  | committeeError error => append b"error:" (committeeErrorText error)
+  | committeeOk committee => match (engineTestCommittee next 1) as self in CommitteeResult return Bytes with
+    | committeeError error => append b"error:" (committeeErrorText error)
+    | committeeOk nextCommittee =>
+      executionWith Timestamp timestampCodec boundaryRaw (fun (boundary : Timestamp) =>
+      executionWith Timestamp timestampCodec proposedRaw (fun (proposed : Timestamp) =>
+        let anchor : ExecutionAnchor := executionAnchorOfGenesis (keccakValue (u256ToBeBytes (u256Value 1))) (u256Value 7) (hostIntPositive 30000000) in
+        let ancestors : Keccaks := keccaksCons (keccakValue (u256ToBeBytes (u256Value 2))) keccaksNil in
+        let config : ExecutionConfig := executionConfigCreate anchor ancestors worldStateEmpty (u256Value 42)
+          (addressOfWord (u256Value 9)) boundary committee in
+        let base : ExecutionEngine := executionEngineCreate config in
+        let counter : RewardsCounter := engineTestLeaders (byteStringsCons b"1" (byteStringsCons b"1" (byteStringsCons b"99" byteStringsNil))) base.5 in
+        let phase : ExecutionPhase := case (natEq sealed 1) with
+          | 1 (unit : prod ()) => executionSealed boundary committee | 0 (unit : prod ()) => base.6 in
+        let hashes : RecentHashes := case (natEq skew 1) with
+          | 1 (unit : prod ()) => recentHashesOfGenesis (keccakValue (u256ToBeBytes (u256Value 99))) ancestors
+          | 0 (unit : prod ()) => base.4 in
+        let state : ExecutionEngine := tuple (base.0, base.1, base.2, base.3, hashes, counter, phase) in
+        let restored : ExecutionEngine := case (natLt mode 2) with | 1 (unit : prod ()) => state
+          | 0 (unit : prod ()) => executionEngineResume (u256Value 42) (addressOfWord (u256Value 9)) (executionEngineSnapshot state) in
+        case (natEq (remainder64 mode 2) 0) with
+        | 1 (unit : prod ()) => engineTestStateText restored
+        | 0 (unit : prod ()) => case (executionEngineBeginEpoch restored proposed nextCommittee) with
+          | 0 (error : ExecutionEngineError) => append b"error:" (executionEngineErrorText error)
+          | 1 (advanced : ExecutionEngine) => engineTestStateText advanced))

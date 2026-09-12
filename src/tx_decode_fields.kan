@@ -1,0 +1,54 @@
+def txReadField : (A : Type 0) -> (B : Type 0) -> TxDecodeError -> (RlpItem -> TxResult A) -> RlpItems -> (A -> RlpItems -> TxResult B) -> TxResult B :=
+  fun (A : Type 0) (B : Type 0) (short : TxDecodeError) (read : RlpItem -> TxResult A) (items : RlpItems) (next : A -> RlpItems -> TxResult B) =>
+  match items as self in RlpItems return TxResult B with
+  | rlpItemsNil => inj 0 of 2 short
+  | rlpItemsCons head tail => case (read head) with | 0 (error : TxDecodeError) => inj 0 of 2 error | 1 (value : A) => next value tail
+def txReadFinish : (A : Type 0) -> TxDecodeError -> RlpItems -> A -> TxResult A := fun (A : Type 0) (short : TxDecodeError) (items : RlpItems) (value : A) =>
+  match items as self in RlpItems return TxResult A with
+  | rlpItemsNil => inj 1 of 2 value | rlpItemsCons head tail => inj 0 of 2 short
+def txReadBytes : RlpItem -> TxResult Bytes := fun (item : RlpItem) => case (rlpView item) with
+  | 0 (error : RlpError) => inj 0 of 2 (txRlpError error)
+  | 1 (view : sum (Bytes, RlpItems)) => case view with
+    | 0 (bytes : Bytes) => inj 1 of 2 bytes | 1 (items : RlpItems) => inj 0 of 2 txUnexpectedList
+def txReadList : RlpItem -> TxResult RlpItems := fun (item : RlpItem) => case (rlpView item) with
+  | 0 (error : RlpError) => inj 0 of 2 (txRlpError error)
+  | 1 (view : sum (Bytes, RlpItems)) => case view with
+    | 0 (bytes : Bytes) => inj 0 of 2 txUnexpectedString | 1 (items : RlpItems) => inj 1 of 2 items
+def txReadWord : Nat -> RlpItem -> TxResult U256 := fun (maxBytes : Nat) (item : RlpItem) => case (txReadBytes item) with
+  | 0 (error : TxDecodeError) => inj 0 of 2 error
+  | 1 (bytes : Bytes) => case (natLt maxBytes (bytesLength bytes)) with
+    | 1 (unit : prod ()) => inj 0 of 2 txScalarTooWide
+    | 0 (unit : prod ()) => case (boolAnd (natLt 0 (bytesLength bytes)) (natEq (rlpByteAt bytes 0) 0)) with
+      | 1 (unit : prod ()) => inj 0 of 2 txLeadingZeroScalar
+      | 0 (unit : prod ()) => inj 1 of 2 (u256Value (u256ReadBe bytes 0))
+def txReadInt : RlpItem -> TxResult HostInt := fun (item : RlpItem) => case (txReadWord 8 item) with
+  | 0 (error : TxDecodeError) => inj 0 of 2 error
+  | 1 (word : U256) => case (natLt (u256Nat word) 4611686018427387904) with
+    | 0 (unit : prod ()) => inj 0 of 2 txUnrepresentableScalar
+    | 1 (unit : prod ()) => inj 1 of 2 (hostIntPositive (u256Nat word))
+def txReadNonce : RlpItem -> TxResult Nonce := fun (item : RlpItem) => case (txReadInt item) with
+  | 0 (error : TxDecodeError) => inj 0 of 2 error
+  | 1 (value : HostInt) => inj 1 of 2 (nonceValue (hostIntClampZero value))
+def txReadParity : RlpItem -> TxResult Bool := fun (item : RlpItem) => case (txReadWord 1 item) with
+  | 0 (error : TxDecodeError) => inj 0 of 2 error
+  | 1 (word : U256) => case (natLt (u256Nat word) 2) with
+    | 0 (unit : prod ()) => inj 0 of 2 txInvalidBool
+    | 1 (unit : prod ()) => inj 1 of 2 (u256Equal word u256One)
+def txReadFixed : Nat -> RlpItem -> TxResult Bytes := fun (width : Nat) (item : RlpItem) => case (txReadBytes item) with
+  | 0 (error : TxDecodeError) => inj 0 of 2 error
+  | 1 (bytes : Bytes) => case (natEq (bytesLength bytes) width) with
+    | 0 (unit : prod ()) => inj 0 of 2 (txFixedWidth width (bytesLength bytes))
+    | 1 (unit : prod ()) => inj 1 of 2 bytes
+def txReadAddress : RlpItem -> TxResult Address := fun (item : RlpItem) => case (txReadFixed 20 item) with
+  | 0 (error : TxDecodeError) => inj 0 of 2 error
+  | 1 (bytes : Bytes) => case (addressOfBytes bytes) with
+    | 0 (unit : prod ()) => inj 0 of 2 (txFixedWidth 20 (bytesLength bytes)) | 1 (address : Address) => inj 1 of 2 address
+def txReadKind : RlpItem -> TxResult TransactionKind := fun (item : RlpItem) => case (txReadBytes item) with
+  | 0 (error : TxDecodeError) => inj 0 of 2 error
+  | 1 (bytes : Bytes) => case (natEq (bytesLength bytes) 0) with
+    | 1 (unit : prod ()) => inj 1 of 2 transactionCreate
+    | 0 (unit : prod ()) => case (addressOfBytes bytes) with
+      | 0 (unit : prod ()) => inj 0 of 2 (txFixedWidth 20 (bytesLength bytes))
+      | 1 (address : Address) => inj 1 of 2 (transactionCall address)
+def txReadKey : RlpItem -> TxResult U256 := fun (item : RlpItem) => case (txReadFixed 32 item) with
+  | 0 (error : TxDecodeError) => inj 0 of 2 error | 1 (bytes : Bytes) => inj 1 of 2 (u256Value (u256ReadBe bytes 0))

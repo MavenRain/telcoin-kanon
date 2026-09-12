@@ -1,0 +1,25 @@
+def BlockPlanSpec : Type 0 := prod (Batch, Epoch, BatchDigest, Address, Bytes, EvmBatchPosition, SequenceNumber, OutputDigest, Timestamp, Bool)
+def blockPlanSpecBatch : BlockPlanSpec -> Batch := fun (value : BlockPlanSpec) => value.0
+def blockPlanSpecEpoch : BlockPlanSpec -> Epoch := fun (value : BlockPlanSpec) => value.1
+def blockPlanSpecBatchDigest : BlockPlanSpec -> BatchDigest := fun (value : BlockPlanSpec) => value.2
+def blockPlanSpecBeneficiary : BlockPlanSpec -> Address := fun (value : BlockPlanSpec) => value.3
+def blockPlanSpecMixHash : BlockPlanSpec -> Bytes := fun (value : BlockPlanSpec) => value.4
+def blockPlanSpecPosition : BlockPlanSpec -> EvmBatchPosition := fun (value : BlockPlanSpec) => value.5
+def blockPlanSpecNonce : BlockPlanSpec -> SequenceNumber := fun (value : BlockPlanSpec) => value.6
+def blockPlanSpecConsensusRoot : BlockPlanSpec -> OutputDigest := fun (value : BlockPlanSpec) => value.7
+def blockPlanSpecTimestamp : BlockPlanSpec -> Timestamp := fun (value : BlockPlanSpec) => value.8
+def blockPlanSpecClosesEpoch : BlockPlanSpec -> Bool := fun (value : BlockPlanSpec) => value.9
+def blockPlanSpecBaseFee : BlockPlanSpec -> BaseFee := fun (value : BlockPlanSpec) => batchBaseFee (blockPlanSpecBatch value)
+def blockPlanSpecGasLimit : BlockPlanSpec -> Nat := fun (value : BlockPlanSpec) => batchMaxGas (blockPlanSpecEpoch value)
+def BlockCloseSpec : Type 0 := prod (Address, Bytes, OutputDigest, SequenceNumber, Timestamp)
+def blockCloseSpecBeneficiary : BlockCloseSpec -> Address := fun (value : BlockCloseSpec) => value.0
+def blockCloseSpecMixHash : BlockCloseSpec -> Bytes := fun (value : BlockCloseSpec) => value.1
+def blockCloseSpecConsensusRoot : BlockCloseSpec -> OutputDigest := fun (value : BlockCloseSpec) => value.2
+def blockCloseSpecNonce : BlockCloseSpec -> SequenceNumber := fun (value : BlockCloseSpec) => value.3
+def blockCloseSpecTimestamp : BlockCloseSpec -> Timestamp := fun (value : BlockCloseSpec) => value.4
+mu BlockPlanError : Type 0 :=
+  | blockPlanPositionOutOfRange (index : HostInt) : BlockPlanError
+def blockPlanErrorText : BlockPlanError -> Bytes := fun (error : BlockPlanError) =>
+  match error as self in BlockPlanError return Bytes with
+  | blockPlanPositionOutOfRange index => append b"batch position out of range at flat index " (blockExecutionIntText index)
+def BlockPlanResult : Type 0 -> Type 0 := fun (A : Type 0) => sum (BlockPlanError, A)

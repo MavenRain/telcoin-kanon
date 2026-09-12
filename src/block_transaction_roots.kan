@@ -1,0 +1,27 @@
+-- Typed wrappers use the same unwrapped EIP-2718 trie leaves.
+def blockTransactionTypeByte : Transaction -> HostInt := fun (tx : Transaction) =>
+  match (transactionFee tx) as self in TransactionFee return HostInt with
+  | transactionLegacyFee price => hostIntPositive 0
+  | transactionAccessFee price => hostIntPositive 1
+  | transactionDynamicFee maximum priority => hostIntPositive 2
+  | transactionSetCodeFee maximum priority target authorizations => hostIntPositive 4
+def rec blockEncodeEnvelopesAcc : TxEnvelopes -> ByteStrings -> ByteStrings := fun (envelopes : TxEnvelopes) (reversed : ByteStrings) =>
+  match envelopes as self in TxEnvelopes return ByteStrings with
+  | txEnvelopesNil => seqBytesReverse reversed
+  | txEnvelopesCons head tail => blockEncodeEnvelopesAcc tail (seqBytesCons (txEnvelopeEncode2718 head) reversed)
+def blockTransactionsRootOf : TxEnvelopes -> Bytes := fun (envelopes : TxEnvelopes) =>
+  blockTransactionsRoot (blockEncodeEnvelopesAcc envelopes seqBytesEmpty)
+def rec blockPairReceiptsAcc : EvmTransactions -> BlockReceipts -> ReceiptPairs -> ValueOption ReceiptPairs :=
+  fun (transactions : EvmTransactions) (receipts : BlockReceipts) (reversed : ReceiptPairs) =>
+    match transactions as self in EvmTransactions return ValueOption ReceiptPairs with
+    | evmTransactionsNil => (match receipts as rest in BlockReceipts return ValueOption ReceiptPairs with
+      | blockReceiptsNil => valueSome ReceiptPairs (seqReceiptPairReverse reversed)
+      | blockReceiptsCons head tail => valueNone ReceiptPairs)
+    | evmTransactionsCons tx tail => match receipts as rest in BlockReceipts return ValueOption ReceiptPairs with
+      | blockReceiptsNil => valueNone ReceiptPairs
+      | blockReceiptsCons receipt remaining => blockPairReceiptsAcc tail remaining (receiptPairsCons (tuple (blockTransactionTypeByte tx, receipt)) reversed)
+def blockReceiptsRootOfBlock : EvmTransactions -> BlockReceipts -> ValueOption Bytes :=
+  fun (transactions : EvmTransactions) (receipts : BlockReceipts) =>
+    case (blockPairReceiptsAcc transactions receipts receiptPairsNil) with
+    | 0 (unit : prod ()) => valueNone Bytes
+    | 1 (pairs : ReceiptPairs) => valueSome Bytes (blockReceiptsRoot pairs)

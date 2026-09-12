@@ -1,0 +1,23 @@
+def Checkpoint : Type 0 := prod (ExecutionPersisted, ValueOption ConsensusBlock)
+def checkpointGenesis : ChainSpec -> Committee -> Checkpoint := fun (spec : ChainSpec) (committee : Committee) =>
+  tuple (executionEngineSnapshot (executionEngineCreate (chainSpecEngineConfig spec committee)), valueNone ConsensusBlock)
+def checkpointOfExecution : ExecutionPersisted -> ValueOption ConsensusBlock -> Checkpoint :=
+  fun (engine : ExecutionPersisted) (last : ValueOption ConsensusBlock) => tuple (engine, last)
+def checkpointEngine : Checkpoint -> ExecutionPersisted := fun (checkpoint : Checkpoint) => checkpoint.0
+def checkpointLastExecuted : Checkpoint -> ValueOption ConsensusBlock := fun (checkpoint : Checkpoint) => checkpoint.1
+def checkpointWatermark : Checkpoint -> ConsensusBlockNumber := fun (checkpoint : Checkpoint) =>
+  case checkpoint.1 with | 0 (unit : prod ()) => consensusBlockNumberGenesis
+  | 1 (block : ConsensusBlock) => consensusBlockNumberOf block
+def checkpointAccumulator : Checkpoint -> ConsensusChain := fun (checkpoint : Checkpoint) =>
+  case checkpoint.1 with | 0 (unit : prod ()) => consensusChainGenesis
+  | 1 (block : ConsensusBlock) => consensusChainResume (consensusBlockDigest block) (consensusBlockNumberOf block)
+def checkpointPhase : Checkpoint -> ExecutionPhase := fun (checkpoint : Checkpoint) => checkpoint.0.4
+def checkpointCommittee : Checkpoint -> Committee := fun (checkpoint : Checkpoint) =>
+  executionPhaseCommittee (checkpointPhase checkpoint)
+def checkpointEpoch : Checkpoint -> Epoch := fun (checkpoint : Checkpoint) => committeeEpoch (checkpointCommittee checkpoint)
+def checkpointIsSealed : Checkpoint -> Bool := fun (checkpoint : Checkpoint) =>
+  executionPhaseIsSealed (checkpointPhase checkpoint)
+def checkpointClosedAt : Checkpoint -> ValueOption Timestamp := fun (checkpoint : Checkpoint) =>
+  match (checkpointPhase checkpoint) as phase in ExecutionPhase return ValueOption Timestamp with
+  | executionRunning boundary committee => valueNone Timestamp
+  | executionSealed closedAt committee => valueSome Timestamp closedAt

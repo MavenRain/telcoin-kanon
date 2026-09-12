@@ -20,7 +20,23 @@ export const sources = ['core', 'nat64', 'scalars', 'bcs', 'codec', 'fixed', 'sc
   'hash32_words', 'sha256', 'ripemd160', 'precompile_hashes',
   'rlp_types', 'rlp_collections', 'rlp', 'nibbles', 'trie_collections', 'trie_node', 'trie', 'evm_log', 'log_collections', 'log_journal',
   'evm_spec', 'env_collections', 'block_hashes', 'lifecycle', 'env', 'effects', 'execution_primitives', 'fork_schedule',
-  'withdrawal', 'block_collections', 'state_roots', 'bloom', 'block_context', 'blake2b_rounds', 'blake2b', 'precompile', 'precompile_service', 'interpreter_types', 'interpreter_machine', 'interpreter_state', 'interpreter_frames', 'interpreter_calls', 'interpreter', 'interpreter_default', 'receipt', 'receipt_collections', 'receipt_roots', 'api', 'service'].map(name => resolve(project, `src/${name}.kan`));
+  'withdrawal', 'block_collections', 'state_roots', 'bloom', 'block_context', 'blake2b_rounds', 'blake2b', 'precompile', 'precompile_service', 'interpreter_types', 'interpreter_machine', 'interpreter_state', 'interpreter_frames', 'interpreter_calls', 'interpreter', 'interpreter_default', 'receipt', 'receipt_collections', 'receipt_roots',
+  'tx_signature', 'authorization_types', 'authorization_collections', 'authorization', 'transaction', 'tx_payload',
+  'tx_envelope', 'tx_decode_types', 'tx_decode_fields', 'tx_decode_lists', 'tx_decode', 'tx_recovery', 'auth_list',
+  'system_contracts', 'executor_types', 'executor_validation', 'executor_settlement', 'executor_frames', 'executor',
+  'system_call', 'transaction_collections', 'registry_types', 'registry_collections', 'registry_abi', 'registry_decode',
+  'committee_shuffle', 'epoch_close_types', 'epoch_close', 'block_transaction_roots', 'block_execution_types',
+  'block_execution_collections', 'block_pre_execution', 'block_execution', 'block_finish', 'block_header',
+  'tx_shape_types', 'tx_shape', 'batch_validator_types', 'batch_validator',
+  'output_collections', 'batch_output_types', 'batch_output', 'batch_payload',
+  'block_plan_types', 'block_plan_collections', 'block_plan',
+  'execution_engine_types', 'execution_engine_collections', 'rewards_counter',
+  'execution_engine_state_types', 'execution_engine_state', 'execution_engine',
+  'driver_collections', 'address_book', 'batch_store', 'chain_spec', 'checkpoint',
+  'subscriber', 'driver_types', 'driver_outcome_collections', 'driver_outcome', 'driver',
+  'blake2b_digest', 'durable_frame_types', 'durable_frame_collections', 'durable_frame',
+  'durable_io_types', 'atomic_file_codec',
+  'api', 'service'].map(name => resolve(project, `src/${name}.kan`));
 export function build(output, exports, extraSources = [], { scope = false } = {}) {
   const hash = createHash('sha256').update(readFileSync(compiler)).digest('hex');
   if (hash !== lock.toolchain.compilerSha256) throw new Error('Compiler differs from source-lock.json. Review and repin before building.');

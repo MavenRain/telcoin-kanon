@@ -1,0 +1,28 @@
+def frameTestInt : Bytes -> HostInt := fun (text : Bytes) => case (hostIntParse text) with
+  | 0 (unit : prod ()) => hostIntPositive 0 | 1 (value : HostInt) => value
+def frameTestHead : FrameHead -> Bytes := fun (head : FrameHead) =>
+  append (hostIntText (hostIntPositive (frameKindByte head.0))) (append b":" (append (hostIntText head.1) (append b":" (hostIntText head.2))))
+def frameTestEntry : prod (FrameHead, Bytes) -> Bytes := fun (entry : prod (FrameHead, Bytes)) =>
+  append (frameTestHead entry.0) (append b":" (bytesHex entry.1))
+def frameTestBad : FrameBad -> Bytes := fun (bad : FrameBad) =>
+  append b"error:" (append (hostIntText (frameBadOffset bad)) (append b":" (frameBadText bad)))
+def frameTestEncode : Nat -> Bytes -> Bytes -> Bytes := fun (kind : Nat) (seq : Bytes) (payload : Bytes) =>
+  let value : FrameKind := case (natEq kind 1) with | 1 (unit : prod ()) => frameRecord | 0 (unit : prod ()) => frameEpochOpen in
+  bytesHex (frameEncode value (frameTestInt seq) payload)
+def frameTestDecode : Bytes -> Bytes -> Bytes -> Bytes := fun (buf : Bytes) (at : Bytes) (seq : Bytes) =>
+  case (frameDecodeAt buf (frameTestInt at) (frameTestInt seq)) with
+  | 0 (bad : FrameBad) => frameTestBad bad
+  | 1 (decoded : FrameDecoded) => append (frameTestEntry (tuple (decoded.0, decoded.1))) (append b":" (hostIntText decoded.2))
+def frameTestStop : FrameStop -> Bytes := fun (stop : FrameStop) => match stop as self in FrameStop return Bytes with
+  | frameClean at => append b"clean:" (hostIntText at)
+  | frameTorn at why => append b"torn:" (append (hostIntText at) (append b":" (frameBadText why)))
+  | frameCorrupt at why next => append b"corrupt:" (append (hostIntText at) (append b":" (append (hostIntText next) (append b":" (frameBadText why)))))
+def rec frameTestEntries : FrameEntries -> Bytes := fun (entries : FrameEntries) =>
+  match entries as self in FrameEntries return Bytes with
+  | frameEntriesNil => bytesNil
+  | frameEntriesCons head tail => append (frameTestEntry head) (append b";" (frameTestEntries tail))
+def frameTestScan : Bytes -> Bytes -> Bytes := fun (buf : Bytes) (from : Bytes) =>
+  let scanned : FrameScan := frameScan buf (frameTestInt from) in
+  append (frameTestEntries scanned.0) (append b"|" (frameTestStop scanned.1))
+def frameTestHash : Bytes -> Bytes := fun (input : Bytes) => bytesHex (blake2b512 input)
+def frameTestSize : Bytes -> Bytes := fun (input : Bytes) => hostIntText (frameSize (frameTestInt input))

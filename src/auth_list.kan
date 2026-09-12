@@ -1,0 +1,47 @@
+def authDispositionText : AuthDisposition -> Bytes := fun (disposition : AuthDisposition) => match disposition as self in AuthDisposition return Bytes with
+  | authChainIdMismatch => b"chain_id_mismatch"
+  | authNonceSaturated => b"nonce_saturated"
+  | authUnrecoverable => b"unrecoverable"
+  | authHasCode => b"has_code"
+  | authNonceMismatch => b"nonce_mismatch"
+  | authApplied refunded => case refunded with | 0 (unit : prod ()) => b"applied:fresh" | 1 (unit : prod ()) => b"applied:refunded"
+def AuthList : Type 0 := prod (WorldState, Addresses, HostInt, AuthDispositions)
+def authListWorld : AuthList -> WorldState := fun (result : AuthList) => result.0
+def authListWarmed : AuthList -> Addresses := fun (result : AuthList) => result.1
+def authListDispositions : AuthList -> AuthDispositions := fun (result : AuthList) => result.3
+def authListRefund : AuthList -> HostInt := fun (result : AuthList) => hostIntMul result.2 (hostIntPositive 12500)
+def authListRecord : AuthList -> AuthDisposition -> AuthList := fun (acc : AuthList) (disposition : AuthDisposition) => tuple (acc.0, acc.1, acc.2, authDispositionsCons disposition acc.3)
+def authListApplyScreened : AuthList -> SignedAuthorization -> ScreenedAuthorization -> Account -> AuthList :=
+  fun (acc : AuthList) (signature : SignedAuthorization) (screened : ScreenedAuthorization) (account : Account) =>
+  case (u256Equal (authorizationScreenedNonce screened) (u256Value (nonceNat (accountNonce account)))) with
+  | 0 (unit : prod ()) => authListRecord acc authNonceMismatch
+  | 1 (unit : prod ()) =>
+    let refunded : Bool := boolNot (accountIsAbsent account) in
+    let delegated : Account := accountDelegate account (authorizationAddress (authorizationUnsigned signature)) in
+    tuple (worldStateSetAccount acc.0 (authorizationAuthority screened) delegated, acc.1,
+      hostIntAdd acc.2 (hostIntPositive (choose refunded 1 0)), authDispositionsCons (authApplied refunded) acc.3)
+def authListScreenedStep : AuthList -> SignedAuthorization -> ScreenedAuthorization -> AuthList :=
+  fun (acc : AuthList) (signature : SignedAuthorization) (screened : ScreenedAuthorization) =>
+  let authority : Address := authorizationAuthority screened in
+  let warmed : AuthList := tuple (acc.0, addressesCons authority acc.1, acc.2, acc.3) in
+  let account : Account := worldStateAccount acc.0 authority in
+  match (accountCodeClass account) as self in CodeClass return AuthList with
+  | codeContract => authListRecord warmed authHasCode
+  | codeUndecodable error => authListRecord warmed authHasCode
+  | codeCodeless => authListApplyScreened warmed signature screened account
+  | codeDelegated delegation => authListApplyScreened warmed signature screened account
+def authListStep : U256 -> AuthList -> SignedAuthorization -> AuthList := fun (chainId : U256) (acc : AuthList) (signature : SignedAuthorization) =>
+  let auth : Authorization := authorizationUnsigned signature in
+  case (boolOr (u256Equal (authorizationChainId auth) u256Zero) (u256Equal (authorizationChainId auth) chainId)) with
+  | 0 (unit : prod ()) => authListRecord acc authChainIdMismatch
+  | 1 (unit : prod ()) => case (u256Equal (authorizationNonce auth) (u256Value 18446744073709551615)) with
+    | 1 (unit : prod ()) => authListRecord acc authNonceSaturated
+    | 0 (unit : prod ()) => case (authorizationScreen chainId signature) with
+      | 0 (unit : prod ()) => authListRecord acc authUnrecoverable
+      | 1 (screened : ScreenedAuthorization) => authListScreenedStep acc signature screened
+def rec authListScan : SignedAuthorizations -> U256 -> AuthList -> AuthList := fun (entries : SignedAuthorizations) (chainId : U256) (acc : AuthList) =>
+  match entries as self in SignedAuthorizations return AuthList with
+  | signedAuthorizationsNil => tuple (acc.0, seqAddressReverse acc.1, acc.2, seqAuthDispositionReverse acc.3)
+  | signedAuthorizationsCons head tail => authListScan tail chainId (authListStep chainId acc head)
+def authListApply : WorldState -> U256 -> SignedAuthorizations -> AuthList := fun (world : WorldState) (chainId : U256) (entries : SignedAuthorizations) =>
+  authListScan entries chainId (tuple (world, addressesNil, hostIntPositive 0, authDispositionsNil))

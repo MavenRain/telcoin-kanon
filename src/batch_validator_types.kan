@@ -1,0 +1,64 @@
+mu BatchPenalty : Type 0 :=
+  | batchPenaltyMild : BatchPenalty
+  | batchPenaltyMedium : BatchPenalty
+  | batchPenaltySevere : BatchPenalty
+  | batchPenaltyFatal : BatchPenalty
+mu BatchValidationError : Type 0 :=
+  | batchInvalidDigest  : BatchValidationError
+  | batchCanonicalChain (hash : Keccak) : BatchValidationError
+  | batchEmpty  : BatchValidationError
+  | batchMaxGasExceeded (total : Nat) (limit : Nat) : BatchValidationError
+  | batchCalculateMaxGas  : BatchValidationError
+  | batchMaxBytesExceeded (total : HostInt) : BatchValidationError
+  | batchRecoverTransaction (digest : BatchDigest) (message : Bytes) : BatchValidationError
+  | batchInvalidBaseFee (expected : BaseFee) (found : BaseFee) : BatchValidationError
+  | batchInvalidWorkerId (expected : WorkerId) (found : WorkerId) : BatchValidationError
+  | batchInvalidBlobTransaction (hash : Keccak) : BatchValidationError
+  | batchGasOverflow  : BatchValidationError
+  | batchInvalidEpoch (expected : Epoch) (found : Epoch) : BatchValidationError
+def batchValidationErrorText : BatchValidationError -> Bytes := fun (error : BatchValidationError) =>
+  match error as self in BatchValidationError return Bytes with
+  | batchInvalidDigest  => b"Invalid digest for sealed batch."
+  | batchCanonicalChain hash => (append b"Canonical chain header 0x" (append (bytesHex (keccakBytes hash)) b" can't be found for peer batch's parent"))
+  | batchEmpty  => b"Batch contains no transactions"
+  | batchMaxGasExceeded total limit => (append b"Peer's batch total possible gas (" (append (decimal64 total) (append b") is greater than batch's gas limit (" (append (decimal64 limit) b")"))))
+  | batchCalculateMaxGas  => b"Unable to reduce max possible gas limit for peer's batch"
+  | batchMaxBytesExceeded total => (append b"Peer's transactions exceed max byte size: " (blockExecutionIntText total))
+  | batchRecoverTransaction digest message => (append b"Failed to decode transaction for batch 0x" (append (bytesHex (batchDigestBytes digest)) (append b": " message)))
+  | batchInvalidBaseFee expected found => (append b"Invalid base fee, expected " (append (decimal64 (baseFeeNat expected)) (append b" got " (decimal64 (baseFeeNat found)))))
+  | batchInvalidWorkerId expected found => (append b"Invalid worker id, expected " (append (decimal64 (workerIdNat expected)) (append b" got " (decimal64 (workerIdNat found)))))
+  | batchInvalidBlobTransaction hash => (append b"Proposed batch contains blob transaction. Tx hash: 0x" (bytesHex (keccakBytes hash)))
+  | batchGasOverflow  => b"Overflow calculating max possible gas."
+  | batchInvalidEpoch expected found => (append b"Invalid epoch, expected epoch " (append (decimal64 (epochNat expected)) (append b" got epoch " (decimal64 (epochNat found)))))
+def batchValidationPenalty : BatchValidationError -> BatchPenalty := fun (error : BatchValidationError) =>
+  match error as self in BatchValidationError return BatchPenalty with
+  | batchInvalidDigest  => batchPenaltyFatal
+  | batchCanonicalChain hash => batchPenaltyMild
+  | batchEmpty  => batchPenaltyFatal
+  | batchMaxGasExceeded total limit => batchPenaltyFatal
+  | batchCalculateMaxGas  => batchPenaltyFatal
+  | batchMaxBytesExceeded total => batchPenaltyFatal
+  | batchRecoverTransaction digest message => batchPenaltySevere
+  | batchInvalidBaseFee expected found => batchPenaltyFatal
+  | batchInvalidWorkerId expected found => batchPenaltyFatal
+  | batchInvalidBlobTransaction hash => batchPenaltyMedium
+  | batchGasOverflow  => batchPenaltyFatal
+  | batchInvalidEpoch expected found => batchPenaltyMedium
+def BatchValidationResult : Type 0 -> Type 0 := fun (A : Type 0) => sum (BatchValidationError, A)
+def BatchTxDecoder : Type 0 -> Type 0 := fun (A : Type 0) =>
+  prod (Bytes -> sum (Bytes, A), A -> Keccak, A -> Bool, A -> Nat)
+def BatchValidator : Type 0 := prod (WorkerId, Epoch, BaseFee)
+def batchValidatorMake : WorkerId -> Epoch -> BaseFee -> BatchValidator :=
+  fun (worker : WorkerId) (epoch : Epoch) (fee : BaseFee) => tuple (worker, epoch, fee)
+def ValidBatch : Type 0 := prod (Batch, BatchDigest)
+def validBatchBatch : ValidBatch -> Batch := fun (value : ValidBatch) => value.0
+def validBatchDigest : ValidBatch -> BatchDigest := fun (value : ValidBatch) => value.1
+def BatchTxObservation : Type 0 := prod (Keccak, Bool, Nat)
+mu BatchTxObservations : Type 0 :=
+  | batchTxObservationsNil : BatchTxObservations
+  | batchTxObservationsCons (head : BatchTxObservation) (tail : BatchTxObservations) : BatchTxObservations
+def rec batchTxObservationsReverseOnto : BatchTxObservations -> BatchTxObservations -> BatchTxObservations :=
+  fun (values : BatchTxObservations) (tail : BatchTxObservations) =>
+    match values as self in BatchTxObservations return BatchTxObservations with
+    | batchTxObservationsNil => tail
+    | batchTxObservationsCons head rest => batchTxObservationsReverseOnto rest (batchTxObservationsCons head tail)

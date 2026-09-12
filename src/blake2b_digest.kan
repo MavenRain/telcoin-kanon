@@ -1,0 +1,18 @@
+-- Unkeyed BLAKE2b with a 64-byte digest, used by the durable frame format.
+def blake2bInitial512 : Blake8 := tuple (7640891576956012808, 13503953896175478587, 4354685564936845355, 11912009170470909681, 5840696475078001361, 11170449401992604703, 2270897969802886507, 6620516959819538809)
+def blake2bDigestCompress : Blake8 -> Bytes -> Nat -> Bool -> Blake8 :=
+  fun (hash : Blake8) (block : Bytes) (count : Nat) (final : Bool) =>
+    blake2bCompress 12 hash (blake2bRead16 block 0) count 0 final
+def rec blake2bDigestScan : Bytes -> Nat -> Bytes -> Nat -> Blake8 -> Bytes :=
+  fun (input : Bytes) (count : Nat) (block : Bytes) (length : Nat) (hash : Blake8) =>
+    match input as self in Bytes return Bytes with
+    | bytesNil => blake2bEncode (blake2bDigestCompress hash (reverse block) count (inj 1 of 2 (tuple ())))
+    | bytesCons head tail =>
+      case (natEq length 128) with
+      | 0 (unit : prod ()) => blake2bDigestScan tail (natAdd count 1) (bytesCons head block) (natAdd length 1) hash
+      | 1 (unit : prod ()) => blake2bDigestScan tail (natAdd count 1) (bytesCons head bytesNil) 1
+          (blake2bDigestCompress hash (reverse block) count (inj 0 of 2 (tuple ())))
+def blake2b512 : Bytes -> Bytes := fun (input : Bytes) =>
+  let iv : Blake8 := blake2bInitial512 in
+  blake2bDigestScan input 0 bytesNil 0
+    (tuple (wordXor64 iv.0 16842816, iv.1, iv.2, iv.3, iv.4, iv.5, iv.6, iv.7))

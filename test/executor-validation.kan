@@ -1,0 +1,24 @@
+def executorTestValidate : WorldState -> EvmBlock -> TxResult Transaction -> Bytes := fun (world : WorldState) (block : EvmBlock) (input : TxResult Transaction) =>
+  case input with | 0 (error : TxDecodeError) => append b"fixture:" (txDecodeErrorText error) | 1 (tx : Transaction) =>
+  let initial : HostInt := executorInitialGas tx in
+  let floor : HostInt := executorFloorGas block tx in
+  case (executorValidate world block tx initial floor) with
+  | 1 (error : ExecutorError) => append b"error:" (executorErrorText error)
+  | 0 (unit : prod ()) => append b"ok:" (append (decimal64 (hostIntClampZero initial)) (append b":" (decimal64 (hostIntClampZero floor))))
+def executorTestFinalize : WorldState -> Nat -> Bytes -> Bytes -> Bytes -> Bytes -> Bytes -> Bytes -> Bytes -> Bytes -> Bytes -> Bytes -> Bytes :=
+  fun (world : WorldState) (mode : Nat) (gasLimit : Bytes) (remaining : Bytes) (refund : Bytes) (authRefund : Bytes) (floor : Bytes)
+    (effective : Bytes) (baseFee : Bytes) (sender : Bytes) (coinbase : Bytes) (basefeeAddress : Bytes) =>
+  let outcome : ExecutorFrameOutcome := case (natEq mode 0) with
+    | 1 (unit : prod ()) => executorRanSuccess world (executorTestInt remaining) (executorTestInt refund) evmLogsNil bytesNil (valueNone Address)
+    | 0 (unit : prod ()) => case (natEq mode 1) with
+      | 1 (unit : prod ()) => executorRanRevert world (executorTestInt remaining) bytesNil
+      | 0 (unit : prod ()) => executorRanHalt world (receiptFrameHalt evmOutOfGas)
+  in executorTestResultText (inj 1 of 2 (executorFinalize (executorTestInt gasLimit) (executorTestInt floor)
+    (executorTestWord effective) (executorTestWord baseFee) (executorTestAddress sender) (executorTestAddress coinbase)
+    (executorTestAddress basefeeAddress) (executorTestInt authRefund) outcome))
+def executorTestSystemHex : Bytes -> Bytes := fun (input : Bytes) => bytesHex (systemContractsBytesOfHex input)
+def executorTestPredeploy : WorldState -> Bytes := fun (world : WorldState) => executorTestWorldText (systemContractsPredeploy world)
+def executorTestWarmedPrecompiles : Nat -> Bytes := fun (fork : Nat) =>
+  let spec : EvmSpec := case (natEq fork 0) with | 1 (unit : prod ()) => evmShanghai | 0 (unit : prod ()) =>
+    case (natEq fork 1) with | 1 (unit : prod ()) => evmCancun | 0 (unit : prod ()) => evmPrague
+  in seqAddressWrite (fun (address : Address) => append (bytesHex (addressBytes address)) b";") (executorPrecompileAddresses spec)

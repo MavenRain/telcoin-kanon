@@ -1,0 +1,86 @@
+def executionEngineFinishBlock : ExecutionBuilding -> ExecutionBlockNumber -> BlockContext -> BlockPreState -> BlockExecutionOutcome -> BlockInvalidTxs -> ExecutionEngineResult ExecutionBuilding :=
+  fun (built : ExecutionBuilding) (number : ExecutionBlockNumber) (context : BlockContext) (pre : BlockPreState) (outcome : BlockExecutionOutcome) (skipped : BlockInvalidTxs) =>
+    case (blockExecutionFinish outcome context) with
+    | 0 (error : BlockExecutionError) => inj 0 of 2 (executionBlockError number error)
+    | 1 (finished : BlockFinished) => case (blockHeaderAssemble context finished) with
+      | 0 (error : BlockHeaderError) => inj 0 of 2 (executionAssemblyError number error)
+      | 1 (header : BlockHeader) =>
+        let world : WorldState := blockFinishedWorld finished in
+        let block : ExecutedBlock := executedBlockMake header number pre (blockExecutionTransactions outcome)
+          (blockExecutionReceipts outcome) skipped world (blockFinishedCloseDisposition finished) in
+        inj 1 of 2 (tuple (executionAnchorOfHeader header, world, recentHashesPush built.2 (blockHeaderHash header),
+          executedBlocksCons block built.3))
+def executionEngineRunBlock : ExecutionBuilding -> ExecutionBlockNumber -> BlockContext -> TxEnvelopes -> ExecutionEngineResult ExecutionBuilding :=
+  fun (built : ExecutionBuilding) (number : ExecutionBlockNumber) (context : BlockContext) (transactions : TxEnvelopes) =>
+    case (blockExecutionApplyPreBlock built.1 context) with
+    | 0 (error : BlockExecutionError) => inj 0 of 2 (executionBlockError number error)
+    | 1 (pre : BlockPreState) => case (blockExecutionRunSkippingInvalid pre context transactions) with
+      | 0 (error : BlockExecutionError) => inj 0 of 2 (executionBlockError number error)
+      | 1 (outcome : prod (BlockExecutionOutcome, BlockInvalidTxs)) =>
+          executionEngineFinishBlock built number context pre (outcome.0) (outcome.1)
+def executionEngineBuildBlock : ExecutionConfig -> ExecutionBuilding -> ExecutionBuildSpec -> ExecutionEngineResult ExecutionBuilding :=
+  fun (config : ExecutionConfig) (built : ExecutionBuilding) (spec : ExecutionBuildSpec) =>
+    let number : ExecutionBlockNumber := executionBlockNumberSucc (executionAnchorNumber built.0) in
+    let block : EvmBlock := evmBlockMakeAtSpec
+      (forkScheduleActiveAt (executionConfigForkSchedule config) (executionBuildSpecTimestamp spec))
+      (executionBuildSpecBeneficiary spec) (u256Value (timestampNat (executionBuildSpecTimestamp spec)))
+      (executionEngineIntWord number) (u256Value (registryBeNat (executionBuildSpecMixHash spec)))
+      (u256Value (executionBuildSpecGasLimit spec)) (executionBuildSpecBaseFee spec)
+      (executionConfigBaseFeeAddress config) (executionConfigChainId config) evmConsensusBlobGasprice (recentHashesWindow built.2) in
+    case (blockContextMake block (executionAnchorHash built.0) (executionBuildSpecConsensusRoot spec)
+      (executionBuildSpecNonce spec) (executionBuildSpecBatchDigest spec) (executionBuildSpecPosition spec) (executionBuildSpecBoundary spec)) with
+    | 0 (error : BlockContextError) => inj 0 of 2 (executionContextError number error)
+    | 1 (context : BlockContext) => executionEngineRunBlock built number context (executionBuildSpecTransactions spec)
+def executionEngineBlockOfSpec : ExecutionConfig -> ExecutionBuilding -> BlockPlanSpec -> EpochBoundary -> ExecutionEngineResult ExecutionBuilding :=
+  fun (config : ExecutionConfig) (built : ExecutionBuilding) (spec : BlockPlanSpec) (boundary : EpochBoundary) =>
+    executionEngineBuildBlock config built
+      (tuple (boundary, blockPlanSpecBeneficiary spec, blockPlanSpecTimestamp spec, blockPlanSpecMixHash spec,
+        blockPlanSpecGasLimit spec, u256Value (baseFeeNat (blockPlanSpecBaseFee spec)), blockPlanSpecConsensusRoot spec,
+        blockPlanSpecNonce spec, blockPlanSpecBatchDigest spec, blockPlanSpecPosition spec,
+        batchPayloadExecutableTxs (blockPlanSpecBatch spec)))
+def executionEngineCloseContext : ExecutionEngine -> ExecutionBuilding -> BlockCloseSpec -> EpochBoundary -> ExecutionEngineResult ExecutionBuilding :=
+  fun (state : ExecutionEngine) (built : ExecutionBuilding) (spec : BlockCloseSpec) (boundary : EpochBoundary) =>
+    executionEngineBuildBlock (executionEngineConfig state) built
+      (tuple (boundary, blockCloseSpecBeneficiary spec, blockCloseSpecTimestamp spec, blockCloseSpecMixHash spec,
+        u256Nat (executionEngineIntWord (executionAnchorGasLimit built.0)), executionAnchorBaseFee built.0,
+        blockCloseSpecConsensusRoot spec, blockCloseSpecNonce spec, batchDigestZero, evmBatchPositionOfWord u256Zero, txEnvelopesNil))
+def executionEngineCloseBlock : ExecutionEngine -> BatchOutput -> BlockCloseSpec -> ExecutionEngineResult (prod (ExecutionEngine, ExecutedBlocks)) :=
+  fun (state : ExecutionEngine) (output : BatchOutput) (spec : BlockCloseSpec) =>
+    case (executionEngineClosingBoundary state output) with
+    | 0 (error : ExecutionEngineError) => inj 0 of 2 error
+    | 1 (boundary : EpochBoundary) => case (executionEngineCloseContext state (executionEngineStart state) spec boundary) with
+      | 0 (error : ExecutionEngineError) => inj 0 of 2 error
+      | 1 (built : ExecutionBuilding) => inj 1 of 2 (executionEngineSeal output (executionEngineSettle state built))
+def executionEngineFinalSpec : ExecutionEngine -> BatchOutput -> ExecutionBuilding -> BlockPlanSpec -> ExecutionEngineResult (prod (ExecutionEngine, ExecutedBlocks)) :=
+  fun (state : ExecutionEngine) (output : BatchOutput) (built : ExecutionBuilding) (spec : BlockPlanSpec) =>
+    case (blockPlanSpecClosesEpoch spec) with
+    | 0 (unit : prod ()) => (case (executionEngineBlockOfSpec state.0 built spec epochOpen) with
+      | 0 (error : ExecutionEngineError) => inj 0 of 2 error
+      | 1 (after : ExecutionBuilding) => inj 1 of 2 (executionEngineSettle state after))
+    | 1 (unit : prod ()) => case (executionEngineClosingBoundary state output) with
+      | 0 (error : ExecutionEngineError) => inj 0 of 2 error
+      | 1 (boundary : EpochBoundary) => case (executionEngineBlockOfSpec state.0 built spec boundary) with
+        | 0 (error : ExecutionEngineError) => inj 0 of 2 error
+        | 1 (after : ExecutionBuilding) => inj 1 of 2 (executionEngineSeal output (executionEngineSettle state after))
+def rec executionEngineBuildSpecs : BlockPlanSpecs -> BlockPlanSpec -> ExecutionEngine -> BatchOutput -> ExecutionBuilding -> ExecutionEngineResult (prod (ExecutionEngine, ExecutedBlocks)) :=
+  fun (rest : BlockPlanSpecs) (current : BlockPlanSpec) (state : ExecutionEngine) (output : BatchOutput) (built : ExecutionBuilding) =>
+    match rest as self in BlockPlanSpecs return ExecutionEngineResult (prod (ExecutionEngine, ExecutedBlocks)) with
+    | blockPlanSpecsNil => executionEngineFinalSpec state output built current
+    | blockPlanSpecsCons next tail => case (executionEngineBlockOfSpec state.0 built current epochOpen) with
+      | 0 (error : ExecutionEngineError) => inj 0 of 2 error
+      | 1 (after : ExecutionBuilding) => executionEngineBuildSpecs tail next state output after
+def executionEngineApplyPlan : ExecutionEngine -> BatchOutput -> BlockPlan -> ExecutionEngineResult (prod (ExecutionEngine, ExecutedBlocks)) :=
+  fun (state : ExecutionEngine) (output : BatchOutput) (plan : BlockPlan) =>
+    match plan as self in BlockPlan return ExecutionEngineResult (prod (ExecutionEngine, ExecutedBlocks)) with
+    | blockPlanSkip => inj 1 of 2 (tuple (state, executedBlocksNil))
+    | blockPlanCloseBlock spec => executionEngineCloseBlock state output spec
+    | blockPlanBatchBlocks specs => executionEngineBuildSpecs specs.1 specs.0 state output (executionEngineStart state)
+def executionEngineExecute : ExecutionEngine -> BatchOutput -> ExecutionEngineResult (prod (ExecutionEngine, ExecutedBlocks)) :=
+  fun (state : ExecutionEngine) (output : BatchOutput) =>
+    let rewarded : ExecutionEngine := tuple (state.0, state.1, state.2, state.3, state.4,
+      rewardsCounterIncLeader state.5 (subDagLeaderAuthor (consensusBlockSubDag (batchOutputConsensus output))), state.6) in
+    match state.6 as self in ExecutionPhase return ExecutionEngineResult (prod (ExecutionEngine, ExecutedBlocks)) with
+    | executionSealed closedAt committee => inj 0 of 2 executionEpochSealed
+    | executionRunning boundary committee => case (blockPlan output (batchOutputClosesEpoch output boundary)) with
+      | 0 (error : BlockPlanError) => inj 0 of 2 (executionPlanError error)
+      | 1 (plan : BlockPlan) => executionEngineApplyPlan rewarded output plan

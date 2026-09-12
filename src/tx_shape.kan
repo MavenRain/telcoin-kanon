@@ -1,0 +1,83 @@
+def txShapeReadSigned : TxShapeKind -> RlpItems -> TxShapeResult TxShape := fun (kind : TxShapeKind) (fields : RlpItems) =>
+  case (txShapeFieldsMatch fields (txShapeSchema kind)) with
+  | 0 (unit : prod ()) => inj 0 of 2 txShapeFailedToDecode
+  | 1 (unit : prod ()) =>
+    let count : Nat := seqRlpItemLength fields in
+    let parityWord : U256 := txShapeWordAt fields (natSub count 3) in
+    let r : U256 := txShapeWordAt fields (natSub count 2) in
+    let s : U256 := txShapeWordAt fields (natSub count 1) in
+    let gas : Nat := u256Nat (txShapeWordAt fields (txShapeGasIndex kind)) in
+    case (natEq (txShapeTypeByte kind) 0) with
+    | 1 (unit : prod ()) => (case (txSignatureOfEip155 parityWord) with
+      | 0 (unit : prod ()) => inj 0 of 2 txShapeFailedToDecode
+      | 1 (legacy : prod (Bool, ValueOption U256)) => inj 1 of 2 (tuple (kind, fields, gas, legacy.1, txSignatureMake legacy.0 r s)))
+    | 0 (unit : prod ()) => inj 1 of 2 (tuple (kind, fields, gas, valueNone U256, txSignatureMake (natEq (u256Nat parityWord) 1) r s))
+def txShapeDecodeBody : Bytes -> TxShapeKind -> TxShapeResult TxShape := fun (body : Bytes) (kind : TxShapeKind) =>
+  case (rlpDecodeExact body) with
+  | 0 (error : RlpError) => inj 0 of 2 txShapeFailedToDecode
+  | 1 (item : RlpItem) => case (txReadList item) with
+    | 0 (error : TxDecodeError) => inj 0 of 2 txShapeFailedToDecode
+    | 1 (fields : RlpItems) => txShapeReadSigned kind fields
+def txShapeDecode : Bytes -> TxShapeResult TxShape := fun (input : Bytes) =>
+  match input as self in Bytes return TxShapeResult TxShape with
+  | bytesNil => inj 0 of 2 txShapeEmptyInput
+  | bytesCons byte rest => case (natLt 127 byte) with
+    | 1 (unit : prod ()) => txShapeDecodeBody input txShapeLegacy
+    | 0 (unit : prod ()) =>
+      case (natEq byte 0) with
+      | 1 (unit : prod ()) => txShapeDecodeBody rest txShapeLegacy
+      | 0 (unit : prod ()) =>
+        case (natEq byte 1) with
+        | 1 (unit : prod ()) => txShapeDecodeBody rest txShapeEip2930
+        | 0 (unit : prod ()) =>
+          case (natEq byte 2) with
+          | 1 (unit : prod ()) => txShapeDecodeBody rest txShapeEip1559
+          | 0 (unit : prod ()) =>
+            case (natEq byte 3) with
+            | 1 (unit : prod ()) => txShapeDecodeBody rest txShapeEip4844
+            | 0 (unit : prod ()) =>
+              case (natEq byte 4) with
+              | 1 (unit : prod ()) => txShapeDecodeBody rest txShapeEip7702
+              | 0 (unit : prod ()) => inj 0 of 2 txShapeFailedToDecode
+def rec txShapeEncodeFieldsAcc : RlpItems -> ByteStrings -> ByteStrings := fun (fields : RlpItems) (reversed : ByteStrings) =>
+  match fields as self in RlpItems return ByteStrings with
+  | rlpItemsNil => seqBytesReverse reversed
+  | rlpItemsCons head tail => txShapeEncodeFieldsAcc tail (seqBytesCons (rlpEncode head) reversed)
+def txShapeEncodeCanonical : TxShape -> Bytes := fun (tx : TxShape) =>
+  append (txShapeTypePrefix tx.0) (rlpEncodeList (txShapeEncodeFieldsAcc tx.1 seqBytesEmpty))
+def txShapeHash : TxShape -> Keccak := fun (tx : TxShape) => keccakDigest (txShapeEncodeCanonical tx)
+def rec txShapeUnsignedAcc : RlpItems -> Nat -> ByteStrings -> ByteStrings := fun (fields : RlpItems) (remaining : Nat) (reversed : ByteStrings) =>
+  match fields as self in RlpItems return ByteStrings with
+  | rlpItemsNil => seqBytesReverse reversed
+  | rlpItemsCons head tail => case (natEq remaining 0) with
+    | 1 (unit : prod ()) => seqBytesReverse reversed
+    | 0 (unit : prod ()) => txShapeUnsignedAcc tail (natSub remaining 1) (seqBytesCons (rlpEncode head) reversed)
+def rec txShapePrependReversed : ByteStrings -> ByteStrings -> ByteStrings := fun (reversed : ByteStrings) (tail : ByteStrings) =>
+  match reversed as self in ByteStrings return ByteStrings with
+  | byteStringsNil => tail
+  | byteStringsCons head rest => txShapePrependReversed rest (seqBytesCons head tail)
+def txShapeSigningPayload : TxShape -> Bytes := fun (tx : TxShape) =>
+  let unsigned : ByteStrings := txShapeUnsignedAcc tx.1 (natSub (seqRlpItemLength tx.1) 3) seqBytesEmpty in
+  case (natEq (txShapeTypeByte tx.0) 0) with
+  | 0 (unit : prod ()) => append (txShapeTypePrefix tx.0) (rlpEncodeList unsigned)
+  | 1 (unit : prod ()) => case tx.3 with
+    | 0 (unit : prod ()) => rlpEncodeList unsigned
+    | 1 (chain : U256) => rlpEncodeList (txShapePrependReversed (seqBytesReverse unsigned)
+      (seqBytesCons (txEncodeWord chain) (seqBytesCons (rlpEncodeBytes emptyBytes) (seqBytesCons (rlpEncodeBytes emptyBytes) seqBytesEmpty))))
+def txShapeRecoverSigner : TxShape -> TxShapeResult Address := fun (tx : TxShape) =>
+  let signature : TxSignature := tx.4 in
+  let s : Bytes := u256ToBeBytes (txSignatureS signature) in
+  case (secpSIsHigh s) with
+  | 1 (unit : prod ()) => inj 0 of 2 txShapeInvalidSignature
+  | 0 (unit : prod ()) => case (secpRecover (keccak256 (txShapeSigningPayload tx))
+      (hostIntPositive (boolNat (txSignatureParity signature))) (u256ToBeBytes (txSignatureR signature)) s) with
+    | 0 (unit : prod ()) => inj 0 of 2 txShapeInvalidSignature
+    | 1 (key : Bytes) => case (evmPublicKeyToAddress key) with
+      | 0 (unit : prod ()) => inj 0 of 2 txShapeInvalidSignature
+      | 1 (address : Address) => inj 1 of 2 address
+def txShapeDecodeAndRecover : Bytes -> TxShapeResult TxShape := fun (input : Bytes) =>
+  case (txShapeDecode input) with
+  | 0 (error : TxShapeError) => inj 0 of 2 error
+  | 1 (tx : TxShape) => case (txShapeRecoverSigner tx) with
+    | 0 (error : TxShapeError) => inj 0 of 2 error
+    | 1 (address : Address) => inj 1 of 2 tx

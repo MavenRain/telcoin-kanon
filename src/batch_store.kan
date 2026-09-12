@@ -1,0 +1,9 @@
+def BatchStore : Type 0 := ResolvedBatches
+def batchStoreEmpty : BatchStore := resolvedBatchesNil
+def batchStoreAdd : BatchStore -> Batch -> BatchStore := fun (store : BatchStore) (batch : Batch) =>
+  mapAdd BatchDigest Batch ResolvedBatches seqResolvedBatchOps batchDigestCompare (batchDigest batch) batch store
+def batchStoreOfBodies : Batches -> BatchStore := fun (bodies : Batches) =>
+  listFoldLeft Batch Batches BatchStore seqBatchOps batchStoreAdd batchStoreEmpty bodies
+def batchStoreFind : BatchStore -> BatchDigest -> ValueOption Batch := fun (store : BatchStore) (digest : BatchDigest) =>
+  mapLookup BatchDigest Batch ResolvedBatches seqResolvedBatchOps batchDigestEqual digest store
+def batchStoreCardinal : BatchStore -> Nat := fun (store : BatchStore) => seqResolvedBatchLength store

@@ -1,27 +1,38 @@
+def blockRootsTestWithdrawalEntries : Withdrawal -> Withdrawal -> Withdrawals -> Bytes :=
+  fun (withdrawal : Withdrawal) (other : Withdrawal) (entries : Withdrawals) =>
+    envTestField (withdrawalText withdrawal) (envTestField (bytesHex (withdrawalEncodeRlp withdrawal)) (envTestField (bytesHex (blockWithdrawalsRoot entries)) (envTestField (bytesHex (blockWithdrawalsRoot (seqWithdrawalReverse entries))) (envTestField (evmTestBool (withdrawalEqual withdrawal other)) (bytesHex (blockWithdrawalsRoot withdrawalsNil))))))
+def blockRootsTestWithdrawal : Withdrawal -> Address -> Bytes := fun (withdrawal : Withdrawal) (address : Address) =>
+  let other : Withdrawal := tuple (0, 0, address, 1) in
+  blockRootsTestWithdrawalEntries withdrawal other (withdrawalsCons withdrawal (withdrawalsCons other withdrawalsNil))
 def evm_test_withdrawal : Bytes -> Bytes -> Bytes -> Bytes -> Bytes := fun (indexRaw : Bytes) (validatorRaw : Bytes) (addressRaw : Bytes) (amountRaw : Bytes) =>
   case (hostIntParse indexRaw) with | 0 (unit : prod ()) => b"error:bad int" | 1 (index : HostInt) =>
   case (hostIntParse validatorRaw) with | 0 (unit : prod ()) => b"error:bad int" | 1 (validator : HostInt) =>
   case (addressOfBytes addressRaw) with | 0 (unit : prod ()) => b"error:bad address" | 1 (address : Address) =>
   case (hostIntParse amountRaw) with | 0 (unit : prod ()) => b"error:bad int" | 1 (amount : HostInt) =>
   case (withdrawalMake index validator address amount) with | 0 (unit : prod ()) => b"none" | 1 (withdrawal : Withdrawal) =>
-  let other : Withdrawal := tuple (0, 0, address, 1) in let entries : Withdrawals := withdrawalsCons withdrawal (withdrawalsCons other withdrawalsNil) in
-  envTestField (withdrawalText withdrawal) (envTestField (bytesHex (withdrawalEncodeRlp withdrawal))
-    (envTestField (bytesHex (blockWithdrawalsRoot entries)) (envTestField (bytesHex (blockWithdrawalsRoot (seqWithdrawalReverse entries)))
-      (envTestField (evmTestBool (withdrawalEqual withdrawal other)) (bytesHex (blockWithdrawalsRoot withdrawalsNil))))))
+    blockRootsTestWithdrawal withdrawal address
+def blockRootsTestBloomChecks : Bloom -> Bytes -> Bytes := fun (accrued : Bloom) (input : Bytes) =>
+  envTestField (evmTestBool (bloomEqual accrued (bloomAccrue accrued input))) (envTestField (evmTestBool (bloomEqual (bloomOfLogs evmLogsNil) bloomEmpty)) (case (bloomOfBytes (bloomBytes accrued)) with | 0 (unit : prod ()) => b"none"
+    | 1 (decoded : Bloom) => evmTestBool (bloomEqual decoded accrued)))
+def blockRootsTestBloomAccrued : Bloom -> Bytes -> EvmLogs -> Bytes :=
+  fun (accrued : Bloom) (input : Bytes) (logs : EvmLogs) =>
+    envTestField (bytesHex (bloomBytes accrued)) (envTestField (bytesHex (bloomBytes (bloomOfLogs logs))) (blockRootsTestBloomChecks accrued input))
 def evm_test_bloom : Bytes -> Bytes -> Bytes -> Bytes -> Bytes := fun (initialRaw : Bytes) (input : Bytes) (addressRaw : Bytes) (topicRaw : Bytes) =>
   case (bloomOfBytes initialRaw) with | 0 (unit : prod ()) => b"none" | 1 (initial : Bloom) =>
   case (addressOfBytes addressRaw) with | 0 (unit : prod ()) => b"error:bad address" | 1 (address : Address) =>
   case (u256OfHex topicRaw) with | 0 (unit : prod ()) => b"error:bad word" | 1 (topic : U256) =>
-  let accrued : Bloom := bloomAccrue initial input in let logs : EvmLogs := evmLogsCons (tuple (address, evmTopics2 topic u256Zero, input)) (evmLogsCons (tuple (address, evmTopics0, b"")) evmLogsNil) in
-  envTestField (bytesHex (bloomBytes accrued)) (envTestField (bytesHex (bloomBytes (bloomOfLogs logs)))
-    (envTestField (evmTestBool (bloomEqual accrued (bloomAccrue accrued input))) (envTestField (evmTestBool (bloomEqual (bloomOfLogs evmLogsNil) bloomEmpty))
-      (case (bloomOfBytes (bloomBytes accrued)) with | 0 (unit : prod ()) => b"none" | 1 (decoded : Bloom) => evmTestBool (bloomEqual decoded accrued)))))
+    blockRootsTestBloomAccrued (bloomAccrue initial input) input
+      (evmLogsCons (tuple (address, evmTopics2 topic u256Zero, input)) (evmLogsCons (tuple (address, evmTopics0, b"")) evmLogsNil))
+def blockRootsTestWorlds : WorldState -> WorldState -> Account -> Bytes :=
+  fun (world : WorldState) (reordered : WorldState) (account : Account) =>
+    envTestField (bytesHex (blockStorageRoot account)) (envTestField (bytesHex (blockAccountLeaf account)) (envTestField (bytesHex (blockStateRoot world)) (envTestField (evmTestBool (blockRootsAgree world reordered)) (evmTestBool (blockRootsAgree world worldStateEmpty)))))
+def blockRootsTestWorld : WorldState -> Bytes := fun (world : WorldState) =>
+  blockRootsTestWorlds world
+    (listFoldLeft (prod (Address, Account)) WorldAccounts WorldState seqWorldAccountOps
+      (fun (world : WorldState) (entry : prod (Address, Account)) => worldStateSetAccount world entry.0 entry.1)
+      worldStateEmpty (seqWorldAccountReverse (worldStateAccounts world)))
+    (worldStateAccount world (addressOfWord u256One))
 def evm_test_state_roots : Bytes -> Bytes := fun (raw : Bytes) =>
   executionWith WorldAccounts (codecList (prod (Address, Account)) WorldAccounts seqWorldAccountOps (codecPair Address Account stateAddressCodec stateAccountCodec)) raw
-    (fun (accounts : WorldAccounts) => let world : WorldState := listFoldLeft (prod (Address, Account)) WorldAccounts WorldState seqWorldAccountOps
-      (fun (world : WorldState) (entry : prod (Address, Account)) => worldStateSetAccount world entry.0 entry.1) worldStateEmpty accounts in
-      let account : Account := worldStateAccount world (addressOfWord u256One) in
-      let reordered : WorldState := listFoldLeft (prod (Address, Account)) WorldAccounts WorldState seqWorldAccountOps
-        (fun (world : WorldState) (entry : prod (Address, Account)) => worldStateSetAccount world entry.0 entry.1) worldStateEmpty (seqWorldAccountReverse (worldStateAccounts world)) in
-      envTestField (bytesHex (blockStorageRoot account)) (envTestField (bytesHex (blockAccountLeaf account)) (envTestField (bytesHex (blockStateRoot world))
-        (envTestField (evmTestBool (blockRootsAgree world reordered)) (evmTestBool (blockRootsAgree world worldStateEmpty))))))
+    (fun (accounts : WorldAccounts) => blockRootsTestWorld (listFoldLeft (prod (Address, Account)) WorldAccounts WorldState seqWorldAccountOps
+      (fun (world : WorldState) (entry : prod (Address, Account)) => worldStateSetAccount world entry.0 entry.1) worldStateEmpty accounts))

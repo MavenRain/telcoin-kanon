@@ -1,0 +1,58 @@
+-- Preserve partition order, reservoir draws, Fisher-Yates draws, and truncation.
+def committeeIsPendingExit : ValidatorInfo -> Bool := fun (info : ValidatorInfo) => validatorStatusEqual (validatorInfoStatus info) validatorPendingExit
+def rec committeePartitionAcc : ValidatorInfos -> ValidatorInfos -> ValidatorInfos -> prod (ValidatorInfos, ValidatorInfos) :=
+  fun (pool : ValidatorInfos) (pending : ValidatorInfos) (active : ValidatorInfos) =>
+    match pool as self in ValidatorInfos return prod (ValidatorInfos, ValidatorInfos) with
+    | validatorInfosNil => tuple (seqValidatorInfoReverse pending, seqValidatorInfoReverse active)
+    | validatorInfosCons head tail => case (committeeIsPendingExit head) with
+      | 1 (unit : prod ()) => committeePartitionAcc tail (validatorInfosCons head pending) active
+      | 0 (unit : prod ()) => committeePartitionAcc tail pending (validatorInfosCons head active)
+def rec committeePrependReversed : ValidatorInfos -> ValidatorInfos -> ValidatorInfos :=
+  fun (reversed : ValidatorInfos) (tail : ValidatorInfos) =>
+    match reversed as self in ValidatorInfos return ValidatorInfos with
+    | validatorInfosNil => tail
+    | validatorInfosCons head rest => committeePrependReversed rest (validatorInfosCons head tail)
+def rec committeeShuffleNth : ValidatorInfos -> Nat -> ValueOption ValidatorInfo := fun (values : ValidatorInfos) (index : Nat) =>
+  match values as self in ValidatorInfos return ValueOption ValidatorInfo with
+  | validatorInfosNil => valueNone ValidatorInfo
+  | validatorInfosCons head tail => case (natEq index 0) with
+    | 1 (unit : prod ()) => valueSome ValidatorInfo head
+    | 0 (unit : prod ()) => committeeShuffleNth tail (natSub index 1)
+def committeeSwap : Nat -> Nat -> ValidatorInfos -> ValidatorInfos := fun (i : Nat) (j : Nat) (values : ValidatorInfos) =>
+  case (committeeShuffleNth values i) with
+  | 0 (unit : prod ()) => values
+  | 1 (left : ValidatorInfo) => case (committeeShuffleNth values j) with
+    | 0 (unit : prod ()) => values
+    | 1 (right : ValidatorInfo) => listReplaceAt ValidatorInfo ValidatorInfos seqValidatorInfoOps j left
+      (listReplaceAt ValidatorInfo ValidatorInfos seqValidatorInfoOps i right values)
+def rec committeeFisherYatesAcc : ValidatorInfos -> ValidatorInfos -> StdRng -> Nat -> prod (ValidatorInfos, StdRng) :=
+  fun (fuel : ValidatorInfos) (values : ValidatorInfos) (rng : StdRng) (index : Nat) =>
+    match fuel as self in ValidatorInfos return prod (ValidatorInfos, StdRng) with
+    | validatorInfosNil => tuple (values, rng)
+    | validatorInfosCons head tail => case (stdRngRangeInclusive rng (hostIntPositive index)) with
+      | 0 (error : StdRngError) => tuple (values, rng)
+      | 1 (draw : prod (Nat, StdRng)) => committeeFisherYatesAcc tail (committeeSwap index draw.0 values) draw.1 (natSub index 1)
+def committeeFisherYates : ValidatorInfos -> StdRng -> Nat -> prod (ValidatorInfos, StdRng) :=
+  fun (values : ValidatorInfos) (rng : StdRng) (index : Nat) =>
+    let prefix : prod (ValidatorInfos, ValidatorInfos) := listSplitAt ValidatorInfo ValidatorInfos seqValidatorInfoOps index values in
+    committeeFisherYatesAcc prefix.0 values rng index
+def rec committeeTakeAddressesAcc : ValidatorInfos -> Nat -> Addresses -> Addresses :=
+  fun (values : ValidatorInfos) (remaining : Nat) (reversed : Addresses) =>
+    match values as self in ValidatorInfos return Addresses with
+    | validatorInfosNil => seqAddressReverse reversed
+    | validatorInfosCons head tail => case (natEq remaining 0) with
+      | 1 (unit : prod ()) => seqAddressReverse reversed
+      | 0 (unit : prod ()) => committeeTakeAddressesAcc tail (natSub remaining 1) (addressesCons (validatorInfoAddress head) reversed)
+def committeeShuffle : ValidatorInfos -> HostInt -> Hash32 -> Addresses :=
+  fun (pool : ValidatorInfos) (committeeSize : HostInt) (randomness : Hash32) =>
+    let rng : StdRng := stdRngOfRandomness randomness in
+    let partition : prod (ValidatorInfos, ValidatorInfos) := committeePartitionAcc pool validatorInfosNil validatorInfosNil in
+    let activeCount : Nat := seqValidatorInfoLength partition.1 in
+    let size : Nat := hostIntClampZero committeeSize in
+    let selected : prod (ValidatorInfos, StdRng) := case (natLt activeCount size) with
+      | 0 (unit : prod ()) => tuple (partition.1, rng)
+      | 1 (unit : prod ()) =>
+        let picked : prod (ValidatorInfos, StdRng) := randChooseMultiple ValidatorInfo ValidatorInfos seqValidatorInfoOps rng (natSub size activeCount) partition.0 in
+        tuple (committeePrependReversed (seqValidatorInfoReverse partition.1) picked.0, picked.1)
+    in let shuffled : prod (ValidatorInfos, StdRng) := committeeFisherYates selected.0 selected.1 (natSub (seqValidatorInfoLength selected.0) 1) in
+    committeeTakeAddressesAcc shuffled.0 size addressesNil

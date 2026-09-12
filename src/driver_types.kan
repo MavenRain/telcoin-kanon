@@ -1,0 +1,47 @@
+def DriverAdvance : Type 0 := prod (ConsensusBlock, BatchOutput, ExecutedBlocks, Bool)
+def driverAdvanceConsensus : DriverAdvance -> ConsensusBlock := fun (value : DriverAdvance) => value.0
+def driverAdvanceOutput : DriverAdvance -> BatchOutput := fun (value : DriverAdvance) => value.1
+def driverAdvanceBlocks : DriverAdvance -> ExecutedBlocks := fun (value : DriverAdvance) => value.2
+def driverAdvanceClosesEpoch : DriverAdvance -> Bool := fun (value : DriverAdvance) => value.3
+mu DriverError : Type 0 :=
+| driverReceive (error : SubscriberError) : DriverError
+| driverExecute (error : ExecutionEngineError) : DriverError
+| driverEpochMismatch (installed : Epoch) (output : Epoch) : DriverError
+| driverSealedNeedsHandoff : DriverError
+def driverErrorText : DriverError -> Bytes := fun (error : DriverError) =>
+  match error as self in DriverError return Bytes with
+  | driverReceive failure => subscriberErrorText failure
+  | driverExecute failure => executionEngineErrorText failure
+  | driverEpochMismatch installed output => append b"output refused: leader epoch "
+      (append (decimal64 (epochNat output)) (append b" does not match the installed committee epoch " (decimal64 (epochNat installed))))
+  | driverSealedNeedsHandoff => b"the driver's epoch is sealed: the epoch handoff (begin_epoch) is owed before the next output"
+mu DriverHandoffError : Type 0 :=
+| driverNotSealed : DriverHandoffError
+| driverHandoffCommitteeEpoch (installed : Epoch) (proposed : Epoch) : DriverHandoffError
+| driverHandoffEngineRefused (error : ExecutionEngineError) : DriverHandoffError
+def driverHandoffErrorText : DriverHandoffError -> Bytes := fun (error : DriverHandoffError) =>
+  match error as self in DriverHandoffError return Bytes with
+  | driverNotSealed => b"epoch handoff refused: the epoch is still running, so no closing block has rooted the leader counts begin_epoch would clear"
+  | driverHandoffCommitteeEpoch installed proposed => append b"epoch handoff refused: proposed committee epoch "
+      (append (decimal64 (epochNat proposed)) (append b" does not advance past the installed epoch " (decimal64 (epochNat installed))))
+  | driverHandoffEngineRefused failure => append b"epoch handoff refused by the engine: " (executionEngineErrorText failure)
+mu DriverResumeError : Type 0 :=
+| driverResumeCommitteeEpoch (supplied : Epoch) (checkpoint : Epoch) : DriverResumeError
+| driverResumeCommitteeMismatch (epoch : Epoch) : DriverResumeError
+| driverResumeStoreEpoch (checkpoint : Epoch) (store : Epoch) : DriverResumeError
+| driverResumeGap (error : ConsensusStoreMiss) : DriverResumeError
+def driverResumeErrorText : DriverResumeError -> Bytes := fun (error : DriverResumeError) =>
+  match error as self in DriverResumeError return Bytes with
+  | driverResumeCommitteeEpoch supplied checkpoint => append b"resume refused: the supplied committee is of epoch "
+      (append (decimal64 (epochNat supplied)) (append b" but the checkpoint's blocks executed under epoch " (decimal64 (epochNat checkpoint))))
+  | driverResumeCommitteeMismatch epoch => append b"resume refused: the supplied committee and the checkpoint's are both of epoch "
+      (append (decimal64 (epochNat epoch)) b" but are not the same committee, so the persisted leader counts did not accrue under the supplied seats")
+  | driverResumeStoreEpoch checkpoint store => append b"resume refused: the checkpoint executed under epoch "
+      (append (decimal64 (epochNat checkpoint)) (append b" but the store's open epoch is "
+        (append (decimal64 (epochNat store)) b", so the two durable values are not a matched pair")))
+  | driverResumeGap failure => append b"resume refused, the gap could not be collected: " (consensusStoreMissText failure)
+def Driver : Type 0 := prod (ChainSpec, Subscriber, ExecutionEngine, ValueOption ConsensusBlock)
+def driverSpec : Driver -> ChainSpec := fun (driver : Driver) => driver.0
+def driverSubscriber : Driver -> Subscriber := fun (driver : Driver) => driver.1
+def driverEngine : Driver -> ExecutionEngine := fun (driver : Driver) => driver.2
+def driverLastForwardedBlock : Driver -> ValueOption ConsensusBlock := fun (driver : Driver) => driver.3

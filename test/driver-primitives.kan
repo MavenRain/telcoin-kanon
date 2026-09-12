@@ -1,0 +1,47 @@
+def rec driverTestBookQueries : ByteStrings -> AddressBook -> Bytes := fun (queries : ByteStrings) (book : AddressBook) =>
+  match queries as self in ByteStrings return Bytes with
+  | byteStringsNil => emptyBytes
+  | byteStringsCons head tail => case (cryptoKeyParse head) with
+    | 0 (unit : prod ()) => b"error:bad seed"
+    | 1 (key : SecretKey) =>
+      let result : Bytes := case (addressBookFind book (authorityIdOfPublicKey (secretKeyPublic key))) with
+        | 0 (unit : prod ()) => b"none"
+        | 1 (address : Address) => bytesHex (addressBytes address) in
+      append result (append b";" (driverTestBookQueries tail book))
+def driverTestBooks : ByteStrings -> ByteStrings -> ByteStrings -> Bytes :=
+  fun (older : ByteStrings) (newer : ByteStrings) (queries : ByteStrings) =>
+  match (engineTestCommittee older 0) as oldResult in CommitteeResult return Bytes with
+  | committeeError error => append b"error:" (committeeErrorText error)
+  | committeeOk oldCommittee => match (engineTestCommittee newer 1) as newResult in CommitteeResult return Bytes with
+    | committeeError error => append b"error:" (committeeErrorText error)
+    | committeeOk newCommittee => driverTestBookQueries queries
+        (addressBookUnion (addressBookOfCommittee newCommittee) (addressBookOfCommittee oldCommittee))
+def rec driverTestStoreQueries : ByteStrings -> BatchStore -> Bytes := fun (queries : ByteStrings) (store : BatchStore) =>
+  match queries as self in ByteStrings return Bytes with
+  | byteStringsNil => emptyBytes
+  | byteStringsCons head tail =>
+    let result : Bytes := case (batchStoreFind store (batchDigestValue head)) with
+      | 0 (unit : prod ()) => b"none"
+      | 1 (batch : Batch) => bytesHex (batchPreimage batch) in
+    append result (append b";" (driverTestStoreQueries tail store))
+def driverTestStore : Bytes -> ByteStrings -> Bytes := fun (raw : Bytes) (queries : ByteStrings) =>
+  executionWith Batches (codecList Batch Batches seqBatchOps batchCodec) raw (fun (bodies : Batches) =>
+    let store : BatchStore := batchStoreOfBodies bodies in
+    engineTestField (decimal64 (batchStoreCardinal store)) (driverTestStoreQueries queries store))
+def driverTestSubscriberResult : Subscriber -> SubDag -> BatchStore -> AddressBook -> Bytes :=
+  fun (subscriber : Subscriber) (subdag : SubDag) (bodies : BatchStore) (book : AddressBook) =>
+  case (subscriberReceive subscriber subdag bodies (fun (id : AuthorityId) => addressBookFind book id)) with
+  | 0 (error : SubscriberError) => append b"error:" (subscriberErrorText error)
+  | 1 (received : prod (Subscriber, ConsensusBlock, BatchOutput)) =>
+    engineTestField (consensusBlockNumberText (subscriberNumber subscriber))
+      (engineTestField (consensusBlockNumberText (subscriberNumber received.0))
+        (engineTestField (bytesHex (outputDigestBytes (consensusBlockDigest (subscriberMint subscriber subdag))))
+          (engineTestField (bytesHex (outputDigestBytes (consensusBlockDigest received.1))) (batchOutputTestDescribe received.2))))
+def driverTestReceive : ByteStrings -> Bytes -> Bytes -> Bytes :=
+  fun (members : ByteStrings) (subdagRaw : Bytes) (bodiesRaw : Bytes) =>
+  match (engineTestCommittee members 0) as result in CommitteeResult return Bytes with
+  | committeeError error => append b"error:" (committeeErrorText error)
+  | committeeOk committee =>
+    executionWith SubDag subDagCodec subdagRaw (fun (subdag : SubDag) =>
+    executionWith Batches (codecList Batch Batches seqBatchOps batchCodec) bodiesRaw (fun (bodies : Batches) =>
+      driverTestSubscriberResult (subscriberCreate consensusChainGenesis) subdag (batchStoreOfBodies bodies) (addressBookOfCommittee committee)))

@@ -1,0 +1,19 @@
+def Subscriber : Type 0 := ConsensusChain
+mu SubscriberError : Type 0 :=
+| subscriberAttach (error : BatchOutputError) : SubscriberError
+def subscriberErrorText : SubscriberError -> Bytes := fun (error : SubscriberError) =>
+  match error as self in SubscriberError return Bytes with
+  | subscriberAttach failure => append b"attach: " (batchOutputErrorText failure)
+def subscriberCreate : ConsensusChain -> Subscriber := fun (chain : ConsensusChain) => chain
+def subscriberAppend : Subscriber -> SubDag -> prod (ConsensusChain, ConsensusBlock) :=
+  fun (subscriber : Subscriber) (subdag : SubDag) => consensusChainAppend subscriber subdag
+def subscriberMint : Subscriber -> SubDag -> ConsensusBlock := fun (subscriber : Subscriber) (subdag : SubDag) =>
+  (subscriberAppend subscriber subdag).1
+def subscriberReceive : Subscriber -> SubDag -> BatchStore -> (AuthorityId -> ValueOption Address) ->
+  sum (SubscriberError, prod (Subscriber, ConsensusBlock, BatchOutput)) :=
+  fun (subscriber : Subscriber) (subdag : SubDag) (bodies : BatchStore) (addressOf : AuthorityId -> ValueOption Address) =>
+  let next : prod (ConsensusChain, ConsensusBlock) := subscriberAppend subscriber subdag in
+  case (batchOutputAttach next.1 (fun (digest : BatchDigest) => batchStoreFind bodies digest) addressOf) with
+  | 0 (error : BatchOutputError) => inj 0 of 2 (subscriberAttach error)
+  | 1 (output : BatchOutput) => inj 1 of 2 (tuple (subscriberCreate next.0, next.1, output))
+def subscriberNumber : Subscriber -> ConsensusBlockNumber := fun (subscriber : Subscriber) => consensusChainNumber subscriber

@@ -1,0 +1,54 @@
+mu FrameKind : Type 0 :=
+| frameRecord : FrameKind
+| frameEpochOpen : FrameKind
+def FrameHead : Type 0 := prod (FrameKind, HostInt, HostInt)
+def frameHeadKind : FrameHead -> FrameKind := fun (head : FrameHead) => head.0
+def frameHeadSeq : FrameHead -> HostInt := fun (head : FrameHead) => head.1
+def frameHeadPayloadLength : FrameHead -> HostInt := fun (head : FrameHead) => head.2
+def frameMaxPayload : Nat := 16777216
+def frameHeaderSize : Nat := 24
+def frameTrailerSize : Nat := 16
+def frameSize : HostInt -> HostInt := fun (length : HostInt) => hostIntAdd length (hostIntPositive 40)
+mu FrameBad : Type 0 :=
+| frameShort (at : HostInt) (have : HostInt) (need : HostInt) : FrameBad
+| frameBadHeadTag (at : HostInt) : FrameBad
+| frameBadBodyTag (at : HostInt) : FrameBad
+| frameLengthDisagrees (at : HostInt) (head : HostInt) (echo : HostInt) : FrameBad
+| frameMissingEndMagic (at : HostInt) : FrameBad
+| frameBadKind (at : HostInt) (byte : HostInt) : FrameBad
+| frameOversize (at : HostInt) (length : HostInt) (cap : HostInt) : FrameBad
+| frameSeqOutOfOrder (at : HostInt) (expected : HostInt) (got : HostInt) : FrameBad
+def frameBadOffset : FrameBad -> HostInt := fun (bad : FrameBad) =>
+  match bad as self in FrameBad return HostInt with
+  | frameShort at have need => at
+  | frameBadHeadTag at => at
+  | frameBadBodyTag at => at
+  | frameLengthDisagrees at head echo => at
+  | frameMissingEndMagic at => at
+  | frameBadKind at byte => at
+  | frameOversize at length cap => at
+  | frameSeqOutOfOrder at expected got => at
+def rec frameHexDropZero : Bytes -> Bytes := fun (text : Bytes) =>
+  match text as self in Bytes return Bytes with
+  | bytesNil => b"00"
+  | bytesCons head tail => case (natLt 1 (bytesLength tail)) with
+    | 0 (unit : prod ()) => text
+    | 1 (unit : prod ()) => case (natEq head 48) with
+      | 0 (unit : prod ()) => text
+      | 1 (unit : prod ()) => frameHexDropZero tail
+def frameBadDetail : FrameBad -> Bytes := fun (bad : FrameBad) =>
+  match bad as self in FrameBad return Bytes with
+  | frameShort at have need => append (hostIntText have) (append b" bytes left, a frame needs " (hostIntText need))
+  | frameBadHeadTag at => b"the header does not match its own tag"
+  | frameBadBodyTag at => b"the payload does not match its own tag"
+  | frameLengthDisagrees at head echo => append b"the header says " (append (hostIntText head) (append b" bytes, the trailer says " (hostIntText echo)))
+  | frameMissingEndMagic at => b"the frame does not end in TNCE"
+  | frameBadKind at byte => append b"kind byte 0x" (append (frameHexDropZero (bytesHex (reverse (bcsEncodeU64 (hostIntBits byte))))) b" is not a frame kind")
+  | frameOversize at length cap => append b"the declared length " (append (hostIntText length) (append b" is outside 1 .. " (hostIntText cap)))
+  | frameSeqOutOfOrder at expected got => append b"expected sequence " (append (hostIntText expected) (append b", the frame carries " (hostIntText got)))
+def frameBadText : FrameBad -> Bytes := fun (bad : FrameBad) =>
+  append b"offset " (append (hostIntText (frameBadOffset bad)) (append b": " (frameBadDetail bad)))
+mu FrameStop : Type 0 :=
+| frameClean (at : HostInt) : FrameStop
+| frameTorn (at : HostInt) (why : FrameBad) : FrameStop
+| frameCorrupt (at : HostInt) (why : FrameBad) (nextGood : HostInt) : FrameStop

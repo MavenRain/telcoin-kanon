@@ -1,0 +1,33 @@
+def ExecutorSettlement : Type 0 := prod (WorldState, HostInt, HostInt, HostInt -> HostInt -> Receipt)
+def executorSettlement : HostInt -> ExecutorFrameOutcome -> ExecutorSettlement := fun (gasLimit : HostInt) (outcome : ExecutorFrameOutcome) =>
+  match outcome as self in ExecutorFrameOutcome return ExecutorSettlement with
+  | executorRanSuccess world remaining refund logs output created => tuple (world, hostIntSub gasLimit remaining, refund,
+      fun (used : HostInt) (refunded : HostInt) => receiptSuccess output created used refunded logs)
+  | executorRanRevert world remaining output => tuple (world, hostIntSub gasLimit remaining, hostIntPositive 0,
+      fun (used : HostInt) (refunded : HostInt) => receiptReverted output used)
+  | executorRanHalt world reason => tuple (world, gasLimit, hostIntPositive 0,
+      fun (used : HostInt) (refunded : HostInt) => receiptHalted reason used)
+def executorFinalize : HostInt -> HostInt -> U256 -> U256 -> Address -> Address -> Address -> HostInt -> ExecutorFrameOutcome -> prod (Receipt, WorldState) :=
+  fun (gasLimit : HostInt) (floorGas : HostInt) (effective : U256) (baseFee : U256) (sender : Address) (coinbase : Address) (basefeeAddress : Address) (authRefund : HostInt) (outcome : ExecutorFrameOutcome) =>
+  let settlement : ExecutorSettlement := executorSettlement gasLimit outcome in
+  let pot : HostInt := hostIntAdd settlement.2 authRefund in
+  let cap : HostInt := hostIntDividePositive settlement.1 5 in
+  let refund : HostInt := case (executorIntLess pot (hostIntPositive 0)) with
+    | 1 (unit : prod ()) => cap | 0 (unit : prod ()) => executorIntMin pot cap
+  in let finalGas : prod (HostInt, HostInt) := case (executorIntLess (hostIntSub settlement.1 refund) floorGas) with
+    | 1 (unit : prod ()) => tuple (floorGas, hostIntPositive 0)
+    | 0 (unit : prod ()) => tuple (settlement.1, refund)
+  in let used : HostInt := hostIntSub finalGas.0 finalGas.1 in
+  let receipt : Receipt := settlement.3 used finalGas.1 in
+  case (addressEqual sender systemAddress) with
+  | 1 (unit : prod ()) => tuple (receipt, settlement.0)
+  | 0 (unit : prod ()) =>
+    let penalty : HostInt := hostIntPositive (gasPenalty gasLimit finalGas.0) in
+    let priority : U256 := case (u256CheckedSub effective baseFee) with
+      | 0 (unit : prod ()) => u256Zero | 1 (value : U256) => value
+    in let world1 : WorldState := executorAddBalance settlement.0 sender
+      (u256Mul effective (executorWordOfInt (hostIntSub (hostIntSub gasLimit used) penalty))) in
+    let world2 : WorldState := executorAddBalance world1 basefeeAddress (u256Mul effective (executorWordOfInt penalty)) in
+    let world3 : WorldState := executorAddBalance world2 coinbase (u256Mul priority (executorWordOfInt used)) in
+    let world4 : WorldState := executorAddBalance world3 basefeeAddress (u256Mul baseFee (executorWordOfInt used)) in
+    tuple (receipt, world4)

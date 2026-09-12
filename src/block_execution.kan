@@ -1,0 +1,81 @@
+-- Recovery and available gas precede execution; only admitted receipts charge the meter.
+def blockExecutionInitialState : BlockPreState -> BlockContext -> BlockExecutionState :=
+  fun (pre : BlockPreState) (context : BlockContext) =>
+    tuple (hostIntPositive 0, blockPreWorld pre, blockGasStart context, receiptPairsNil, txEnvelopesNil)
+def blockExecutionStep : BlockContext -> BlockExecutionState -> TxEnvelope -> BlockExecutionResult BlockExecutionState :=
+  fun (context : BlockContext) (state : BlockExecutionState) (envelope : TxEnvelope) =>
+    case (txRecover envelope) with
+    | 0 (error : TxRecoveryError) => inj 0 of 2 (blockRecovery state.0 error)
+    | 1 (tx : Transaction) =>
+      let available : HostInt := blockGasAvailable state.2 in
+      let wanted : HostInt := transactionGasLimit tx in
+      case (executorIntLess available wanted) with
+      | 1 (unit : prod ()) => inj 0 of 2 (blockGasLimitAboveAvailable state.0 wanted available)
+      | 0 (unit : prod ()) => case (executorExecute state.1 (blockContextBlock context) tx) with
+        | 0 (error : ExecutorError) => inj 0 of 2 (blockTransactionRejected state.0 error)
+        | 1 (executed : prod (Receipt, WorldState)) => case (blockGasChargeReceipt state.2 executed.0) with
+          | 0 (unit : prod ()) => inj 0 of 2 (blockGasExceeded state.0)
+          | 1 (meter : BlockGas) => inj 1 of 2 (tuple (hostIntAdd state.0 (hostIntPositive 1), executed.1, meter,
+              receiptPairsCons (tuple (blockTransactionTypeByte tx, executed.0)) state.3, txEnvelopesCons envelope state.4))
+def rec blockExecutionPrependLogs : EvmLogs -> EvmLogs -> EvmLogs := fun (logs : EvmLogs) (reversed : EvmLogs) =>
+  match logs as self in EvmLogs return EvmLogs with
+  | evmLogsNil => reversed
+  | evmLogsCons head tail => blockExecutionPrependLogs tail (evmLogsCons head reversed)
+def rec blockExecutionCollectLogs : ReceiptPairs -> EvmLogs -> EvmLogs := fun (receipts : ReceiptPairs) (reversed : EvmLogs) =>
+  match receipts as self in ReceiptPairs return EvmLogs with
+  | receiptPairsNil => seqEvmLogReverse reversed
+  | receiptPairsCons head tail => blockExecutionCollectLogs tail (blockExecutionPrependLogs (receiptLogs head.1) reversed)
+def blockExecutionBloom : ReceiptPairs -> Bloom := fun (receipts : ReceiptPairs) =>
+  bloomOfLogs (blockExecutionCollectLogs receipts evmLogsNil)
+def blockExecutionOutcomeOf : BlockExecutionState -> BlockExecutionOutcome := fun (state : BlockExecutionState) =>
+  let receipts : ReceiptPairs := seqReceiptPairReverse state.3 in
+  tuple (state.1, seqTxEnvelopeReverse state.4, receipts, blockGasUsed state.2, blockExecutionBloom receipts)
+def rec blockExecutionFold : TxEnvelopes -> BlockContext -> BlockExecutionState -> BlockExecutionResult BlockExecutionState :=
+  fun (envelopes : TxEnvelopes) (context : BlockContext) (state : BlockExecutionState) =>
+    match envelopes as self in TxEnvelopes return BlockExecutionResult BlockExecutionState with
+    | txEnvelopesNil => inj 1 of 2 state
+    | txEnvelopesCons head tail => case (blockExecutionStep context state head) with
+      | 0 (error : BlockExecutionError) => inj 0 of 2 error
+      | 1 (next : BlockExecutionState) => blockExecutionFold tail context next
+def blockExecutionRunTransactions : BlockPreState -> BlockContext -> TxEnvelopes -> BlockExecutionResult BlockExecutionOutcome :=
+  fun (pre : BlockPreState) (context : BlockContext) (envelopes : TxEnvelopes) =>
+    case (blockExecutionFold envelopes context (blockExecutionInitialState pre context)) with
+    | 0 (error : BlockExecutionError) => inj 0 of 2 error
+    | 1 (final : BlockExecutionState) => inj 1 of 2 (blockExecutionOutcomeOf final)
+def BlockSkippingState : Type 0 := prod (BlockExecutionState, BlockInvalidTxs)
+def blockExecutionSkipOrStop : BlockExecutionState -> BlockInvalidTxs -> BlockExecutionError -> BlockExecutionResult BlockSkippingState :=
+  fun (state : BlockExecutionState) (skipped : BlockInvalidTxs) (error : BlockExecutionError) =>
+    match error as self in BlockExecutionError return BlockExecutionResult BlockSkippingState with
+    | blockTransactionRejected index inner => inj 1 of 2 (tuple (
+        tuple (hostIntAdd index (hostIntPositive 1), state.1, state.2, state.3, state.4),
+        blockInvalidTxsCons (tuple (index, inner)) skipped))
+    | blockConsensusRootCall inner => inj 0 of 2 error
+    | blockBlockhashesCall inner => inj 0 of 2 error
+    | blockRecovery index inner => inj 0 of 2 error
+    | blockGasLimitAboveAvailable index wanted available => inj 0 of 2 error
+    | blockGasExceeded index => inj 0 of 2 error
+    | blockEpochClose inner => inj 0 of 2 error
+def blockExecutionSkippingStep : BlockContext -> BlockSkippingState -> TxEnvelope -> BlockExecutionResult BlockSkippingState :=
+  fun (context : BlockContext) (state : BlockSkippingState) (envelope : TxEnvelope) =>
+    case (blockExecutionStep context state.0 envelope) with
+    | 0 (error : BlockExecutionError) => blockExecutionSkipOrStop state.0 state.1 error
+    | 1 (advanced : BlockExecutionState) => inj 1 of 2 (tuple (advanced, state.1))
+def rec blockExecutionSkippingFold : TxEnvelopes -> BlockContext -> BlockSkippingState -> BlockExecutionResult BlockSkippingState :=
+  fun (envelopes : TxEnvelopes) (context : BlockContext) (state : BlockSkippingState) =>
+    match envelopes as self in TxEnvelopes return BlockExecutionResult BlockSkippingState with
+    | txEnvelopesNil => inj 1 of 2 state
+    | txEnvelopesCons head tail => case (blockExecutionSkippingStep context state head) with
+      | 0 (error : BlockExecutionError) => inj 0 of 2 error
+      | 1 (next : BlockSkippingState) => blockExecutionSkippingFold tail context next
+def blockExecutionRunSkippingInvalid : BlockPreState -> BlockContext -> TxEnvelopes -> BlockExecutionResult (prod (BlockExecutionOutcome, BlockInvalidTxs)) :=
+  fun (pre : BlockPreState) (context : BlockContext) (envelopes : TxEnvelopes) =>
+    case (blockExecutionSkippingFold envelopes context (tuple (blockExecutionInitialState pre context, blockInvalidTxsNil))) with
+    | 0 (error : BlockExecutionError) => inj 0 of 2 error
+    | 1 (final : BlockSkippingState) => inj 1 of 2 (tuple (blockExecutionOutcomeOf final.0, seqBlockInvalidTxReverse final.1))
+def blockExecutionExecute : WorldState -> BlockContext -> TxEnvelopes -> BlockExecutionResult (prod (BlockPreState, BlockExecutionOutcome)) :=
+  fun (world : WorldState) (context : BlockContext) (envelopes : TxEnvelopes) =>
+    case (blockExecutionApplyPreBlock world context) with
+    | 0 (error : BlockExecutionError) => inj 0 of 2 error
+    | 1 (pre : BlockPreState) => case (blockExecutionRunTransactions pre context envelopes) with
+      | 0 (error : BlockExecutionError) => inj 0 of 2 error
+      | 1 (outcome : BlockExecutionOutcome) => inj 1 of 2 (tuple (pre, outcome))

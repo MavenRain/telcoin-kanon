@@ -1,0 +1,8 @@
+def DriverOutcome : Type 0 -> Type 0 := fun (D : Type 0) =>
+  sum (prod (D, DriverAdvances), prod (D, DriverAdvances, SubDags), prod (DriverAdvances, DriverError))
+def driverOutcomeAdvance : (0 D : Type 0) -> D -> DriverAdvances -> DriverOutcome D :=
+  fun (0 D : Type 0) (driver : D) (advances : DriverAdvances) => inj 0 of 3 (tuple (driver, advances))
+def driverOutcomeSealed : (0 D : Type 0) -> D -> DriverAdvances -> SubDags -> DriverOutcome D :=
+  fun (0 D : Type 0) (driver : D) (advances : DriverAdvances) (rest : SubDags) => inj 1 of 3 (tuple (driver, advances, rest))
+def driverOutcomeHalted : (0 D : Type 0) -> DriverAdvances -> DriverError -> DriverOutcome D :=
+  fun (0 D : Type 0) (advances : DriverAdvances) (error : DriverError) => inj 2 of 3 (tuple (advances, error))

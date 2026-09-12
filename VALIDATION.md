@@ -1,5 +1,149 @@
 # Validation
 
+## Batch, registry and engine continuation
+
+The active worktree now passes 1,157 OCaml differential rows for the wider
+batch transaction decoder, including all five wire formats, full u64/u128
+scalars, canonical legacy re-encoding, hashes and checked signature recovery.
+Capture: `.kanon-exec/run-3l4OzI`, six groups, 487.3 seconds.
+
+Registry validation passes 655 rows across five groups: 348 decoder cases in
+`.kanon-exec/run-wVVRLa` (the other suites in that captured command failed),
+and 307 calldata, status and constructor cases in `.kanon-exec/run-E5vKcb`.
+Committee shuffling passes 84 additional rows in `.kanon-exec/run-ZJSjHD`
+(its companion registry compile timed out). The five constant selectors were
+checked against the pinned OCaml implementation in `.kanon-exec/run-NtdqeW`
+and encoded as fixed bytes to avoid repeated closed Keccak computations during
+compilation. The final registry suite passed in 36.2 seconds.
+
+The generic batch validator passes five groups and 193 rows in
+`.kanon-exec/run-tiLZVd` (the companion output oracle had a fixture error).
+This covers rule ordering, checked gas totals, peer penalties, the exact
+one-million-byte limit and maximal worker/epoch/base-fee snapshots.
+Payload attachment and block planning pass four groups and 54 rows in
+`.kanon-exec/run-0Bq4Pr`, exit 0, 71.1 seconds. Payload filtering and the
+default validator pass three groups and 26 rows in `.kanon-exec/run-qCw6h0`,
+exit 0, 1,340.4 seconds: 15 payload rows and 11 default-validator rows.
+
+The rewards counter and execution-engine state operations are implemented and
+tested, including hash-window limits and snapshot normalization. Complete
+engine output execution remains under integration validation.
+The OCaml engine and batch oracle dependency closure compiles successfully
+in `.kanon-exec/run-f4AiVa`; that result does not validate the Kanon engine.
+
+Block integration initially found constructor
+callbacks requiring explicit lambdas, then timed out before runtime checks.
+Those callbacks are fixed. The rerun with constant registry selectors also
+timed out (`.kanon-exec/run-tC1PDn`). The new RLP list helper is covered by
+the transaction shape comparisons above.
+
+The block-roots timeout was narrowed by checking dependency prefixes:
+209 declarations passed in 3.7 seconds, 314 in 22.4 seconds, 366 in 30.5
+seconds, 392 in 25.1 seconds, and all 405 production/helper declarations
+through `executionWith` in 51.1 seconds (`.kanon-exec/run-AEbeTA`). The
+complete fixture still exceeded 600 seconds (`.kanon-exec/run-DSlge2`).
+Its formatters are now split into smaller functions, preserving the original
+arguments, result fields and assertions. The full fixture passes three groups
+and 83 OCaml differential rows in `.kanon-exec/run-ijqcwW`, exit 0, 552.4 seconds.
+Production block-root code and compiler/oracle limits were unchanged.
+
+Engine rewards, overflow, recent hashes and native block numbers pass four
+groups and 199 rows in `.kanon-exec/run-IAqrMX`. Its snapshot group failed
+on a fixture boolean format mismatch (`false` versus `0`). After that fix,
+the separate snapshot suite passes one group and 144 rows in
+`.kanon-exec/run-rlg67E`, exit 0, 432.3 seconds. This totals 343 passing
+engine-state comparisons; complete engine output execution remains pending.
+
+The address book, batch store, chain specification and checkpoint declarations
+typecheck and build in `.kanon-exec/run-hERTaN`. Subscriber admission, driver
+execution, outcome variants, handoff and crash recovery are implemented but
+still need runtime comparisons.
+The driver admission/handoff scope passed type checking, but a direct
+Wasm export of `subscriberReceive` failed because host callback arguments
+are unsupported (`.kanon-exec/run-TCm8AQ`). Runtime fixtures bind address
+lookup inside Kanon instead. Full block execution still timed out after
+splitting its formatter (`.kanon-exec/run-cnLkmF`); production-only checking
+is the next diagnostic step.
+The separated epoch-close and system-call suites also reached the compiler
+limit (`.kanon-exec/run-EeZ0QF`); no runtime assertions ran in those suites.
+The pinned OCaml driver dependency set compiles in `.kanon-exec/run-WWU6P2`;
+that is oracle preparation, not validation of Kanon driver execution.
+The system-call production dependency projection typechecks in 278.5 seconds
+(`.kanon-exec/run-4YH78u`). Including `blockTestSystem` also typechecks,
+in 121.3 seconds (`.kanon-exec/run-X4qefD`). These results do not cover the
+additional exports used by the combined system/pre-block harness or Wasm
+emission. The epoch and execution harnesses no longer request the unused
+system-predeployment export; the pre-block harness retains it.
+
+After removing that unused export, epoch closing and driver primitives pass
+four groups and 96 rows in `.kanon-exec/run-GTZbey`, exit 0, 135.4 seconds.
+The nine epoch-close cases compare mandatory writes and discarded read effects.
+The 87 driver cases compare address-book precedence, body-store deduplication,
+subscriber mint/receive agreement and attachment failure behavior. This does
+not validate the complete driver execution, fold or resume paths.
+
+Block transaction folds and finished headers now pass two groups and ten
+rows in `.kanon-exec/run-bZ04FG`. Its companion system-call suite reached
+the 600-second compiler limit, so the captured command exited 1. Both block
+execution groups passed; system-call runtime assertions did not run.
+
+Durable frames, BLAKE2b-512 and atomic-file encoding/decoding pass six groups
+and 462 OCaml comparisons in `.kanon-exec/run-oarSNP`, exit 0, 235.1 seconds.
+The 268 frame/digest cases cover block boundaries, signed sequence bits,
+native size overflow, every truncation and byte mutation of a sample frame,
+check precedence and torn-tail versus interior-corruption classification.
+The 194 atomic-file cases cover generation bounds, exact file length, magic,
+format and body tags. Digest cases additionally match OpenSSL.
+Durable I/O error types are defined; filesystem operations, locking and
+durable store integration remain unfinished. The save-argument preflight
+function still needs direct coverage.
+
+The complete driver-fold fixtures and their OCaml oracle are written.
+The oracle compiles and runs an empty-fold control in `.kanon-exec/run-ZbElwP`;
+Kanon pipeline execution is under validation. Fixed beacon/history bytecode
+is now represented directly as bytes, avoiding closed hex-parser evaluation.
+The system-call suite is being rerun with those equivalent constants.
+
+Source/compiler pins pass in `.kanon-exec/run-4zc2Gr`; all 198 registered
+source files have unique declarations (`.kanon-exec/run-hFpNpF`). Collection,
+Keccak and opcode generation checks pass in `.kanon-exec/run-NknZhn`.
+That command's BN254 check selected the removed default OCaml switch and
+failed before comparing constants. Its scoped rerun with the dedicated
+switch passes all 24 coefficients in `.kanon-exec/run-t7drgC`.
+
+For the exact `45e17c9` checkpoint, the four timeout suites were rerun in
+`.kanon-exec/run-MVTZVZ`: 28 groups passed, while block roots still reached
+the unchanged 600-second compiler timeout. This is not a full regression pass.
+
+## Transaction and executor work in progress
+
+The four signed envelope types (legacy, EIP-2930, EIP-1559 and EIP-7702),
+sender recovery and authorization processing pass 15 groups and 1,298 OCaml
+differential rows: 1,199 wire rows and 99 authorization/recovery rows.
+The run exited 0 in 1,115.7 seconds (`.kanon-exec/run-6e71LN`). It includes
+the pinned upstream golden transactions, exact errors, signing payloads,
+consensus hashes, nonce threading, warming, revocation and refunds.
+
+Executor validation and settlement pass six groups and 176 differential rows
+(`.kanon-exec/run-aDU6sf`, exit 0, 139.6 seconds). Complete transaction execution
+passes six groups and 106 rows (`.kanon-exec/run-FXSHTG`, exit 0, 527.8 seconds).
+Cases cover calls, all nine precompiles, creation, output and logs, rollback,
+forks, fees, delegation, and authorization changes that survive failed frames.
+An earlier large-initcode case exposed stack growth in `intrinsicTokens`;
+an accumulator traversal fixes it, and the boundary now passes against OCaml.
+No compiler or oracle timeout was increased to obtain these passes.
+
+These are focused results from the active worktree, not a complete-port or full
+regression claim. System calls, registry ABI, committee selection, epoch closing,
+block execution and header assembly are being integrated and separately checked.
+The exact `45e17c9` precompile checkpoint regression reported 192 passes and four
+timeout failures in 7,720.3 seconds: compilation of block roots, commit and
+foundation suites, and the BN254 G2 oracle. The capture is
+`/private/tmp/telcoin-kanon-validation-45e17c9/.kanon-exec/run-6xMy0B`.
+Their exact-commit rerun results are recorded above.
+The test commands use the isolated OCaml switch through
+`OCAML_SWITCH=/Users/oobi/Documents/gpt13/telcoin-kanon-ocaml`.
+
 ## Published consensus and state checkpoint
 
 Commit `b5ccc4228a10032b041e0fc0c904540b7263ff7f` passed all 101 test groups

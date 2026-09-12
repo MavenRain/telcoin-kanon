@@ -1,0 +1,36 @@
+def batchTestMockDecode : Bytes -> sum (Bytes, BatchTxObservation) := fun (input : Bytes) =>
+  case (natLt (bytesLength input) 9) with
+  | 1 (unit : prod ()) => inj 0 of 2 b"fixture short"
+  | 0 (unit : prod ()) => case (natEq (bytesHead input) 2) with
+    | 1 (unit : prod ()) => inj 0 of 2 b"fixture rejection"
+    | 0 (unit : prod ()) => inj 1 of 2 (tuple (keccakDigest input, natEq (bytesHead input) 1,
+        registryBeNat (reverse (take 8 (drop input 1)))))
+def batchTestMockDecoder : BatchTxDecoder BatchTxObservation :=
+  tuple (batchTestMockDecode, fun (tx : BatchTxObservation) => tx.0,
+    fun (tx : BatchTxObservation) => tx.1, fun (tx : BatchTxObservation) => tx.2)
+def batchTestPenaltyText : BatchPenalty -> Bytes := fun (penalty : BatchPenalty) =>
+  match penalty as self in BatchPenalty return Bytes with
+  | batchPenaltyMild => b"mild"
+  | batchPenaltyMedium => b"medium"
+  | batchPenaltySevere => b"severe"
+  | batchPenaltyFatal => b"fatal"
+def batchTestError : BatchValidationError -> Bytes := fun (error : BatchValidationError) =>
+  append b"error:" (append (batchTestPenaltyText (batchValidationPenalty error)) (append b":" (batchValidationErrorText error)))
+def batchTestResult : BatchValidationResult ValidBatch -> Bytes := fun (result : BatchValidationResult ValidBatch) =>
+  case result with
+  | 0 (error : BatchValidationError) => batchTestError error
+  | 1 (valid : ValidBatch) => append b"ok:" (append (bytesHex (batchDigestBytes (validBatchDigest valid)))
+      (append b":" (bytesHex (batchPreimage (validBatchBatch valid)))))
+def batchTestValidateWith : (BatchValidator -> SealedBatch -> BatchValidationResult ValidBatch) -> Bytes -> Nat -> Bytes -> Bytes -> Bytes :=
+  fun (validate : BatchValidator -> SealedBatch -> BatchValidationResult ValidBatch) (raw : Bytes) (worker : Nat) (epoch : Bytes) (fee : Bytes) =>
+    case (codecDecode SealedBatch sealedBatchCodec raw) with
+    | 0 (error : BcsError) => append b"fixture:" (bcsErrorText error)
+    | 1 (pair : prod (SealedBatch, BcsReader)) => batchTestResult
+        (validate (batchValidatorMake (workerIdValue worker) (epochValue (registryBeNat (reverse epoch))) (baseFeeValue (registryBeNat (reverse fee)))) (pair.0))
+def batchTestMock : Bytes -> Nat -> Bytes -> Bytes -> Bytes :=
+  batchTestValidateWith (batchValidatorValidateWith BatchTxObservation batchTestMockDecoder)
+def batchTestReal : Bytes -> Nat -> Bytes -> Bytes -> Bytes := batchTestValidateWith batchValidatorValidate
+def batchTestSize : ByteStrings -> Bytes := fun (values : ByteStrings) =>
+  case (batchValidateSize (batchMake values (epochValue 0) addressZero (baseFeeValue 0) (workerIdValue 0))) with
+  | 0 (error : BatchValidationError) => batchTestError error
+  | 1 (unit : prod ()) => b"ok"

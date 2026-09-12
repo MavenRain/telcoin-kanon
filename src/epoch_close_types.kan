@@ -1,0 +1,35 @@
+-- Epoch-close failures keep the stage and the original error.
+mu EpochCloseError : Type 0 :=
+  | epochCloseRewardsCall (error : SystemCallError) : EpochCloseError
+  | epochCloseRewardsUnsuccessful : EpochCloseError
+  | epochCloseConcludeCall (error : SystemCallError) : EpochCloseError
+  | epochCloseConcludeUnsuccessful : EpochCloseError
+  | epochClosePoolRead (status : EligibleStatus) (error : SystemCallError) : EpochCloseError
+  | epochClosePoolReadUnsuccessful (status : EligibleStatus) : EpochCloseError
+  | epochClosePoolDecode (error : RegistryDecodeError) : EpochCloseError
+  | epochCloseSizeRead (error : SystemCallError) : EpochCloseError
+  | epochCloseSizeReadUnsuccessful : EpochCloseError
+  | epochCloseSizeDecode (error : RegistryDecodeError) : EpochCloseError
+def EpochCloseResult : Type 0 -> Type 0 := fun (A : Type 0) => sum (EpochCloseError, A)
+def epochCloseStatusText : EligibleStatus -> Bytes := fun (status : EligibleStatus) =>
+  match status as self in EligibleStatus return Bytes with
+  | eligibleActive => b"Active"
+  | eligiblePendingActivation => b"PendingActivation"
+  | eligiblePendingExit => b"PendingExit"
+def epochCloseErrorText : EpochCloseError -> Bytes := fun (error : EpochCloseError) =>
+  match error as self in EpochCloseError return Bytes with
+  | epochCloseRewardsCall inner => append b"applyIncentives: " (systemCallErrorText inner)
+  | epochCloseRewardsUnsuccessful => b"applyIncentives reverted or halted"
+  | epochCloseConcludeCall inner => append b"concludeEpoch: " (systemCallErrorText inner)
+  | epochCloseConcludeUnsuccessful => b"concludeEpoch reverted or halted"
+  | epochClosePoolRead status inner => append b"pool read (" (append (epochCloseStatusText status) (append b"): " (systemCallErrorText inner)))
+  | epochClosePoolReadUnsuccessful status => append b"pool read (" (append (epochCloseStatusText status) b") reverted or halted")
+  | epochClosePoolDecode inner => append b"pool decode: " (registryErrorText inner)
+  | epochCloseSizeRead inner => append b"getNextCommitteeSize: " (systemCallErrorText inner)
+  | epochCloseSizeReadUnsuccessful => b"getNextCommitteeSize reverted or halted"
+  | epochCloseSizeDecode inner => append b"committee-size decode: " (registryErrorText inner)
+def EpochCloseDisposition : Type 0 := prod (Bytes, Bytes, SystemCallOutcome, SystemCallOutcome)
+def epochCloseFirstCalldata : EpochCloseDisposition -> Bytes := fun (disposition : EpochCloseDisposition) => disposition.0
+def epochCloseSecondCalldata : EpochCloseDisposition -> Bytes := fun (disposition : EpochCloseDisposition) => disposition.1
+def epochCloseRewardsOutcome : EpochCloseDisposition -> SystemCallOutcome := fun (disposition : EpochCloseDisposition) => disposition.2
+def epochCloseConcludeOutcome : EpochCloseDisposition -> SystemCallOutcome := fun (disposition : EpochCloseDisposition) => disposition.3

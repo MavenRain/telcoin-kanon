@@ -1,0 +1,53 @@
+-- Block failures retain input positions even when invalid transactions are skipped.
+def blockExecutionIntText : HostInt -> Bytes := fun (number : HostInt) =>
+  case (hostIntNonnegative number) with
+  | 1 (positive : Nat) => decimal64 positive
+  | 0 (unit : prod ()) => append b"-" (decimal64 (natSub hostIntModulus (hostIntBits number)))
+mu BlockExecutionError : Type 0 :=
+  | blockConsensusRootCall (error : SystemCallError) : BlockExecutionError
+  | blockBlockhashesCall (error : SystemCallError) : BlockExecutionError
+  | blockRecovery (index : HostInt) (error : TxRecoveryError) : BlockExecutionError
+  | blockTransactionRejected (index : HostInt) (error : ExecutorError) : BlockExecutionError
+  | blockGasLimitAboveAvailable (index : HostInt) (transactionGasLimit : HostInt) (available : HostInt) : BlockExecutionError
+  | blockGasExceeded (index : HostInt) : BlockExecutionError
+  | blockEpochClose (error : EpochCloseError) : BlockExecutionError
+def BlockExecutionResult : Type 0 -> Type 0 := fun (A : Type 0) => sum (BlockExecutionError, A)
+def blockExecutionErrorText : BlockExecutionError -> Bytes := fun (error : BlockExecutionError) =>
+  match error as self in BlockExecutionError return Bytes with
+  | blockConsensusRootCall inner => append b"consensus root contract call: " (systemCallErrorText inner)
+  | blockBlockhashesCall inner => append b"blockhashes contract call: " (systemCallErrorText inner)
+  | blockRecovery index inner => append b"transaction " (append (blockExecutionIntText index) (append b": " (txRecoveryErrorText inner)))
+  | blockTransactionRejected index inner => append b"transaction " (append (blockExecutionIntText index) (append b" rejected: " (executorErrorText inner)))
+  | blockGasLimitAboveAvailable index wanted available => append b"transaction " (append (blockExecutionIntText index) (append b" wants "
+      (append (blockExecutionIntText wanted) (append b" gas but only " (append (blockExecutionIntText available) b" remain in the block")))))
+  | blockGasExceeded index => append b"transaction " (append (blockExecutionIntText index) b" passed the block gas limit")
+  | blockEpochClose inner => append b"epoch close: " (epochCloseErrorText inner)
+mu BlockPreRoot : Type 0 :=
+  | blockRootSkippedAfterFirstBatch : BlockPreRoot
+  | blockRootSkippedBeforeCancun : BlockPreRoot
+  | blockRootSkippedAtGenesis : BlockPreRoot
+  | blockRootWritten (outcome : SystemCallOutcome) : BlockPreRoot
+mu BlockPreHashes : Type 0 :=
+  | blockHashSkippedBeforePrague : BlockPreHashes
+  | blockHashSkippedAtGenesis : BlockPreHashes
+  | blockHashWritten (outcome : SystemCallOutcome) : BlockPreHashes
+def BlockPreState : Type 0 := prod (WorldState, BlockPreRoot, BlockPreHashes)
+def blockPreWorld : BlockPreState -> WorldState := fun (pre : BlockPreState) => pre.0
+def blockPreConsensusRoot : BlockPreState -> BlockPreRoot := fun (pre : BlockPreState) => pre.1
+def blockPreBlockhashes : BlockPreState -> BlockPreHashes := fun (pre : BlockPreState) => pre.2
+def BlockExecutionOutcome : Type 0 := prod (WorldState, TxEnvelopes, ReceiptPairs, HostInt, Bloom)
+def blockExecutionWorld : BlockExecutionOutcome -> WorldState := fun (outcome : BlockExecutionOutcome) => outcome.0
+def blockExecutionTransactions : BlockExecutionOutcome -> TxEnvelopes := fun (outcome : BlockExecutionOutcome) => outcome.1
+def blockExecutionReceipts : BlockExecutionOutcome -> ReceiptPairs := fun (outcome : BlockExecutionOutcome) => outcome.2
+def blockExecutionGasUsed : BlockExecutionOutcome -> HostInt := fun (outcome : BlockExecutionOutcome) => outcome.3
+def blockExecutionLogsBloom : BlockExecutionOutcome -> Bloom := fun (outcome : BlockExecutionOutcome) => outcome.4
+def BlockExecutionState : Type 0 := prod (HostInt, WorldState, BlockGas, ReceiptPairs, TxEnvelopes)
+def BlockInvalidTx : Type 0 := prod (HostInt, ExecutorError)
+def blockInvalidIndex : BlockInvalidTx -> HostInt := fun (invalid : BlockInvalidTx) => invalid.0
+def blockInvalidError : BlockInvalidTx -> ExecutorError := fun (invalid : BlockInvalidTx) => invalid.1
+def blockInvalidText : BlockInvalidTx -> Bytes := fun (invalid : BlockInvalidTx) =>
+  append b"transaction " (append (blockExecutionIntText invalid.0) (append b" skipped: " (executorErrorText invalid.1)))
+def BlockFinished : Type 0 := prod (WorldState, BlockExecutionOutcome, ValueOption EpochCloseDisposition)
+def blockFinishedWorld : BlockFinished -> WorldState := fun (finished : BlockFinished) => finished.0
+def blockFinishedOutcome : BlockFinished -> BlockExecutionOutcome := fun (finished : BlockFinished) => finished.1
+def blockFinishedCloseDisposition : BlockFinished -> ValueOption EpochCloseDisposition := fun (finished : BlockFinished) => finished.2

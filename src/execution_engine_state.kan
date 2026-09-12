@@ -1,0 +1,56 @@
+def executionEngineCreate : ExecutionConfig -> ExecutionEngine := fun (config : ExecutionConfig) =>
+  tuple (config, executionConfigAnchor config, valueNone ExecutedBlock, executionConfigWorld config,
+    recentHashesOfGenesis (executionAnchorHash (executionConfigAnchor config)) (executionConfigAncestors config),
+    rewardsCounterSetCommittee rewardsCounterEmpty (executionConfigCommittee config),
+    executionRunning (executionConfigEpochBoundary config) (executionConfigCommittee config))
+def executionEngineHeight : ExecutionEngine -> ExecutionBlockNumber := fun (state : ExecutionEngine) =>
+  executionAnchorNumber (executionEngineAnchor state)
+def executionEngineCommittee : ExecutionEngine -> Committee := fun (state : ExecutionEngine) =>
+  executionPhaseCommittee (executionEnginePhase state)
+def executionEngineFrontier : ExecutionEngine -> Timestamp := fun (state : ExecutionEngine) =>
+  executionPhaseFrontier (executionEnginePhase state)
+def executionEngineIsSealed : ExecutionEngine -> Bool := fun (state : ExecutionEngine) =>
+  executionPhaseIsSealed (executionEnginePhase state)
+def executionEngineBeginEpoch : ExecutionEngine -> Timestamp -> Committee -> ExecutionEngineResult ExecutionEngine :=
+  fun (state : ExecutionEngine) (boundary : Timestamp) (committee : Committee) =>
+    case (natLt (timestampNat (executionEngineFrontier state)) (timestampNat boundary)) with
+    | 0 (unit : prod ()) => inj 0 of 2 (executionBoundaryNotAdvanced (executionEngineFrontier state) boundary)
+    | 1 (unit : prod ()) => inj 1 of 2 (tuple (state.0, state.1, state.2, state.3, state.4,
+        rewardsCounterSetCommittee (rewardsCounterClear state.5) committee, executionRunning boundary committee))
+def executionEngineSnapshot : ExecutionEngine -> ExecutionPersisted := fun (state : ExecutionEngine) =>
+  tuple (state.1, state.3, state.4, state.5, state.6)
+def executionEngineResumeOnSchedule : ForkSchedule -> U256 -> Address -> ExecutionPersisted -> ExecutionEngine :=
+  fun (schedule : ForkSchedule) (chain : U256) (feeAddress : Address) (persisted : ExecutionPersisted) =>
+    let ancestors : Keccaks := recentHashesAncestors persisted.2 in
+    tuple (executionConfigMake persisted.0 ancestors persisted.1 chain feeAddress
+      (executionPhaseFrontier persisted.4) (executionPhaseCommittee persisted.4) schedule,
+      persisted.0, valueNone ExecutedBlock, persisted.1, recentHashesOfGenesis (executionAnchorHash persisted.0) ancestors,
+      persisted.3, persisted.4)
+def executionEngineResume : U256 -> Address -> ExecutionPersisted -> ExecutionEngine :=
+  executionEngineResumeOnSchedule forkScheduleTestnet
+def executionEngineStart : ExecutionEngine -> ExecutionBuilding := fun (state : ExecutionEngine) =>
+  tuple (state.1, state.3, state.4, executedBlocksNil)
+def executionEngineIntWord : HostInt -> U256 := fun (value : HostInt) =>
+  case (hostIntNonnegative value) with
+  | 0 (unit : prod ()) => u256Value (natAdd 9223372036854775808 (hostIntBits value))
+  | 1 (positive : Nat) => u256Value positive
+def rec executionEngineLatest : ExecutedBlocks -> ValueOption ExecutedBlock -> ValueOption ExecutedBlock :=
+  fun (values : ExecutedBlocks) (previous : ValueOption ExecutedBlock) =>
+    match values as self in ExecutedBlocks return ValueOption ExecutedBlock with
+    | executedBlocksNil => previous
+    | executedBlocksCons head tail => executionEngineLatest tail (valueSome ExecutedBlock head)
+def executionEngineSettle : ExecutionEngine -> ExecutionBuilding -> prod (ExecutionEngine, ExecutedBlocks) :=
+  fun (state : ExecutionEngine) (built : ExecutionBuilding) =>
+    let blocks : ExecutedBlocks := seqExecutedBlockReverse built.3 in
+    tuple (tuple (state.0, built.0, executionEngineLatest blocks state.2, built.1, built.2, state.5, state.6), blocks)
+def executionEngineSeal : BatchOutput -> prod (ExecutionEngine, ExecutedBlocks) -> prod (ExecutionEngine, ExecutedBlocks) :=
+  fun (output : BatchOutput) (result : prod (ExecutionEngine, ExecutedBlocks)) =>
+    let state : ExecutionEngine := result.0 in
+    tuple (tuple (state.0, state.1, state.2, state.3, state.4, state.5,
+      executionSealed (batchOutputCommittedAt output) (executionEngineCommittee state)), result.1)
+def executionEngineClosingBoundary : ExecutionEngine -> BatchOutput -> ExecutionEngineResult EpochBoundary :=
+  fun (state : ExecutionEngine) (output : BatchOutput) =>
+    case (rewardsCounterGenerateWithdrawals (executionEngineRewards state)) with
+    | 0 (error : RewardsCounterError) => inj 0 of 2 (executionWithdrawalsError error)
+    | 1 (withdrawals : Withdrawals) => inj 1 of 2
+        (epochClosing (subDagRandomness (consensusBlockSubDag (batchOutputConsensus output))) withdrawals)
