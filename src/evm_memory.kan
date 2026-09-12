@@ -30,7 +30,12 @@ def memorySlice : EvmMemory -> HostInt -> Nat -> Bytes := fun (memory : EvmMemor
     (fun (state : prod (Nat, HostInt, Bytes)) => boolNat (natEq state.0 length))
     (fun (state : prod (Nat, HostInt, Bytes)) => tuple (natAdd state.0 1, hostIntAdd state.1 (hostIntPositive 1), bytesCons (memoryByteAt memory state.1) state.2))
     (tuple (0, offset, bytesNil)) in reverse result.2
-def memoryLoadWord : EvmMemory -> HostInt -> U256 := fun (memory : EvmMemory) (offset : HostInt) => u256Value (u256ReadBe (memorySlice memory offset 32) 0)
+def memoryLoadWordFrom : Nat -> EvmMemory -> HostInt -> U256 := fun (start : Nat) (memory : EvmMemory) (offset : HostInt) =>
+  let result : prod (Nat, HostInt, Nat) := stepsFold (prod (Nat, HostInt, Nat)) steps64
+    (fun (state : prod (Nat, HostInt, Nat)) => boolNat (boolNot (natLt state.0 32)))
+    (fun (state : prod (Nat, HostInt, Nat)) => tuple (natAdd state.0 1, hostIntAdd state.1 (hostIntPositive 1),
+      natAdd (natMul state.2 256) (memoryByteAt memory state.1))) (tuple (start, offset, 0)) in u256Value result.2
+def memoryLoadWord : EvmMemory -> HostInt -> U256 := memoryLoadWordFrom 0
 def memoryStoreWord : EvmMemory -> HostInt -> U256 -> EvmMemory := fun (memory : EvmMemory) (offset : HostInt) (word : U256) => memoryStoreBytes memory offset (u256ToBeBytes word)
 def memoryCellCompare : prod (HostInt, Nat) -> prod (HostInt, Nat) -> Ordering := fun (a : prod (HostInt, Nat)) (b : prod (HostInt, Nat)) =>
   match (hostIntCompare a.0 b.0) as ordering in Ordering return Ordering with

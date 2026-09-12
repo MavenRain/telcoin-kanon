@@ -1,0 +1,49 @@
+def StoreLock : Type 0 := prod (DurableIoFd, Bytes)
+def StoreLockResult : (0 A : Type 0) -> Type 0 := fun (0 A : Type 0) => sum (StoreLockError, A)
+def StoreLockEffect : (0 A : Type 0) -> Type 0 := fun (0 A : Type 0) => DurableEffect (StoreLockResult A)
+def storeLockOverIo : (0 A : Type 0) -> DurableIo A -> StoreLockEffect A := fun (0 A : Type 0) (effect : DurableIo A) =>
+  durableEffectMap (DurableIoResult A) (StoreLockResult A) (fun (result : DurableIoResult A) => case result with
+  | 0 (error : DurableIoError) => inj 0 of 2 (storeLockIo error) | 1 (value : A) => inj 1 of 2 value) effect
+def storeLockBind : (0 A : Type 0) -> (0 B : Type 0) -> StoreLockEffect A -> (A -> StoreLockEffect B) -> StoreLockEffect B :=
+  fun (0 A : Type 0) (0 B : Type 0) (effect : StoreLockEffect A) (next : A -> StoreLockEffect B) =>
+    durableEffectBind (StoreLockResult A) (StoreLockResult B) effect (fun (result : StoreLockResult A) => case result with
+    | 0 (error : StoreLockError) => durableEffectReturn (StoreLockResult B) (inj 0 of 2 error)
+    | 1 (value : A) => next value)
+def rec storeLockHoldsIn : ByteStrings -> Bytes -> Bool := fun (register : ByteStrings) (path : Bytes) =>
+  match register as self in ByteStrings return Bool with
+  | byteStringsNil => boolNot (natEq 0 0)
+  | byteStringsCons head tail => boolOr (bytesEqual head path) (storeLockHoldsIn tail path)
+def rec storeLockForgetIn : ByteStrings -> Bytes -> ByteStrings := fun (register : ByteStrings) (path : Bytes) =>
+  match register as self in ByteStrings return ByteStrings with
+  | byteStringsNil => seqBytesEmpty
+  | byteStringsCons head tail => case (bytesEqual head path) with
+    | 1 (unit : prod ()) => storeLockForgetIn tail path
+    | 0 (unit : prod ()) => seqBytesCons head (storeLockForgetIn tail path)
+def storeLockHolds : Bytes -> DurableEffect Bool := fun (path : Bytes) =>
+  durableEffectMap ByteStrings Bool (fun (register : ByteStrings) => storeLockHoldsIn register path) durableEffectRegister
+def storeLockRemember : Bytes -> DurableEffect CodecUnit := fun (path : Bytes) =>
+  durableEffectBind ByteStrings CodecUnit durableEffectRegister (fun (register : ByteStrings) => durableEffectSetRegister (seqBytesCons path register))
+def storeLockForget : Bytes -> DurableEffect CodecUnit := fun (path : Bytes) =>
+  durableEffectBind ByteStrings CodecUnit durableEffectRegister (fun (register : ByteStrings) => durableEffectSetRegister (storeLockForgetIn register path))
+def storeLockRefusal : Bytes -> DurableIoError -> StoreLockError := fun (path : Bytes) (error : DurableIoError) =>
+  match error as self in DurableIoError return StoreLockError with
+  | durableIoWouldBlock op ignored => storeLockHeld path
+  | durableIoFailed op path code => storeLockIo error
+  | durableIoShortWrite path wanted wrote => storeLockIo error
+  | durableIoShortRead path at wanted got => storeLockIo error
+def storeLockAcquireFd : Bytes -> DurableIoFd -> StoreLockEffect StoreLock := fun (path : Bytes) (fd : DurableIoFd) =>
+  durableEffectBind (DurableIoResult CodecUnit) (StoreLockResult StoreLock) (durableIoLockExclusive fd path)
+    (fun (result : DurableIoResult CodecUnit) => case result with
+    | 0 (error : DurableIoError) => durableEffectMap (DurableIoResult CodecUnit) (StoreLockResult StoreLock)
+        (fun (closed : DurableIoResult CodecUnit) => inj 0 of 2 (storeLockRefusal path error)) (durableIoClose fd)
+    | 1 (unit : CodecUnit) => durableEffectMap CodecUnit (StoreLockResult StoreLock)
+        (fun (unit : CodecUnit) => inj 1 of 2 (tuple (fd, path))) (storeLockRemember path))
+def storeLockAcquire : DurableIoOps -> Bytes -> StoreLockEffect StoreLock := fun (ops : DurableIoOps) (dir : Bytes) =>
+  storeLockBind Bytes StoreLock (storeLockOverIo Bytes (durableIoRealpath ops dir)) (fun (canon : Bytes) =>
+    let path : Bytes := durablePathConcat canon storeLockName in
+    durableEffectBind Bool (StoreLockResult StoreLock) (storeLockHolds path) (fun (held : Bool) => case held with
+      | 1 (unit : prod ()) => durableEffectReturn (StoreLockResult StoreLock) (inj 0 of 2 (storeLockHeld path))
+      | 0 (unit : prod ()) => storeLockBind DurableIoFd StoreLock (storeLockOverIo DurableIoFd (durableIoOpen ops path durableReadWriteCreate))
+          (storeLockAcquireFd path)))
+def storeLockRelease : StoreLock -> DurableIo CodecUnit := fun (lock : StoreLock) =>
+  durableEffectBind CodecUnit (DurableIoResult CodecUnit) (storeLockForget lock.1) (fun (unit : CodecUnit) => durableIoClose lock.0)

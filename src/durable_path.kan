@@ -1,0 +1,14 @@
+def rec durablePathSplitAcc : Bytes -> Bytes -> ByteStrings -> ByteStrings :=
+  fun (remaining : Bytes) (part : Bytes) (reversed : ByteStrings) =>
+  match remaining as self in Bytes return ByteStrings with
+  | bytesNil => seqBytesReverse (seqBytesCons (reverse part) reversed)
+  | bytesCons head tail => case (natEq head 47) with
+    | 1 (unit : prod ()) => durablePathSplitAcc tail bytesNil (seqBytesCons (reverse part) reversed)
+    | 0 (unit : prod ()) => durablePathSplitAcc tail (bytesCons head part) reversed
+def durablePathSplit : Bytes -> ByteStrings := fun (path : Bytes) => durablePathSplitAcc path bytesNil seqBytesEmpty
+def durablePathConcat : Bytes -> Bytes -> Bytes := fun (prefix : Bytes) (part : Bytes) =>
+  case (natEq (bytesEmpty prefix) 1) with
+  | 1 (unit : prod ()) => part
+  | 0 (unit : prod ()) => case (natEq (bytesHead (reverse prefix)) 47) with
+    | 1 (unit : prod ()) => append prefix part
+    | 0 (unit : prod ()) => append prefix (append b"/" part)

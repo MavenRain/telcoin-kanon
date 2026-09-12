@@ -1,5 +1,56 @@
 # Validation
 
+## Guarded I/O, atomic files and store locks
+
+The durable I/O layer passes 734 OCaml differential rows covering exact arguments,
+call order, counters, partial reads/writes, clamped device counts, zero progress,
+native integer bounds, cleanup errors, directory creation and tolerated errno values.
+Atomic save/load and stale-temp sweeping pass 345 further rows. Store locks pass
+30 rows covering canonical registration, OS refusals, cleanup and release.
+Capture: `.kanon-exec/run-EFuUzh`, exit 0, 10 groups, 23.7 seconds.
+
+The fault oracle provokes real Unix failures and catches them through the pinned
+source boundary. Read traces compare only the initialized buffer prefix because
+OCaml `Bytes.create` leaves the unread suffix unspecified. The mock device fills
+its requested target range deterministically before reporting adversarial counts.
+Final results, transfer ranges, initialized data, errors and counters remain compared.
+
+Native tests exercise private permissions, offset reads/writes, truncation, fsync,
+rename, strict existence, byte paths, helper startup errors, cross-process lock
+exclusion and release on shutdown. The atomic publication test injects faults at
+each stage and verifies that the canonical file retains a complete old or new
+container, then loads it and sweeps any leftover temporary file. Symlink aliases
+contend within the same Kanon session before another lock file is opened.
+The adapter calls libc `realpath` to match the OCaml boundary, including native
+trailing-component behavior. It uses POSIX fsync, not macOS F_FULLFSYNC.
+
+The typed effect state carries both counters and the canonical lock register.
+Continuation tests and native I/O passed with this state representation in
+`.kanon-exec/run-3uJ1cA`, exit 0, 12 tests. Final native realpath checks, including
+direct comparison with pinned OCaml on trailing path components, pass together
+with atomic publication and store locking in `.kanon-exec/run-CaAJ6B`, exit 0,
+10 tests, 12.5 seconds. Append-log effects, checkpoint files, disk-store integration
+and the final complete regression remain outstanding.
+
+## Explicit fork schedules through the engine
+
+All 30 engine integration rows pass through live execution and checkpoint replay.
+They cover default versus explicit schedules, inclusive Cancun and Prague timestamp
+boundaries, pre-block root/hash behavior, cross-batch duplicate and unfunded
+transaction skips, non-executable payload filtering and the Prague calldata floor.
+The tests compare full driver state and encoded headers in addition to gas and skips.
+EVM core memory, stack, gas and access checks also pass 713 rows.
+Capture: `.kanon-exec/run-j3mu6S`, exit 0, 10 tests, 1,795.1 seconds including build.
+
+The integration fixture has an explicit thirty-minute compiler allowance after
+diagnostic checking of 2,419 declarations took over ten minutes. The default
+compiler allowance remains ten minutes, the OCaml allowance remains 30 seconds,
+and no correctness assertions were removed. RLP (393 rows) and EVM data (203 rows)
+passed in `.kanon-exec/run-IAtGlo`; that capture also records the earlier engine
+compiler timeout. The source optimizations preserve scalar RLP bytes, memory word
+loads and precompile address construction while avoiding unnecessary expansion.
+Source closure and artifact reuse checks pass in `.kanon-exec/run-L5n448`, five tests.
+
 ## Durable codecs and live driver writes
 
 All 30 checkpoint codecs and durable record/metadata payloads pass 4,724 OCaml

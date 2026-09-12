@@ -35,7 +35,8 @@ export const sources = ['core', 'nat64', 'scalars', 'bcs', 'codec', 'fixed', 'sc
   'driver_collections', 'address_book', 'batch_store', 'chain_spec', 'checkpoint',
   'subscriber', 'driver_types', 'driver_outcome_collections', 'driver_outcome', 'driver',
   'blake2b_digest', 'durable_frame_types', 'durable_frame_collections', 'durable_frame',
-  'durable_io_types', 'atomic_file_codec', 'bytes_rendering', 'store_lock_types', 'append_log_codec',
+  'durable_io_types', 'durable_effect', 'durable_path', 'durable_io_ops', 'durable_io', 'durable_io_transfer', 'durable_io_host',
+  'durable_host_abi', 'atomic_file_codec', 'atomic_file', 'bytes_rendering', 'store_lock_types', 'store_lock', 'append_log_codec',
   'durable_record_codec', 'checkpoint_scalar_codecs', 'checkpoint_state_codecs', 'checkpoint_header_codec', 'checkpoint_codec',
   'byte_reader', 'crc32c_table', 'crc32c', 'snappy_raw', 'snappy_frame',
   'network_var_bytes', 'network_bls_public_key', 'network_bls_signature', 'network_wire_scalar', 'network_protocols', 'network_base58', 'network_wire_frame',
@@ -53,7 +54,8 @@ export function pinnedCompilerSha() {
   if (hash !== lock.toolchain.compilerSha256) throw new Error('Compiler differs from source-lock.json. Review and repin before building.');
   return hash;
 }
-export function build(output, exports, extraSources = [], { scope = false } = {}) {
+export function build(output, exports, extraSources = [], { scope = false, timeoutMs = 600000 } = {}) {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 1800000) throw new RangeError('Compiler timeout must be between 1 ms and 30 minutes.');
   const hash = pinnedCompilerSha();
   let inputs = [...sources, ...extraSources];
   const projection = `${output}.kan`;
@@ -67,7 +69,7 @@ export function build(output, exports, extraSources = [], { scope = false } = {}
   }
   try {
     const built = spawnSync(compiler, ['build', ...inputs, '-o', output,
-      ...exports.flatMap(name => ['--export', name])], { encoding: 'utf8', timeout: 600000, maxBuffer: 4 * 1024 * 1024 });
+      ...exports.flatMap(name => ['--export', name])], { encoding: 'utf8', timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 });
     if (built.error || built.status !== 0) throw new Error(built.error?.message ?? built.stderr ?? `Compiler exited ${built.status}`);
   } finally {
     if (projected) rmSync(projection, { force: true });

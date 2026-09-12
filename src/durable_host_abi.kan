@@ -1,0 +1,25 @@
+-- Byte accessors keep opaque continuations and full-width integers inside Wasm.
+def durableTaskOpBytes : DurableTask -> Bytes := fun (task : DurableTask) => case (durableTaskRequest task) with
+  | 0 (unit : prod ()) => b"" | 1 (request : DurableHostRequest) => durableIoOpText request.0
+def durableTaskArgs : DurableTask -> ByteStrings := fun (task : DurableTask) => case (durableTaskRequest task) with
+  | 0 (unit : prod ()) => seqBytesEmpty | 1 (request : DurableHostRequest) => request.1
+def durableTaskBody : DurableTask -> Bytes := fun (task : DurableTask) => case (durableTaskRequest task) with
+  | 0 (unit : prod ()) => b"" | 1 (request : DurableHostRequest) => request.2
+def durableArgsEmpty : ByteStrings -> Nat := fun (args : ByteStrings) => match args as self in ByteStrings return Nat with
+  | byteStringsNil => 1 | byteStringsCons head tail => 0
+def durableArgsHead : ByteStrings -> Bytes := fun (args : ByteStrings) => match args as self in ByteStrings return Bytes with
+  | byteStringsNil => b"" | byteStringsCons head tail => head
+def durableArgsTail : ByteStrings -> ByteStrings := fun (args : ByteStrings) => match args as self in ByteStrings return ByteStrings with
+  | byteStringsNil => seqBytesEmpty | byteStringsCons head tail => tail
+def durableTaskValueBytes : DurableTask -> Bytes := fun (task : DurableTask) => case (durableTaskValue task) with
+  | 0 (unit : prod ()) => b"" | 1 (value : Bytes) => value
+def durableTaskFsyncBytes : DurableTask -> Bytes := fun (task : DurableTask) => case (durableTaskCounters task) with
+  | 0 (unit : prod ()) => b"" | 1 (counters : DurableIoCounters) => hostIntText counters.0
+def durableTaskWrittenBytes : DurableTask -> Bytes := fun (task : DurableTask) => case (durableTaskCounters task) with
+  | 0 (unit : prod ()) => b"" | 1 (counters : DurableIoCounters) => hostIntText counters.1
+def durableTaskReplyOk : DurableTask -> Bytes -> Bytes -> DurableTask := fun (task : DurableTask) (scalar : Bytes) (body : Bytes) =>
+  durableTaskResume task (inj 1 of 2 (tuple (scalar, body)))
+def durableTaskReplyUnix : DurableTask -> Bytes -> Bytes -> DurableTask := fun (task : DurableTask) (errno : Bytes) (message : Bytes) =>
+  durableTaskResume task (inj 0 of 2 (durableRaisedUnix errno message))
+def durableTaskReplySys : DurableTask -> Bytes -> DurableTask := fun (task : DurableTask) (message : Bytes) =>
+  durableTaskResume task (inj 0 of 2 (durableRaisedSys message))

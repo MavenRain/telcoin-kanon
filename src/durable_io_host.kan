@@ -1,0 +1,64 @@
+def durableHostReplyDecode : (0 A : Type 0) -> (prod (Bytes, Bytes) -> ValueOption A) -> DurableHostReply -> DurableRawResult A :=
+  fun (0 A : Type 0) (decode : prod (Bytes, Bytes) -> ValueOption A) (reply : DurableHostReply) => case reply with
+  | 0 (error : DurableRaised) => inj 0 of 2 error
+  | 1 (wire : prod (Bytes, Bytes)) => case (decode wire) with
+    | 0 (unit : prod ()) => inj 0 of 2 (durableRaisedSys b"invalid syscall reply")
+    | 1 (value : A) => inj 1 of 2 value
+def durableHostCall : (0 A : Type 0) -> (prod (Bytes, Bytes) -> ValueOption A) -> DurableIoOp -> ByteStrings -> Bytes -> DurableEffect (DurableRawResult A) :=
+  fun (0 A : Type 0) (decode : prod (Bytes, Bytes) -> ValueOption A) (op : DurableIoOp) (args : ByteStrings) (body : Bytes) =>
+    durableEffectMap DurableHostReply (DurableRawResult A) (durableHostReplyDecode A decode) (durableEffectHost (tuple (op, args, body)))
+def durableHostIntReply : prod (Bytes, Bytes) -> ValueOption HostInt := fun (wire : prod (Bytes, Bytes)) => hostIntParse wire.0
+def durableHostUnitReply : prod (Bytes, Bytes) -> ValueOption CodecUnit := fun (wire : prod (Bytes, Bytes)) => valueSome CodecUnit codecUnitValue
+def durableHostBytesReply : prod (Bytes, Bytes) -> ValueOption Bytes := fun (wire : prod (Bytes, Bytes)) => valueSome Bytes wire.1
+def durableHostReadReply : prod (Bytes, Bytes) -> ValueOption (prod (HostInt, Bytes)) := fun (wire : prod (Bytes, Bytes)) =>
+  case (hostIntParse wire.0) with
+  | 0 (unit : prod ()) => valueNone (prod (HostInt, Bytes))
+  | 1 (count : HostInt) => valueSome (prod (HostInt, Bytes)) (tuple (count, wire.1))
+def durableHostBoolReply : prod (Bytes, Bytes) -> ValueOption Bool := fun (wire : prod (Bytes, Bytes)) =>
+  case (bytesEqual wire.0 b"true") with
+  | 1 (unit : prod ()) => valueSome Bool (natEq 0 0)
+  | 0 (unit : prod ()) => case (bytesEqual wire.0 b"false") with
+    | 1 (unit : prod ()) => valueSome Bool (boolNot (natEq 0 0))
+    | 0 (unit : prod ()) => valueNone Bool
+def durableHostSeekText : DurableSeekCommand -> Bytes := fun (command : DurableSeekCommand) =>
+  match command as self in DurableSeekCommand return Bytes with
+  | durableSeekSet => b"set" | durableSeekCur => b"cur" | durableSeekEnd => b"end"
+def durableHostLockText : DurableLockCommand -> Bytes := fun (command : DurableLockCommand) =>
+  match command as self in DurableLockCommand return Bytes with
+  | durableUnlock => b"unlock" | durableLock => b"lock" | durableTryLock => b"try-lock"
+  | durableTestLock => b"test" | durableReadLock => b"read-lock" | durableTryReadLock => b"try-read-lock"
+def durableNativeOpen : DurableRawOpen := fun (path : Bytes) (flags : Nats) (perm : HostInt) =>
+  durableHostCall HostInt durableHostIntReply durableOpen (seqBytesCons path (seqBytesCons (hostIntText perm)
+    (listMapInto Nat Nats Bytes ByteStrings seqNatOps seqBytesOps decimal64 flags))) b""
+def durableNativeClose : DurableRawClose := fun (fd : HostInt) =>
+  durableHostCall CodecUnit durableHostUnitReply durableClose (seqBytesCons (hostIntText fd) seqBytesEmpty) b""
+def durableNativeWrite : DurableRawWrite := fun (fd : HostInt) (buffer : Bytes) (off : HostInt) (length : HostInt) =>
+  durableHostCall HostInt durableHostIntReply durableWrite
+    (seqBytesCons (hostIntText fd) (seqBytesCons (hostIntText off) (seqBytesCons (hostIntText length) seqBytesEmpty))) buffer
+def durableNativeRead : DurableRawRead := fun (fd : HostInt) (buffer : Bytes) (off : HostInt) (length : HostInt) =>
+  durableHostCall (prod (HostInt, Bytes)) durableHostReadReply durableRead
+    (seqBytesCons (hostIntText fd) (seqBytesCons (hostIntText off) (seqBytesCons (hostIntText length) seqBytesEmpty))) buffer
+def durableNativeFsync : DurableRawClose := fun (fd : HostInt) =>
+  durableHostCall CodecUnit durableHostUnitReply durableFsync (seqBytesCons (hostIntText fd) seqBytesEmpty) b""
+def durableNativeTruncate : DurableRawTruncate := fun (fd : HostInt) (at : HostInt) =>
+  durableHostCall CodecUnit durableHostUnitReply durableFtruncate
+    (seqBytesCons (hostIntText fd) (seqBytesCons (hostIntText at) seqBytesEmpty)) b""
+def durableNativeSeek : DurableRawSeek := fun (fd : HostInt) (at : HostInt) (whence : DurableSeekCommand) =>
+  durableHostCall HostInt durableHostIntReply durableLseek
+    (seqBytesCons (hostIntText fd) (seqBytesCons (hostIntText at) (seqBytesCons (durableHostSeekText whence) seqBytesEmpty))) b""
+def durableNativeRename : DurableRawRename := fun (src : Bytes) (dst : Bytes) =>
+  durableHostCall CodecUnit durableHostUnitReply durableRename (seqBytesCons src (seqBytesCons dst seqBytesEmpty)) b""
+def durableNativeMkdir : DurableRawMkdir := fun (path : Bytes) (perm : HostInt) =>
+  durableHostCall CodecUnit durableHostUnitReply durableMkdir (seqBytesCons path (seqBytesCons (hostIntText perm) seqBytesEmpty)) b""
+def durableNativeUnlink : DurableRawUnlink := fun (path : Bytes) =>
+  durableHostCall CodecUnit durableHostUnitReply durableUnlink (seqBytesCons path seqBytesEmpty) b""
+def durableNativeExists : DurableRawExists := fun (path : Bytes) =>
+  durableHostCall Bool durableHostBoolReply durableStat (seqBytesCons path seqBytesEmpty) b""
+def durableNativeLock : DurableRawLock := fun (fd : HostInt) (command : DurableLockCommand) (length : HostInt) =>
+  durableHostCall CodecUnit durableHostUnitReply durableLockf
+    (seqBytesCons (hostIntText fd) (seqBytesCons (durableHostLockText command) (seqBytesCons (hostIntText length) seqBytesEmpty))) b""
+def durableNativeRealpath : DurableRawRealpath := fun (path : Bytes) =>
+  durableHostCall Bytes durableHostBytesReply durableRealpath (seqBytesCons path seqBytesEmpty) b""
+def durableIoRealOps : DurableIoOps := tuple (durableNativeOpen, durableNativeClose, durableNativeWrite, durableNativeRead,
+  durableNativeFsync, durableNativeTruncate, durableNativeSeek, durableNativeRename, durableNativeMkdir,
+  durableNativeUnlink, durableNativeExists, durableNativeLock, durableNativeRealpath)

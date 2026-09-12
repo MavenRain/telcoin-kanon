@@ -1,0 +1,66 @@
+-- Portable tags for the Unix operations used by the durable library.
+mu DurableOpenMode : Type 0 :=
+| durableReadOnly : DurableOpenMode
+| durableReadWriteCreate : DurableOpenMode
+| durableWriteCreateExcl : DurableOpenMode
+mu DurableSeekCommand : Type 0 :=
+| durableSeekSet : DurableSeekCommand
+| durableSeekCur : DurableSeekCommand
+| durableSeekEnd : DurableSeekCommand
+mu DurableLockCommand : Type 0 :=
+| durableUnlock : DurableLockCommand
+| durableLock : DurableLockCommand
+| durableTryLock : DurableLockCommand
+| durableTestLock : DurableLockCommand
+| durableReadLock : DurableLockCommand
+| durableTryReadLock : DurableLockCommand
+def DurableRawOpen : Type 0 := Bytes -> Nats -> HostInt -> DurableEffect (DurableRawResult HostInt)
+def DurableRawClose : Type 0 := HostInt -> DurableEffect (DurableRawResult CodecUnit)
+def DurableRawWrite : Type 0 := HostInt -> Bytes -> HostInt -> HostInt -> DurableEffect (DurableRawResult HostInt)
+def DurableRawRead : Type 0 := HostInt -> Bytes -> HostInt -> HostInt -> DurableEffect (DurableRawResult (prod (HostInt, Bytes)))
+def DurableRawTruncate : Type 0 := HostInt -> HostInt -> DurableEffect (DurableRawResult CodecUnit)
+def DurableRawSeek : Type 0 := HostInt -> HostInt -> DurableSeekCommand -> DurableEffect (DurableRawResult HostInt)
+def DurableRawRename : Type 0 := Bytes -> Bytes -> DurableEffect (DurableRawResult CodecUnit)
+def DurableRawMkdir : Type 0 := Bytes -> HostInt -> DurableEffect (DurableRawResult CodecUnit)
+def DurableRawUnlink : Type 0 := Bytes -> DurableEffect (DurableRawResult CodecUnit)
+def DurableRawExists : Type 0 := Bytes -> DurableEffect (DurableRawResult Bool)
+def DurableRawLock : Type 0 := HostInt -> DurableLockCommand -> HostInt -> DurableEffect (DurableRawResult CodecUnit)
+def DurableRawRealpath : Type 0 := Bytes -> DurableEffect (DurableRawResult Bytes)
+def DurableIoOps : Type 0 := prod (DurableRawOpen, DurableRawClose, DurableRawWrite, DurableRawRead,
+  DurableRawClose, DurableRawTruncate, DurableRawSeek, DurableRawRename, DurableRawMkdir,
+  DurableRawUnlink, DurableRawExists, DurableRawLock, DurableRawRealpath)
+def DurableIoFd : Type 0 := prod (HostInt, Bytes, DurableIoOps)
+def durableIoFilePerm : HostInt := hostIntPositive 384
+def durableIoDirPerm : HostInt := hostIntPositive 448
+def durableIoMaxRead : HostInt := hostIntPositive 1073741824
+def durableIoFlags : DurableOpenMode -> Nats := fun (mode : DurableOpenMode) =>
+  match mode as self in DurableOpenMode return Nats with
+  | durableReadOnly => natsCons 0 natsNil
+  | durableReadWriteCreate => natsCons 2 (natsCons 3 natsNil)
+  | durableWriteCreateExcl => natsCons 1 (natsCons 3 (natsCons 4 natsNil))
+def DurableIoResult : (0 A : Type 0) -> Type 0 := fun (0 A : Type 0) => sum (DurableIoError, A)
+def DurableIo : (0 A : Type 0) -> Type 0 := fun (0 A : Type 0) => DurableEffect (DurableIoResult A)
+def durableIoReturn : (0 A : Type 0) -> A -> DurableIo A := fun (0 A : Type 0) (value : A) =>
+  durableEffectReturn (DurableIoResult A) (inj 1 of 2 value)
+def durableIoError : (0 A : Type 0) -> DurableIoError -> DurableIo A := fun (0 A : Type 0) (error : DurableIoError) =>
+  durableEffectReturn (DurableIoResult A) (inj 0 of 2 error)
+def durableIoBind : (0 A : Type 0) -> (0 B : Type 0) -> DurableIo A -> (A -> DurableIo B) -> DurableIo B :=
+  fun (0 A : Type 0) (0 B : Type 0) (first : DurableIo A) (next : A -> DurableIo B) =>
+    durableEffectBind (DurableIoResult A) (DurableIoResult B) first (fun (result : DurableIoResult A) => case result with
+    | 0 (error : DurableIoError) => durableIoError B error
+    | 1 (value : A) => next value)
+def durableIoMap : (0 A : Type 0) -> (0 B : Type 0) -> (A -> B) -> DurableIo A -> DurableIo B :=
+  fun (0 A : Type 0) (0 B : Type 0) (map : A -> B) (effect : DurableIo A) =>
+    durableIoBind A B effect (fun (value : A) => durableIoReturn B (map value))
+def durableIoGuard : (0 A : Type 0) -> DurableIoOp -> Bytes -> DurableEffect (DurableRawResult A) -> DurableIo A :=
+  fun (0 A : Type 0) (op : DurableIoOp) (path : Bytes) (effect : DurableEffect (DurableRawResult A)) =>
+    durableEffectMap (DurableRawResult A) (DurableIoResult A) (fun (result : DurableRawResult A) => case result with
+    | 0 (error : DurableRaised) => inj 0 of 2 (durableIoFailed op path (durableRaisedMessage error))
+    | 1 (value : A) => inj 1 of 2 value) effect
+def durableIoGuardTolerating : DurableIoOp -> Bytes -> Bytes -> DurableEffect (DurableRawResult CodecUnit) -> DurableIo CodecUnit :=
+  fun (op : DurableIoOp) (path : Bytes) (allowed : Bytes) (effect : DurableEffect (DurableRawResult CodecUnit)) =>
+    durableEffectMap (DurableRawResult CodecUnit) (DurableIoResult CodecUnit) (fun (result : DurableRawResult CodecUnit) => case result with
+    | 1 (unit : CodecUnit) => inj 1 of 2 unit
+    | 0 (error : DurableRaised) => case (durableRaisedIsUnix allowed error) with
+      | 1 (unit : prod ()) => inj 1 of 2 codecUnitValue
+      | 0 (unit : prod ()) => inj 0 of 2 (durableIoFailed op path (durableRaisedMessage error))) effect

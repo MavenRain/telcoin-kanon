@@ -1,0 +1,22 @@
+def storeLockTestView : StoreLockResult StoreLock -> Bytes := fun (result : StoreLockResult StoreLock) => case result with
+  | 0 (error : StoreLockError) => append b"error:" (storeLockErrorText error) | 1 (lock : StoreLock) => b"ok"
+def storeLockTestRelease : StoreLockResult StoreLock -> DurableEffect Bytes := fun (result : StoreLockResult StoreLock) => case result with
+  | 0 (error : StoreLockError) => durableEffectReturn Bytes b"none"
+  | 1 (lock : StoreLock) => durableEffectMap (DurableIoResult CodecUnit) Bytes (fun (result : DurableIoResult CodecUnit) => case result with
+    | 0 (error : DurableIoError) => append b"error:" (durableIoErrorText error) | 1 (unit : CodecUnit) => b"ok") (storeLockRelease lock)
+def storeLockTestFields : Bytes -> Bytes -> Bytes := fun (a : Bytes) (b : Bytes) => append a (append b";" b)
+def storeLockTestThird : Bytes -> DurableEffect Bytes := fun (dir : Bytes) =>
+  durableEffectBind (StoreLockResult StoreLock) Bytes (storeLockAcquire durableIoRealOps dir) (fun (third : StoreLockResult StoreLock) =>
+    durableEffectBind Bytes Bytes (storeLockTestRelease third) (fun (released : Bytes) =>
+      durableEffectMap ByteStrings Bytes (fun (register : ByteStrings) => storeLockTestFields (storeLockTestView third)
+        (storeLockTestFields released (decimal64 (seqBytesLength register)))) durableEffectRegister))
+def storeLockTestScenario : Bytes -> Bytes -> DurableEffect Bytes := fun (dir : Bytes) (alias : Bytes) =>
+  durableEffectBind (StoreLockResult StoreLock) Bytes (storeLockAcquire durableIoRealOps dir) (fun (first : StoreLockResult StoreLock) =>
+    durableEffectBind (StoreLockResult StoreLock) Bytes (storeLockAcquire durableIoRealOps alias) (fun (second : StoreLockResult StoreLock) =>
+      durableEffectBind Bytes Bytes (storeLockTestRelease first) (fun (releasedFirst : Bytes) =>
+        durableEffectBind Bytes Bytes (storeLockTestRelease second) (fun (releasedSecond : Bytes) =>
+          durableEffectMap Bytes Bytes (fun (third : Bytes) => storeLockTestFields (storeLockTestView first)
+            (storeLockTestFields (storeLockTestView second) (storeLockTestFields releasedFirst (storeLockTestFields releasedSecond third))))
+            (storeLockTestThird dir)))))
+def storeLockTestStart : Bytes -> Bytes -> DurableTask := fun (dir : Bytes) (alias : Bytes) =>
+  durableEffectRun Bytes (fun (value : Bytes) => value) (storeLockTestScenario dir alias) durableIoCountersZero

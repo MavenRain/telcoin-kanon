@@ -53,7 +53,7 @@ export function compileOracle({ name, sources, modules, oracle, extraAliases = {
   return { directory, runOracle: (args = [], input) => spawnSync(join(directory, 'oracle.exe'), args,
     { input, encoding: 'utf8', timeout: 30000, maxBuffer: 8 * 1024 * 1024 }) };
 }
-export async function harness({ name, sources, modules, oracle, fixtures, exports, extraAliases = {}, packages = 'digestif.c', sortModules = false }) {
+export async function harness({ name, sources, modules, oracle, fixtures, exports, extraAliases = {}, packages = 'digestif.c', sortModules = false, compilerTimeoutMs = 600000 }) {
   const { directory, runOracle } = compileOracle({ name, sources, modules, oracle, extraAliases, packages, sortModules });
   const wasm = join(directory, `${name}.wasm`);
   const wasmExports = ['emptyBytes', 'consBytes', 'bytesEmpty', 'bytesHead', 'bytesTail', 'seqBytesEmpty', 'seqBytesCons', ...exports];
@@ -68,7 +68,7 @@ export async function harness({ name, sources, modules, oracle, fixtures, export
     bytes=cached.bytes;
     console.log(`${name} Kanon artifact reused: ${cached.digest}`);
   } else {
-    build(wasm, wasmExports, fixturePaths, { scope: true });
+    build(wasm, wasmExports, fixturePaths, { scope: true, timeoutMs: compilerTimeoutMs });
     bytes=readFileSync(wasm);
     const retained=join(artifactDirectory,`${name}-${createHash('sha256').update(bytes).digest('hex')}.wasm`);
     copyFileSync(wasm,retained);

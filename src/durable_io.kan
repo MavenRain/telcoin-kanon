@@ -1,0 +1,71 @@
+def durableIoOpen : DurableIoOps -> Bytes -> DurableOpenMode -> DurableIo DurableIoFd :=
+  fun (ops : DurableIoOps) (path : Bytes) (mode : DurableOpenMode) => durableIoMap HostInt DurableIoFd
+    (fun (raw : HostInt) => tuple (raw, path, ops)) (durableIoGuard HostInt durableOpen path (ops.0 path (durableIoFlags mode) durableIoFilePerm))
+def durableIoClose : DurableIoFd -> DurableIo CodecUnit := fun (fd : DurableIoFd) =>
+  durableIoGuard CodecUnit durableClose fd.1 (fd.2.1 fd.0)
+def durableIoCloseOutcome : (0 A : Type 0) -> DurableIoResult A -> DurableIo CodecUnit -> DurableIo A :=
+  fun (0 A : Type 0) (outcome : DurableIoResult A) (close : DurableIo CodecUnit) =>
+    durableEffectMap (DurableIoResult CodecUnit) (DurableIoResult A) (fun (closed : DurableIoResult CodecUnit) => case outcome with
+    | 0 (error : DurableIoError) => inj 0 of 2 error
+    | 1 (value : A) => case closed with
+      | 0 (error : DurableIoError) => inj 0 of 2 error
+      | 1 (unit : CodecUnit) => inj 1 of 2 value) close
+def durableIoWithFile : (0 A : Type 0) -> DurableIoOps -> Bytes -> DurableOpenMode -> (DurableIoFd -> DurableIo A) -> DurableIo A :=
+  fun (0 A : Type 0) (ops : DurableIoOps) (path : Bytes) (mode : DurableOpenMode) (body : DurableIoFd -> DurableIo A) =>
+    durableIoBind DurableIoFd A (durableIoOpen ops path mode) (fun (fd : DurableIoFd) =>
+      durableEffectBind (DurableIoResult A) (DurableIoResult A) (body fd)
+        (fun (outcome : DurableIoResult A) => durableIoCloseOutcome A outcome (durableIoClose fd)))
+def durableIoSeek : DurableIoFd -> HostInt -> DurableSeekCommand -> DurableIo HostInt :=
+  fun (fd : DurableIoFd) (at : HostInt) (whence : DurableSeekCommand) => durableIoGuard HostInt durableLseek fd.1 (fd.2.6 fd.0 at whence)
+def durableIoSize : DurableIoFd -> DurableIo HostInt := fun (fd : DurableIoFd) => durableIoSeek fd (hostIntPositive 0) durableSeekEnd
+def durableIoSeekTo : DurableIoFd -> HostInt -> DurableIo CodecUnit := fun (fd : DurableIoFd) (at : HostInt) =>
+  durableIoMap HostInt CodecUnit (fun (position : HostInt) => codecUnitValue) (durableIoSeek fd at durableSeekSet)
+def durableIoCountFsync : DurableEffect CodecUnit := durableEffectBind DurableIoCounters CodecUnit durableEffectCounters
+  (fun (counters : DurableIoCounters) => durableEffectSetCounters (tuple (hostIntAdd counters.0 (hostIntPositive 1), counters.1)))
+def durableIoCountBytes : HostInt -> DurableEffect CodecUnit := fun (n : HostInt) => durableEffectBind DurableIoCounters CodecUnit durableEffectCounters
+  (fun (counters : DurableIoCounters) => durableEffectSetCounters (tuple (counters.0, hostIntAdd counters.1 n)))
+def durableIoFsyncs : DurableEffect HostInt := durableEffectMap DurableIoCounters HostInt (fun (counters : DurableIoCounters) => counters.0) durableEffectCounters
+def durableIoBytesWritten : DurableEffect HostInt := durableEffectMap DurableIoCounters HostInt (fun (counters : DurableIoCounters) => counters.1) durableEffectCounters
+def durableIoCountedFsync : DurableIoOp -> Bytes -> DurableEffect (DurableRawResult CodecUnit) -> DurableIo CodecUnit :=
+  fun (op : DurableIoOp) (path : Bytes) (effect : DurableEffect (DurableRawResult CodecUnit)) =>
+    durableIoBind CodecUnit CodecUnit (durableIoGuard CodecUnit op path effect)
+      (fun (unit : CodecUnit) => durableEffectMap CodecUnit (DurableIoResult CodecUnit) (fun (unit : CodecUnit) => inj 1 of 2 unit) durableIoCountFsync)
+def durableIoFsync : DurableIoFd -> DurableIo CodecUnit := fun (fd : DurableIoFd) => durableIoCountedFsync durableFsync fd.1 (fd.2.4 fd.0)
+def durableIoFtruncate : DurableIoFd -> HostInt -> DurableIo CodecUnit := fun (fd : DurableIoFd) (at : HostInt) =>
+  durableIoGuard CodecUnit durableFtruncate fd.1 (fd.2.5 fd.0 at)
+def durableIoFsyncDirectory : DurableIoOps -> Bytes -> DurableIo CodecUnit := fun (ops : DurableIoOps) (path : Bytes) =>
+  durableIoBind HostInt CodecUnit (durableIoGuard HostInt durableFsyncDir path (ops.0 path (natsCons 0 natsNil) (hostIntPositive 0)))
+    (fun (raw : HostInt) => durableEffectBind (DurableIoResult CodecUnit) (DurableIoResult CodecUnit)
+      (durableIoCountedFsync durableFsyncDir path (ops.4 raw))
+      (fun (outcome : DurableIoResult CodecUnit) => durableIoCloseOutcome CodecUnit outcome (durableIoGuard CodecUnit durableClose path (ops.1 raw))))
+def durableIoRenameOver : DurableIoOps -> Bytes -> Bytes -> DurableIo CodecUnit := fun (ops : DurableIoOps) (src : Bytes) (dst : Bytes) =>
+  durableIoGuard CodecUnit durableRename dst (ops.7 src dst)
+def durableIoUnlinkIfPresent : DurableIoOps -> Bytes -> DurableIo CodecUnit := fun (ops : DurableIoOps) (path : Bytes) =>
+  durableIoGuardTolerating durableUnlink path b"ENOENT" (ops.9 path)
+def durableIoExists : DurableIoOps -> Bytes -> DurableIo Bool := fun (ops : DurableIoOps) (path : Bytes) =>
+  durableEffectMap (DurableRawResult Bool) (DurableIoResult Bool) (fun (result : DurableRawResult Bool) => case result with
+  | 1 (value : Bool) => inj 1 of 2 value
+  | 0 (error : DurableRaised) => case (boolOr (durableRaisedIsUnix b"ENOENT" error) (durableRaisedIsUnix b"ENOTDIR" error)) with
+    | 1 (unit : prod ()) => inj 1 of 2 (boolNot (natEq 0 0))
+    | 0 (unit : prod ()) => inj 0 of 2 (durableIoFailed durableStat path (durableRaisedMessage error))) (ops.10 path)
+def durableIoRealpath : DurableIoOps -> Bytes -> DurableIo Bytes := fun (ops : DurableIoOps) (path : Bytes) =>
+  durableIoGuard Bytes durableRealpath path (ops.12 path)
+def durableIoLockExclusive : DurableIoFd -> Bytes -> DurableIo CodecUnit := fun (fd : DurableIoFd) (path : Bytes) =>
+  durableEffectMap (DurableRawResult CodecUnit) (DurableIoResult CodecUnit) (fun (result : DurableRawResult CodecUnit) => case result with
+  | 1 (unit : CodecUnit) => inj 1 of 2 unit
+  | 0 (error : DurableRaised) => case (boolOr (durableRaisedIsUnix b"EAGAIN" error) (durableRaisedIsUnix b"EACCES" error)) with
+    | 1 (unit : prod ()) => inj 0 of 2 (durableIoWouldBlock durableLockf path)
+    | 0 (unit : prod ()) => inj 0 of 2 (durableIoFailed durableLockf path (durableRaisedMessage error)))
+    (fd.2.11 fd.0 durableTryLock (hostIntPositive 0))
+def rec durableIoMkdirParts : ByteStrings -> DurableIoOps -> Bytes -> DurableIo CodecUnit :=
+  fun (parts : ByteStrings) (ops : DurableIoOps) (prefix : Bytes) =>
+  match parts as self in ByteStrings return DurableIo CodecUnit with
+  | byteStringsNil => durableIoReturn CodecUnit codecUnitValue
+  | byteStringsCons part tail => case (natEq (bytesEmpty part) 1) with
+    | 1 (unit : prod ()) => durableIoMkdirParts tail ops prefix
+    | 0 (unit : prod ()) => let next : Bytes := durablePathConcat prefix part in
+      durableIoBind CodecUnit CodecUnit (durableIoGuardTolerating durableMkdir next b"EEXIST" (ops.8 next durableIoDirPerm))
+        (fun (unit : CodecUnit) => durableIoMkdirParts tail ops next)
+def durableIoMkdirParents : DurableIoOps -> Bytes -> DurableIo CodecUnit := fun (ops : DurableIoOps) (path : Bytes) =>
+  durableIoMkdirParts (durablePathSplit path) ops (case (natEq (bytesHead path) 47) with
+    | 1 (unit : prod ()) => b"/" | 0 (unit : prod ()) => b"")

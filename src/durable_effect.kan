@@ -1,0 +1,68 @@
+-- OS requests suspend in a typed continuation. The host only supplies replies.
+mu DurableRaised : Type 0 :=
+| durableRaisedUnix (errno : Bytes) (message : Bytes) : DurableRaised
+| durableRaisedSys (message : Bytes) : DurableRaised
+def DurableRawResult : (0 A : Type 0) -> Type 0 := fun (0 A : Type 0) => sum (DurableRaised, A)
+def DurableIoCounters : Type 0 := prod (HostInt, HostInt)
+def durableIoCountersZero : DurableIoCounters := tuple (hostIntPositive 0, hostIntPositive 0)
+def DurableState : Type 0 := prod (DurableIoCounters, ByteStrings)
+def durableStateEmpty : DurableState := tuple (durableIoCountersZero, seqBytesEmpty)
+def DurableHostRequest : Type 0 := prod (DurableIoOp, ByteStrings, Bytes)
+def DurableHostReply : Type 0 := DurableRawResult (prod (Bytes, Bytes))
+mu DurableTask : Type 0 :=
+| durableTaskDone (state : DurableState) (value : Bytes) : DurableTask
+| durableTaskCall (request : DurableHostRequest) (resume : DurableHostReply -> DurableTask) : DurableTask
+def DurableEffect : (0 A : Type 0) -> Type 0 := fun (0 A : Type 0) =>
+  DurableState -> (DurableState -> A -> DurableTask) -> DurableTask
+def durableEffectReturn : (0 A : Type 0) -> A -> DurableEffect A :=
+  fun (0 A : Type 0) (value : A) (state : DurableState) (next : DurableState -> A -> DurableTask) => next state value
+def durableEffectBind : (0 A : Type 0) -> (0 B : Type 0) -> DurableEffect A -> (A -> DurableEffect B) -> DurableEffect B :=
+  fun (0 A : Type 0) (0 B : Type 0) (first : DurableEffect A) (continueWith : A -> DurableEffect B)
+    (state : DurableState) (next : DurableState -> B -> DurableTask) =>
+    first state (fun (updated : DurableState) (value : A) => continueWith value updated next)
+def durableEffectMap : (0 A : Type 0) -> (0 B : Type 0) -> (A -> B) -> DurableEffect A -> DurableEffect B :=
+  fun (0 A : Type 0) (0 B : Type 0) (map : A -> B) (effect : DurableEffect A) =>
+    durableEffectBind A B effect (fun (value : A) => durableEffectReturn B (map value))
+def durableEffectHost : DurableHostRequest -> DurableEffect DurableHostReply :=
+  fun (request : DurableHostRequest) (state : DurableState) (next : DurableState -> DurableHostReply -> DurableTask) =>
+    durableTaskCall request (fun (reply : DurableHostReply) => next state reply)
+def durableEffectCounters : DurableEffect DurableIoCounters :=
+  fun (state : DurableState) (next : DurableState -> DurableIoCounters -> DurableTask) => next state state.0
+def durableEffectSetCounters : DurableIoCounters -> DurableEffect CodecUnit :=
+  fun (updated : DurableIoCounters) (state : DurableState) (next : DurableState -> CodecUnit -> DurableTask) => next (tuple (updated, state.1)) codecUnitValue
+def durableEffectRegister : DurableEffect ByteStrings :=
+  fun (state : DurableState) (next : DurableState -> ByteStrings -> DurableTask) => next state state.1
+def durableEffectSetRegister : ByteStrings -> DurableEffect CodecUnit :=
+  fun (updated : ByteStrings) (state : DurableState) (next : DurableState -> CodecUnit -> DurableTask) => next (tuple (state.0, updated)) codecUnitValue
+def durableEffectRunInState : (0 A : Type 0) -> (A -> Bytes) -> DurableEffect A -> DurableState -> DurableTask :=
+  fun (0 A : Type 0) (write : A -> Bytes) (effect : DurableEffect A) (state : DurableState) =>
+    effect state (fun (updated : DurableState) (value : A) => durableTaskDone updated (write value))
+def durableEffectRun : (0 A : Type 0) -> (A -> Bytes) -> DurableEffect A -> DurableIoCounters -> DurableTask :=
+  fun (0 A : Type 0) (write : A -> Bytes) (effect : DurableEffect A) (counters : DurableIoCounters) =>
+    durableEffectRunInState A write effect (tuple (counters, seqBytesEmpty))
+def durableTaskIsDone : DurableTask -> Nat := fun (task : DurableTask) => match task as self in DurableTask return Nat with
+  | durableTaskDone counters value => 1
+  | durableTaskCall request resume => 0
+def durableTaskValue : DurableTask -> ValueOption Bytes := fun (task : DurableTask) => match task as self in DurableTask return ValueOption Bytes with
+  | durableTaskDone counters value => valueSome Bytes value
+  | durableTaskCall request resume => valueNone Bytes
+def durableTaskCounters : DurableTask -> ValueOption DurableIoCounters := fun (task : DurableTask) => match task as self in DurableTask return ValueOption DurableIoCounters with
+  | durableTaskDone state value => valueSome DurableIoCounters state.0
+  | durableTaskCall request resume => valueNone DurableIoCounters
+def durableTaskRequest : DurableTask -> ValueOption DurableHostRequest := fun (task : DurableTask) => match task as self in DurableTask return ValueOption DurableHostRequest with
+  | durableTaskDone counters value => valueNone DurableHostRequest
+  | durableTaskCall request resume => valueSome DurableHostRequest request
+def durableTaskState : DurableTask -> ValueOption DurableState := fun (task : DurableTask) => match task as self in DurableTask return ValueOption DurableState with
+  | durableTaskDone state value => valueSome DurableState state
+  | durableTaskCall request resume => valueNone DurableState
+def durableTaskResume : DurableTask -> DurableHostReply -> DurableTask := fun (task : DurableTask) (reply : DurableHostReply) =>
+  match task as self in DurableTask return DurableTask with
+  | durableTaskDone counters value => task
+  | durableTaskCall request resume => resume reply
+def durableRaisedMessage : DurableRaised -> Bytes := fun (raised : DurableRaised) => match raised as self in DurableRaised return Bytes with
+  | durableRaisedUnix errno message => message
+  | durableRaisedSys message => message
+def durableRaisedIsUnix : Bytes -> DurableRaised -> Bool := fun (expected : Bytes) (raised : DurableRaised) =>
+  match raised as self in DurableRaised return Bool with
+  | durableRaisedUnix errno message => bytesEqual expected errno
+  | durableRaisedSys message => boolNot (natEq 0 0)

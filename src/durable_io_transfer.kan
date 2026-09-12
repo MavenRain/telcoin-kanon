@@ -1,0 +1,56 @@
+def rec durableIoWriteAcc : Bytes -> DurableIoFd -> Bytes -> Nat -> Nat -> DurableIo CodecUnit :=
+  fun (fuel : Bytes) (fd : DurableIoFd) (payload : Bytes) (total : Nat) (off : Nat) =>
+  match fuel as self in Bytes return DurableIo CodecUnit with
+  | bytesNil => (case (natEq off total) with
+    | 1 (unit : prod ()) => durableIoReturn CodecUnit codecUnitValue
+    | 0 (unit : prod ()) => durableIoError CodecUnit (durableIoShortWrite fd.1 (hostIntPositive total) (hostIntPositive off)))
+  | bytesCons unused tail => case (natEq off total) with
+    | 1 (unit : prod ()) => durableIoReturn CodecUnit codecUnitValue
+    | 0 (unit : prod ()) =>
+      let remaining : Nat := natSub total off in
+      durableIoBind HostInt CodecUnit (durableIoGuard HostInt durableWrite fd.1 (fd.2.2 fd.0 payload (hostIntPositive off) (hostIntPositive remaining)))
+        (fun (reported : HostInt) =>
+          let took : Nat := minNat (hostIntClampZero reported) remaining in
+          durableEffectBind CodecUnit (DurableIoResult CodecUnit) (durableIoCountBytes (hostIntPositive took)) (fun (unit : CodecUnit) =>
+            case (natEq took 0) with
+            | 1 (unit : prod ()) => durableIoError CodecUnit (durableIoShortWrite fd.1 (hostIntPositive total) (hostIntPositive off))
+            | 0 (unit : prod ()) => durableIoWriteAcc tail fd payload total (natAdd off took)))
+def durableIoWriteAll : DurableIoFd -> Bytes -> DurableIo CodecUnit := fun (fd : DurableIoFd) (payload : Bytes) =>
+  durableIoWriteAcc payload fd payload (bytesLength payload) 0
+def durableIoShortReadResult : DurableIoFd -> HostInt -> Nat -> Nat -> DurableIo Bytes :=
+  fun (fd : DurableIoFd) (at : HostInt) (wanted : Nat) (got : Nat) =>
+    durableIoError Bytes (durableIoShortRead fd.1 at (hostIntPositive wanted) (hostIntPositive got))
+def rec durableIoReadAcc : Bytes -> DurableIoFd -> HostInt -> Nat -> Bytes -> Nat -> DurableIo Bytes :=
+  fun (fuel : Bytes) (fd : DurableIoFd) (at : HostInt) (wanted : Nat) (buffer : Bytes) (off : Nat) =>
+  match fuel as self in Bytes return DurableIo Bytes with
+  | bytesNil => (case (natEq off wanted) with
+    | 1 (unit : prod ()) => durableIoReturn Bytes buffer
+    | 0 (unit : prod ()) => durableIoShortReadResult fd at wanted off)
+  | bytesCons unused tail => case (natEq off wanted) with
+    | 1 (unit : prod ()) => durableIoReturn Bytes buffer
+    | 0 (unit : prod ()) =>
+      let remaining : Nat := natSub wanted off in
+      durableIoBind (prod (HostInt, Bytes)) Bytes
+        (durableIoGuard (prod (HostInt, Bytes)) durableRead fd.1 (fd.2.3 fd.0 buffer (hostIntPositive off) (hostIntPositive remaining)))
+        (fun (reply : prod (HostInt, Bytes)) => case (natEq (bytesLength reply.1) wanted) with
+        | 0 (unit : prod ()) => durableIoError Bytes (durableIoFailed durableRead fd.1 b"host changed the read buffer length")
+        | 1 (unit : prod ()) =>
+          let got : Nat := minNat (hostIntClampZero reply.0) remaining in case (natEq got 0) with
+          | 1 (unit : prod ()) => durableIoShortReadResult fd at wanted off
+          | 0 (unit : prod ()) => durableIoReadAcc tail fd at wanted reply.1 (natAdd off got))
+def durableIoPreadVetted : DurableIoFd -> HostInt -> Nat -> DurableIo Bytes := fun (fd : DurableIoFd) (at : HostInt) (length : Nat) =>
+  durableIoBind HostInt Bytes (durableIoSeek fd at durableSeekSet) (fun (position : HostInt) =>
+    let buffer : Bytes := precompileZeros length in durableIoReadAcc buffer fd at length buffer 0)
+def durableIoPread : Bool -> DurableIoFd -> HostInt -> HostInt -> DurableIo Bytes :=
+  fun (bounded : Bool) (fd : DurableIoFd) (at : HostInt) (length : HostInt) =>
+    let admitted : Bool := boolAnd (natEq (hostIntLess at (hostIntPositive 0)) 0)
+      (boolAnd (natEq (hostIntLess length (hostIntPositive 0)) 0)
+        (boolOr (boolNot bounded) (natEq (hostIntLess durableIoMaxRead length) 0))) in
+    case admitted with
+    | 0 (unit : prod ()) => durableIoError Bytes (durableIoShortRead fd.1 at length (hostIntPositive 0))
+    | 1 (unit : prod ()) => durableIoPreadVetted fd at (hostIntClampZero length)
+def durableIoPreadExact : DurableIoFd -> HostInt -> HostInt -> DurableIo Bytes := durableIoPread (natEq 0 0)
+def durableIoPreadAll : DurableIoFd -> HostInt -> HostInt -> DurableIo Bytes := durableIoPread (boolNot (natEq 0 0))
+def durableIoReadWhole : DurableIoOps -> Bytes -> DurableIo Bytes := fun (ops : DurableIoOps) (path : Bytes) =>
+  durableIoWithFile Bytes ops path durableReadOnly (fun (fd : DurableIoFd) =>
+    durableIoBind HostInt Bytes (durableIoSize fd) (fun (length : HostInt) => durableIoPreadAll fd (hostIntPositive 0) length))

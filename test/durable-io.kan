@@ -1,0 +1,43 @@
+def natMatch : Nat -> DurableIo Bytes -> (Nat -> DurableIo Bytes) -> DurableIo Bytes :=
+  fun (n : Nat) (zero : DurableIo Bytes) (successor : Nat -> DurableIo Bytes) => case (natEq n 0) with
+  | 1 (unit : prod ()) => zero | 0 (unit : prod ()) => successor (natSub n 1)
+def durableIoTestUnit : CodecUnit -> Bytes := fun (unit : CodecUnit) => b"ok"
+def durableIoTestBool : Bool -> Bytes := fun (value : Bool) => case value with
+  | 0 (unit : prod ()) => b"false" | 1 (unit : prod ()) => b"true"
+def durableIoTestRender : DurableIoResult Bytes -> Bytes := fun (result : DurableIoResult Bytes) => case result with
+  | 0 (error : DurableIoError) => append b"error:" (durableIoErrorText error)
+  | 1 (value : Bytes) => value
+def durableIoTestFd : Bytes -> DurableIoFd := fun (path : Bytes) => tuple (hostIntPositive 7, path, durableIoRealOps)
+def durableIoTestBody : Nat -> Bytes -> HostInt -> HostInt -> DurableIoFd -> DurableIo Bytes :=
+  fun (op : Nat) (payload : Bytes) (at : HostInt) (length : HostInt) (fd : DurableIoFd) =>
+    natMatch op (durableIoMap CodecUnit Bytes durableIoTestUnit (durableIoWriteAll fd payload)) (fun (op : Nat) =>
+    natMatch op (durableIoMap Bytes Bytes bytesHex (durableIoPreadExact fd at length)) (fun (op : Nat) =>
+    natMatch op (durableIoMap Bytes Bytes bytesHex (durableIoPreadAll fd at length)) (fun (op : Nat) =>
+    natMatch op (durableIoMap CodecUnit Bytes durableIoTestUnit (durableIoFsync fd)) (fun (op : Nat) =>
+    natMatch op (durableIoMap CodecUnit Bytes durableIoTestUnit (durableIoFtruncate fd at)) (fun (op : Nat) =>
+    natMatch op (durableIoMap HostInt Bytes hostIntText (durableIoSize fd)) (fun (op : Nat) =>
+    natMatch op (durableIoMap CodecUnit Bytes durableIoTestUnit (durableIoSeekTo fd at)) (fun (op : Nat) =>
+    natMatch op (durableIoMap CodecUnit Bytes durableIoTestUnit (durableIoLockExclusive fd payload)) (fun (op : Nat) =>
+      durableIoMap CodecUnit Bytes durableIoTestUnit (durableIoClose fd)))))))))
+def durableIoTestOperation : Nat -> Bytes -> Bytes -> HostInt -> HostInt -> DurableIo Bytes :=
+  fun (op : Nat) (path : Bytes) (payload : Bytes) (at : HostInt) (length : HostInt) =>
+  case (natLt op 9) with
+  | 1 (unit : prod ()) => durableIoTestBody op payload at length (durableIoTestFd path)
+  | 0 (unit : prod ()) => natMatch (natSub op 9)
+    (durableIoMap CodecUnit Bytes durableIoTestUnit (durableIoFsyncDirectory durableIoRealOps path)) (fun (op : Nat) =>
+    natMatch op (durableIoMap CodecUnit Bytes durableIoTestUnit (durableIoRenameOver durableIoRealOps path payload)) (fun (op : Nat) =>
+    natMatch op (durableIoMap CodecUnit Bytes durableIoTestUnit (durableIoMkdirParents durableIoRealOps path)) (fun (op : Nat) =>
+    natMatch op (durableIoMap CodecUnit Bytes durableIoTestUnit (durableIoUnlinkIfPresent durableIoRealOps path)) (fun (op : Nat) =>
+    natMatch op (durableIoMap Bool Bytes durableIoTestBool (durableIoExists durableIoRealOps path)) (fun (op : Nat) =>
+    natMatch op (durableIoMap Bytes Bytes bytesHex (durableIoRealpath durableIoRealOps path)) (fun (op : Nat) =>
+    natMatch op (durableIoMap Bytes Bytes bytesHex (durableIoReadWhole durableIoRealOps path)) (fun (op : Nat) =>
+    natMatch op (durableIoWithFile Bytes durableIoRealOps path durableWriteCreateExcl (durableIoTestBody 0 payload at length)) (fun (op : Nat) =>
+    natMatch op (durableIoWithFile Bytes durableIoRealOps path durableReadWriteCreate (durableIoTestBody 3 payload at length)) (fun (op : Nat) =>
+      durableIoWithFile Bytes durableIoRealOps path durableReadOnly (durableIoTestBody 1 payload at length))))))))))
+def durableIoTestStart : Nat -> Bytes -> Bytes -> Bytes -> Bytes -> DurableTask :=
+  fun (op : Nat) (path : Bytes) (payload : Bytes) (at : Bytes) (length : Bytes) => case (hostIntParse at) with
+  | 0 (unit : prod ()) => durableTaskDone durableStateEmpty b"invalid at"
+  | 1 (at : HostInt) => case (hostIntParse length) with
+    | 0 (unit : prod ()) => durableTaskDone durableStateEmpty b"invalid length"
+    | 1 (length : HostInt) => durableEffectRun (DurableIoResult Bytes) durableIoTestRender
+      (durableIoTestOperation op path payload at length) durableIoCountersZero

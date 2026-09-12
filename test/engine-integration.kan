@@ -1,0 +1,86 @@
+def engineIntegrationEmptyAlloc : GenesisEntries := genesisEntriesNil
+def engineIntegrationFund : Bytes -> Bytes -> Bytes -> GenesisEntries -> GenesisEntries :=
+  fun (address : Bytes) (balance : Bytes) (code : Bytes) (tail : GenesisEntries) =>
+    genesisEntriesCons (tuple (addressValue address, genesisAccountMake nonceZero (u256Value (registryBeNat balance))
+      (valueSome Bytes code) storageEmpty)) tail
+def engineIntegrationSchedule : Nat -> Nat -> Nat -> sum (ForkScheduleError, ForkSchedule) :=
+  fun (mode : Nat) (cancun : Nat) (prague : Nat) => case (natEq mode 0) with
+  | 1 (unit : prod ()) => inj 1 of 2 forkScheduleTestnet
+  | 0 (unit : prod ()) => (case (natEq mode 1) with
+    | 1 (unit : prod ()) => inj 1 of 2 forkScheduleMainnet
+    | 0 (unit : prod ()) => forkScheduleMake timestampZero (valueSome Timestamp (timestampValue cancun))
+        (case (natEq mode 2) with | 1 (unit : prod ()) => valueNone Timestamp
+        | 0 (unit : prod ()) => valueSome Timestamp (timestampValue prague)))
+def engineIntegrationPre : BlockPreState -> Bytes := fun (pre : BlockPreState) =>
+  let root : Bytes := match (blockPreConsensusRoot pre) as value in BlockPreRoot return Bytes with
+    | blockRootSkippedAfterFirstBatch => b"batch"
+    | blockRootSkippedBeforeCancun => b"shanghai"
+    | blockRootSkippedAtGenesis => b"genesis"
+    | blockRootWritten outcome => b"written" in
+  let hashes : Bytes := match (blockPreBlockhashes pre) as value in BlockPreHashes return Bytes with
+    | blockHashSkippedBeforePrague => b"pre-prague"
+    | blockHashSkippedAtGenesis => b"genesis"
+    | blockHashWritten outcome => b"written" in append root (append b":" hashes)
+def rec engineIntegrationBlocks : ExecutedBlocks -> Bytes := fun (blocks : ExecutedBlocks) =>
+  match blocks as self in ExecutedBlocks return Bytes with
+  | executedBlocksNil => b""
+  | executedBlocksCons block tail =>
+    let skipped : Bytes := seqBlockInvalidTxWrite (fun (bad : BlockInvalidTx) => append (blockInvalidText bad) b";") (executedBlockSkipped block) in
+    let details : Bytes := append (hostIntText (blockHeaderTimestamp (executedBlockHeader block))) (append b":"
+      (append (engineIntegrationPre (executedBlockPreBlock block)) (append b":"
+        (append (hostIntText (blockHeaderGasUsed (executedBlockHeader block))) (append b":" skipped))))) in
+    append b"[" (append details (append b"]" (engineIntegrationBlocks tail)))
+def rec engineIntegrationAdvances : DriverAdvances -> Bytes := fun (advances : DriverAdvances) =>
+  match advances as self in DriverAdvances return Bytes with
+  | driverAdvancesNil => b""
+  | driverAdvancesCons advance tail => append (engineIntegrationBlocks advance.2) (engineIntegrationAdvances tail)
+def engineIntegrationOutcome : DriverOutcome Driver -> Bytes := fun (outcome : DriverOutcome Driver) =>
+  let details : Bytes := case outcome with
+    | 0 (value : prod (Driver, DriverAdvances)) => engineIntegrationAdvances value.1
+    | 1 (value : prod (Driver, DriverAdvances, SubDags)) => engineIntegrationAdvances value.1
+    | 2 (value : prod (DriverAdvances, DriverError)) => engineIntegrationAdvances value.0 in
+  append (driverPipelineOutcome outcome) (append b"#" details)
+def engineIntegrationResume : ChainSpec -> Committee -> Driver -> ConsensusStore -> AddressBook -> Bytes :=
+  fun (spec : ChainSpec) (committee : Committee) (driver : Driver) (store : ConsensusStore) (book : AddressBook) =>
+    case (driverResume spec committee (driverSnapshot driver) store (fun (id : AuthorityId) => addressBookFind book id)) with
+    | 0 (error : DriverResumeError) => append b"error:" (driverResumeErrorText error)
+    | 1 (outcome : DriverOutcome Driver) => engineIntegrationOutcome outcome
+def engineIntegrationRun : ChainSpec -> Committee -> SubDags -> Batches -> Nat -> Bytes :=
+  fun (spec : ChainSpec) (committee : Committee) (dags : SubDags) (batches : Batches) (prefix : Nat) =>
+    let bodies : BatchStore := batchStoreOfBodies batches in let book : AddressBook := addressBookOfCommittee committee in
+    let initial : ConsensusStore := consensusStoreCreate (committeeEpoch committee) consensusBlockNumberGenesis consensusBlockGenesisParent in
+    case (driverResumeTestStore (executionBlocks dags) initial bodies) with
+    | 0 (error : Bytes) => append b"setup:" error
+    | 1 (store : ConsensusStore) =>
+      let live : DriverOutcome Driver := driverFold (driverCreate spec committee) (driverResumeTestTake dags prefix) bodies
+        (fun (id : AuthorityId) => addressBookFind book id) in
+      let resumed : Bytes := case live with
+        | 0 (value : prod (Driver, DriverAdvances)) => engineIntegrationResume spec committee value.0 store book
+        | 1 (value : prod (Driver, DriverAdvances, SubDags)) => engineIntegrationResume spec committee value.0 store book
+        | 2 (value : prod (DriverAdvances, DriverError)) => append b"setup:" (driverErrorText value.1) in
+      append (forkScheduleText (chainSpecForkSchedule spec)) (append b":"
+        (append (forkScheduleText (executionConfigForkSchedule (chainSpecEngineConfig spec committee))) (append b"~"
+          (append (engineIntegrationOutcome live) (append b"~" resumed)))))
+def engineIntegrationMakeSpec : GenesisEntries -> Nat -> Nat -> Nat -> Bytes -> sum (Bytes, ChainSpec) :=
+  fun (alloc : GenesisEntries) (mode : Nat) (cancun : Nat) (prague : Nat) (registryCode : Bytes) =>
+  case (engineIntegrationSchedule mode cancun prague) with
+    | 0 (error : ForkScheduleError) => inj 0 of 2 (forkScheduleErrorText error)
+    | 1 (schedule : ForkSchedule) =>
+      let registry : GenesisAccount := genesisAccountMake nonceZero u256Zero (valueSome Bytes registryCode) storageEmpty in
+      let made : sum (ChainSpecError, ChainSpec) := case (natEq mode 0) with
+        | 1 (unit : prod ()) => chainSpecCreate (u256Value 42) driverPipelineFeeAddress driverPipelineGenesisHash (u256Value 7)
+            (hostIntPositive 30000000) timestampZero (epochDurationValue 1000) registry alloc
+        | 0 (unit : prod ()) => chainSpecCreateOnSchedule (u256Value 42) driverPipelineFeeAddress driverPipelineGenesisHash (u256Value 7)
+            (hostIntPositive 30000000) timestampZero (epochDurationValue 1000) keccaksNil schedule registry alloc in
+      case made with
+      | 0 (error : ChainSpecError) => inj 0 of 2 (chainSpecErrorText error)
+      | 1 (spec : ChainSpec) => inj 1 of 2 spec
+def engineTestIntegration : ByteStrings -> Bytes -> Bytes -> Nat -> sum (Bytes, ChainSpec) -> Bytes :=
+  fun (members : ByteStrings) (dagsRaw : Bytes) (bodiesRaw : Bytes) (prefix : Nat) (made : sum (Bytes, ChainSpec)) =>
+  match (driverPipelineCommittee members 0) as result in CommitteeResult return Bytes with
+  | committeeError error => append b"setup:" (committeeErrorText error)
+  | committeeOk committee => case made with
+    | 0 (error : Bytes) => append b"setup:" error
+    | 1 (spec : ChainSpec) => executionWith SubDags (codecList SubDag SubDags seqSubDagOps subDagCodec) dagsRaw (fun (dags : SubDags) =>
+        executionWith Batches (codecList Batch Batches seqBatchOps batchCodec) bodiesRaw (fun (batches : Batches) =>
+          engineIntegrationRun spec committee dags batches prefix))

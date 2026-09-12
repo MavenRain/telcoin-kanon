@@ -1,6 +1,11 @@
 def rec rlpStripLeadingZeros : Bytes -> Bytes := fun (bytes : Bytes) => match bytes as self in Bytes return Bytes with
   | bytesNil => bytesNil | bytesCons head tail => case (natEq head 0) with | 1 (unit : prod ()) => rlpStripLeadingZeros tail | 0 (unit : prod ()) => bytes
-def rlpBigEndianNat : Nat -> Bytes := fun (value : Nat) => rlpStripLeadingZeros (u256ToBeBytes (u256Value value))
+def rlpBigEndianNat : Nat -> Bytes := fun (value : Nat) =>
+  let result : prod (Nat, Nat, Bytes) := stepsFold (prod (Nat, Nat, Bytes)) steps32
+    (fun (state : prod (Nat, Nat, Bytes)) => boolNat (boolOr (natEq state.0 0) (natEq state.1 32)))
+    (fun (state : prod (Nat, Nat, Bytes)) => let divided : DivResult := divide256 state.0 256 in
+      tuple (divQuotient divided, natAdd state.1 1, bytesCons (divRemainder divided) state.2))
+    (tuple (value, 0, bytesNil)) in rlpStripLeadingZeros result.2
 def rlpBigEndian : HostInt -> Bytes := fun (value : HostInt) => rlpBigEndianNat (hostIntClampZero value)
 def rlpLengthOfLength : HostInt -> Nat := fun (length : HostInt) => let n : Nat := hostIntClampZero length in
   case (natLt n 56) with | 1 (unit : prod ()) => 1 | 0 (unit : prod ()) => natAdd 1 (bytesLength (rlpBigEndianNat n))

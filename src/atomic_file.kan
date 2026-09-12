@@ -1,0 +1,47 @@
+def AtomicFileResult : (0 A : Type 0) -> Type 0 := fun (0 A : Type 0) => sum (AtomicFileError, A)
+def AtomicFileEffect : (0 A : Type 0) -> Type 0 := fun (0 A : Type 0) => DurableEffect (AtomicFileResult A)
+def atomicFileReturn : (0 A : Type 0) -> A -> AtomicFileEffect A := fun (0 A : Type 0) (value : A) =>
+  durableEffectReturn (AtomicFileResult A) (inj 1 of 2 value)
+def atomicFileBind : (0 A : Type 0) -> (0 B : Type 0) -> AtomicFileEffect A -> (A -> AtomicFileEffect B) -> AtomicFileEffect B :=
+  fun (0 A : Type 0) (0 B : Type 0) (effect : AtomicFileEffect A) (next : A -> AtomicFileEffect B) =>
+    durableEffectBind (AtomicFileResult A) (AtomicFileResult B) effect (fun (result : AtomicFileResult A) => case result with
+    | 0 (error : AtomicFileError) => durableEffectReturn (AtomicFileResult B) (inj 0 of 2 error)
+    | 1 (value : A) => next value)
+def atomicFileOverIo : (0 A : Type 0) -> DurableIo A -> AtomicFileEffect A := fun (0 A : Type 0) (effect : DurableIo A) =>
+  durableEffectMap (DurableIoResult A) (AtomicFileResult A) (fun (result : DurableIoResult A) => case result with
+    | 0 (error : DurableIoError) => inj 0 of 2 (atomicFileIo error) | 1 (value : A) => inj 1 of 2 value) effect
+def atomicFileMap : (0 A : Type 0) -> (0 B : Type 0) -> (A -> B) -> AtomicFileEffect A -> AtomicFileEffect B :=
+  fun (0 A : Type 0) (0 B : Type 0) (map : A -> B) (effect : AtomicFileEffect A) =>
+    atomicFileBind A B effect (fun (value : A) => atomicFileReturn B (map value))
+def atomicFileSweepTemp : DurableIoOps -> Bytes -> Bytes -> AtomicFileEffect Bool :=
+  fun (ops : DurableIoOps) (dir : Bytes) (name : Bytes) =>
+    let path : Bytes := durablePathConcat dir (atomicFileTempOf name) in
+    atomicFileOverIo Bool (durableIoBind Bool Bool (durableIoExists ops path) (fun (present : Bool) => case present with
+    | 0 (unit : prod ()) => durableIoReturn Bool present
+    | 1 (unit : prod ()) => durableIoMap CodecUnit Bool (fun (unit : CodecUnit) => present) (durableIoUnlinkIfPresent ops path)))
+def atomicFileSaveIo : DurableIoOps -> Bytes -> Bytes -> Bytes -> DurableIo CodecUnit :=
+  fun (ops : DurableIoOps) (dir : Bytes) (name : Bytes) (bytes : Bytes) =>
+    let path : Bytes := durablePathConcat dir name in
+    let temp : Bytes := durablePathConcat dir (atomicFileTempOf name) in
+    durableIoBind CodecUnit CodecUnit (durableIoUnlinkIfPresent ops temp) (fun (unit : CodecUnit) =>
+      durableIoBind CodecUnit CodecUnit (durableIoWithFile CodecUnit ops temp durableWriteCreateExcl (fun (fd : DurableIoFd) =>
+        durableIoBind CodecUnit CodecUnit (durableIoWriteAll fd bytes) (fun (unit : CodecUnit) => durableIoFsync fd)))
+        (fun (unit : CodecUnit) => durableIoBind CodecUnit CodecUnit (durableIoRenameOver ops temp path)
+          (fun (unit : CodecUnit) => durableIoFsyncDirectory ops dir)))
+def atomicFileSave : DurableIoOps -> Bytes -> Bytes -> Bytes -> HostInt -> HostInt -> Bytes -> AtomicFileEffect CodecUnit :=
+  fun (ops : DurableIoOps) (dir : Bytes) (name : Bytes) (magic : Bytes) (format : HostInt) (generation : HostInt) (payload : Bytes) =>
+    case (atomicFileValidateSave (durablePathConcat dir name) magic format generation) with
+    | 0 (error : AtomicFileError) => durableEffectReturn (AtomicFileResult CodecUnit) (inj 0 of 2 error)
+    | 1 (unit : prod ()) => atomicFileOverIo CodecUnit (atomicFileSaveIo ops dir name (atomicFileEncode magic format generation payload))
+def atomicFileLoad : DurableIoOps -> Bytes -> Bytes -> Bytes -> HostInt -> AtomicFileEffect (ValueOption (prod (HostInt, Bytes))) :=
+  fun (ops : DurableIoOps) (dir : Bytes) (name : Bytes) (magic : Bytes) (format : HostInt) =>
+    let path : Bytes := durablePathConcat dir name in
+    atomicFileBind Bool (ValueOption (prod (HostInt, Bytes))) (atomicFileSweepTemp ops dir name) (fun (swept : Bool) =>
+      atomicFileBind Bool (ValueOption (prod (HostInt, Bytes))) (atomicFileOverIo Bool (durableIoExists ops path)) (fun (present : Bool) =>
+        case present with
+        | 0 (unit : prod ()) => atomicFileReturn (ValueOption (prod (HostInt, Bytes))) (valueNone (prod (HostInt, Bytes)))
+        | 1 (unit : prod ()) => atomicFileBind Bytes (ValueOption (prod (HostInt, Bytes))) (atomicFileOverIo Bytes (durableIoReadWhole ops path))
+          (fun (bytes : Bytes) => durableEffectReturn (AtomicFileResult (ValueOption (prod (HostInt, Bytes))))
+            (case (atomicFileDecode path magic format bytes) with
+            | 0 (error : AtomicFileError) => inj 0 of 2 error
+            | 1 (loaded : prod (HostInt, Bytes)) => inj 1 of 2 (valueSome (prod (HostInt, Bytes)) loaded)))))

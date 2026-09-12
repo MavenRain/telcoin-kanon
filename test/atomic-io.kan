@@ -1,0 +1,22 @@
+def atomicIoTestLoaded : ValueOption (prod (HostInt, Bytes)) -> Bytes := fun (loaded : ValueOption (prod (HostInt, Bytes))) => case loaded with
+  | 0 (unit : prod ()) => b"none"
+  | 1 (value : prod (HostInt, Bytes)) => append (hostIntText value.0) (append b":" (bytesHex value.1))
+def atomicIoTestRender : AtomicFileResult Bytes -> Bytes := fun (result : AtomicFileResult Bytes) => case result with
+  | 0 (error : AtomicFileError) => append b"error:" (atomicFileErrorText error) | 1 (value : Bytes) => value
+def atomicIoTestOperation : Nat -> Bytes -> Bytes -> Bytes -> HostInt -> HostInt -> Bytes -> AtomicFileEffect Bytes :=
+  fun (op : Nat) (dir : Bytes) (name : Bytes) (magic : Bytes) (format : HostInt) (generation : HostInt) (payload : Bytes) =>
+    case (natEq op 0) with
+    | 1 (unit : prod ()) => atomicFileMap CodecUnit Bytes (fun (unit : CodecUnit) => b"ok")
+        (atomicFileSave durableIoRealOps dir name magic format generation payload)
+    | 0 (unit : prod ()) => case (natEq op 1) with
+      | 1 (unit : prod ()) => atomicFileMap (ValueOption (prod (HostInt, Bytes))) Bytes atomicIoTestLoaded (atomicFileLoad durableIoRealOps dir name magic format)
+      | 0 (unit : prod ()) => atomicFileMap Bool Bytes (fun (present : Bool) => case present with
+          | 0 (unit : prod ()) => b"false" | 1 (unit : prod ()) => b"true") (atomicFileSweepTemp durableIoRealOps dir name)
+def atomicIoTestStart : Nat -> Bytes -> Bytes -> Bytes -> Bytes -> Bytes -> Bytes -> DurableTask :=
+  fun (op : Nat) (dir : Bytes) (name : Bytes) (magic : Bytes) (format : Bytes) (generation : Bytes) (payload : Bytes) =>
+    case (hostIntParse format) with
+    | 0 (unit : prod ()) => durableTaskDone durableStateEmpty b"bad format"
+    | 1 (format : HostInt) => case (hostIntParse generation) with
+      | 0 (unit : prod ()) => durableTaskDone durableStateEmpty b"bad generation"
+      | 1 (generation : HostInt) => durableEffectRun (AtomicFileResult Bytes) atomicIoTestRender
+          (atomicIoTestOperation op dir name magic format generation payload) durableIoCountersZero

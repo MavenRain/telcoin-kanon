@@ -1,0 +1,25 @@
+def durableEffectTestSecond : Bytes -> DurableHostReply -> DurableEffect Bytes :=
+  fun (first : Bytes) (reply : DurableHostReply) => case reply with
+  | 0 (error : DurableRaised) => durableEffectReturn Bytes (append b"error:" (durableRaisedMessage error))
+  | 1 (value : prod (Bytes, Bytes)) => durableEffectReturn Bytes (append first value.1)
+def durableEffectTestFirst : DurableHostReply -> DurableEffect Bytes := fun (reply : DurableHostReply) => case reply with
+  | 0 (error : DurableRaised) => durableEffectReturn Bytes (append b"error:" (durableRaisedMessage error))
+  | 1 (value : prod (Bytes, Bytes)) => durableEffectBind CodecUnit Bytes
+      (durableEffectSetCounters (tuple (hostIntPositive 1, hostIntPositive (bytesLength value.1))))
+      (fun (unit : CodecUnit) => durableEffectBind DurableHostReply Bytes
+        (durableEffectHost (tuple (durableFsync, seqBytesCons value.0 seqBytesEmpty, value.1)))
+        (durableEffectTestSecond value.1))
+def durableEffectTestStart : Bytes -> DurableTask := fun (input : Bytes) => durableEffectRun Bytes (fun (value : Bytes) => value)
+  (durableEffectBind DurableHostReply Bytes (durableEffectHost (tuple (durableRead, seqBytesCons input seqBytesEmpty, b"")))
+    durableEffectTestFirst) durableIoCountersZero
+def durableEffectTestRequest : DurableTask -> Bytes := fun (task : DurableTask) => case (durableTaskRequest task) with
+  | 0 (unit : prod ()) => b"done"
+  | 1 (request : DurableHostRequest) => append (durableIoOpText request.0) (append b":" (append
+      (seqBytesWrite (fun (value : Bytes) => append value b";") request.1) (append b":" request.2)))
+def durableEffectTestFinish : DurableTask -> Bytes := fun (task : DurableTask) => match task as self in DurableTask return Bytes with
+  | durableTaskCall request resume => b"pending"
+  | durableTaskDone state value => append (hostIntText state.0.0) (append b":" (append (hostIntText state.0.1) (append b":" value)))
+def durableEffectTestOk : DurableTask -> Bytes -> Bytes -> DurableTask := fun (task : DurableTask) (scalar : Bytes) (body : Bytes) =>
+  durableTaskResume task (inj 1 of 2 (tuple (scalar, body)))
+def durableEffectTestError : DurableTask -> Bytes -> DurableTask := fun (task : DurableTask) (message : Bytes) =>
+  durableTaskResume task (inj 0 of 2 (durableRaisedUnix b"EIO" message))

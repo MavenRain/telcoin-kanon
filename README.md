@@ -35,7 +35,14 @@ match the OCaml reference. Synchronization requests, frames, chunking and pure
 stream readers pass 927 further comparisons. All 24 pinned network modules now
 have differential coverage, including primary and worker messages, gossip rules
 and node routing.
-Explicit fork integration, filesystem durability,
+Guarded I/O, atomic file replacement and store locking also pass focused comparisons.
+Kanon owns continuations, error handling, counters, partial transfers and the canonical
+root register. The POSIX host supplies descriptor operations through a persistent
+Python 3 helper, using POSIX fsync and process-owned advisory locks. The helper
+preserves byte paths and decimal full-width offsets. Each session must retain its
+Kanon state across operations to preserve counters and in-process lock ownership.
+Explicit fork schedules, transaction skips and the Prague calldata floor now match
+through live engine execution and checkpoint replay. Append-log recovery, checkpoint files and the disk store,
 production consensus crypto and the complete public runtime interface still need work. The source has 178 implementation modules
 across 25 libraries. [PORTING.md](PORTING.md) records module coverage and the
 next acceptance target. [VALIDATION.md](VALIDATION.md) records tested behavior.
@@ -43,6 +50,9 @@ next acceptance target. [VALIDATION.md](VALIDATION.md) records tested behavior.
 ## Run
 
 Requires Node with WasmGC support and the compiler pinned in `source-lock.json`.
+Filesystem execution additionally requires Python 3 with POSIX `fcntl` and `ctypes`.
+The adapter uses POSIX `fsync`, matching the source. On macOS it does not issue
+`F_FULLFSYNC`, so power-loss durability is outside this contract.
 `TELCOIN_KANON_ROOT` or `KANON_BIN` can locate the same compiler elsewhere.
 A different executable is refused until its pin is reviewed and updated.
 The project uses its own root variable because capture tools reserve
