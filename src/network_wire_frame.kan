@@ -1,0 +1,90 @@
+def NetworkWireHeader : Type 0 := prod (Nat, Nat)
+mu NetworkWireFrameError : Type 0 :=
+| networkWirePrefixTooLarge (declared : HostInt) (maximum : HostInt) : NetworkWireFrameError
+| networkWireCompressedExceedsBound (declared : HostInt) (bound : HostInt) : NetworkWireFrameError
+| networkWireTruncatedBody (expected : HostInt) (got : HostInt) : NetworkWireFrameError
+| networkWireSnappy (error : SnappyFrameError) : NetworkWireFrameError
+| networkWireLengthMismatch (declared : HostInt) (got : HostInt) : NetworkWireFrameError
+| networkWireMessageTooLarge (length : HostInt) (maximum : HostInt) : NetworkWireFrameError
+| networkWireHeaderTruncated (got : HostInt) : NetworkWireFrameError
+def networkWireFrameErrorText : NetworkWireFrameError -> Bytes := fun (error : NetworkWireFrameError) =>
+  match error as self in NetworkWireFrameError return Bytes with
+  | networkWirePrefixTooLarge declared maximum => append b"prefix indicates message size is too large: "
+    (append (hostIntText declared) (append b" declared, " (append (hostIntText maximum) b" allowed")))
+  | networkWireCompressedExceedsBound declared bound => append b"compressed size exceeds max for reported uncompressed size: "
+    (append (hostIntText declared) (append b" declared, " (append (hostIntText bound) b" allowed")))
+  | networkWireTruncatedBody expected got => append b"compressed body shorter than reported compressed size: "
+    (append (hostIntText expected) (append b" expected, " (append (hostIntText got) b" present")))
+  | networkWireSnappy error => append b"snappy frame: " (snappyFrameErrorText error)
+  | networkWireLengthMismatch declared got => append b"decompressed size does not match reported uncompressed size: "
+    (append (hostIntText declared) (append b" declared, " (append (hostIntText got) b" produced")))
+  | networkWireMessageTooLarge length maximum => append b"encode data > max_message_size: "
+    (append (hostIntText length) (append b" bytes, " (append (hostIntText maximum) b" allowed")))
+  | networkWireHeaderTruncated got => append b"wire header truncated: " (append (hostIntText got) b" of 8 bytes")
+def networkWirePrefixCeiling : Nat := 4294967295
+def networkWireMaxCompressLen : HostInt -> HostInt := fun (length : HostInt) =>
+  case (hostIntNonnegative length) with
+  | 0 (unit : prod ()) => hostIntPositive 0
+  | 1 (n : Nat) => case (natLt networkWirePrefixCeiling n) with
+    | 1 (unit : prod ()) => hostIntPositive 0
+    | 0 (unit : prod ()) => let bound : Nat := natAdd 32 (natAdd n (quotient64 n 6)) in
+      case (natLt networkWirePrefixCeiling bound) with
+      | 1 (unit : prod ()) => hostIntPositive 0
+      | 0 (unit : prod ()) => hostIntPositive bound
+def networkWireHeaderCodec : Codec NetworkWireHeader := codecPair Nat Nat codecU32 codecU32
+def networkWireParseHeader : HostInt -> Bytes -> sum (NetworkWireFrameError, NetworkWireHeader) :=
+  fun (maximum : HostInt) (wire : Bytes) =>
+  case (codecRead NetworkWireHeader networkWireHeaderCodec (bcsStart wire)) with
+  | 0 (error : BcsError) => inj 0 of 2 (networkWireHeaderTruncated (hostIntPositive (bytesLength wire)))
+  | 1 (parsed : prod (NetworkWireHeader, BcsReader)) =>
+    let header : NetworkWireHeader := parsed.0 in
+    let declared : HostInt := hostIntPositive header.0 in
+    let compressed : HostInt := hostIntPositive header.1 in
+    let bound : HostInt := networkWireMaxCompressLen declared in
+    case (natEq (hostIntLess maximum declared) 1) with
+    | 1 (unit : prod ()) => inj 0 of 2 (networkWirePrefixTooLarge declared maximum)
+    | 0 (unit : prod ()) => case (natEq (hostIntLess bound compressed) 1) with
+      | 1 (unit : prod ()) => inj 0 of 2 (networkWireCompressedExceedsBound compressed bound)
+      | 0 (unit : prod ()) => inj 1 of 2 header
+def networkWireFrameEncode : HostInt -> Bytes -> sum (NetworkWireFrameError, Bytes) :=
+  fun (maximum : HostInt) (payload : Bytes) =>
+    let bound : HostInt := case (natEq (hostIntLess maximum (hostIntPositive networkWirePrefixCeiling)) 1) with
+      | 1 (unit : prod ()) => maximum | 0 (unit : prod ()) => hostIntPositive networkWirePrefixCeiling in
+    let length : Nat := bytesLength payload in
+    case (natEq (hostIntLess bound (hostIntPositive length)) 1) with
+    | 1 (unit : prod ()) => inj 0 of 2 (networkWireMessageTooLarge (hostIntPositive length) bound)
+    | 0 (unit : prod ()) => let frame : Bytes := snappyFrameCompress payload in
+      inj 1 of 2 (append (codecWrite NetworkWireHeader networkWireHeaderCodec (tuple (length, bytesLength frame))) frame)
+def networkWireFrameDecode : HostInt -> Bytes -> sum (NetworkWireFrameError, prod (Bytes, Nat)) :=
+  fun (maximum : HostInt) (wire : Bytes) =>
+  case (networkWireParseHeader maximum wire) with
+  | 0 (error : NetworkWireFrameError) => inj 0 of 2 error
+  | 1 (header : NetworkWireHeader) =>
+    let present : Nat := natSub (bytesLength wire) 8 in
+    case (natLt present header.1) with
+    | 1 (unit : prod ()) => inj 0 of 2 (networkWireTruncatedBody (hostIntPositive header.1) (hostIntPositive present))
+    | 0 (unit : prod ()) => case (snappyFrameDecompress (hostIntPositive header.0) (take header.1 (drop wire 8))) with
+      | 0 (error : SnappyFrameError) => inj 0 of 2 (networkWireSnappy error)
+      | 1 (payload : Bytes) => let got : Nat := bytesLength payload in
+        case (natEq got header.0) with
+        | 0 (unit : prod ()) => inj 0 of 2 (networkWireLengthMismatch (hostIntPositive header.0) (hostIntPositive got))
+        | 1 (unit : prod ()) => inj 1 of 2 (tuple (payload, natAdd 8 header.1))
+mu NetworkWireMessageError : Type 0 :=
+| networkWireFrameError (error : NetworkWireFrameError) : NetworkWireMessageError
+| networkWireBcsError (error : BcsError) : NetworkWireMessageError
+def networkWireMessageErrorText : NetworkWireMessageError -> Bytes := fun (error : NetworkWireMessageError) =>
+  match error as self in NetworkWireMessageError return Bytes with
+  | networkWireFrameError error => networkWireFrameErrorText error
+  | networkWireBcsError error => append b"bcs payload: " (bcsErrorText error)
+def networkWireEncodeMessage : (0 A : Type 0) -> HostInt -> Codec A -> A -> sum (NetworkWireMessageError, Bytes) :=
+  fun (0 A : Type 0) (maximum : HostInt) (codec : Codec A) (value : A) =>
+  case (networkWireFrameEncode maximum (codecWrite A codec value)) with
+  | 0 (error : NetworkWireFrameError) => inj 0 of 2 (networkWireFrameError error)
+  | 1 (wire : Bytes) => inj 1 of 2 wire
+def networkWireDecodeMessage : (0 A : Type 0) -> HostInt -> Codec A -> Bytes -> sum (NetworkWireMessageError, prod (A, Nat)) :=
+  fun (0 A : Type 0) (maximum : HostInt) (codec : Codec A) (wire : Bytes) =>
+  case (networkWireFrameDecode maximum wire) with
+  | 0 (error : NetworkWireFrameError) => inj 0 of 2 (networkWireFrameError error)
+  | 1 (decoded : prod (Bytes, Nat)) => case (codecDecode A codec decoded.0) with
+    | 0 (error : BcsError) => inj 0 of 2 (networkWireBcsError error)
+    | 1 (value : prod (A, BcsReader)) => inj 1 of 2 (tuple (value.0, decoded.1))

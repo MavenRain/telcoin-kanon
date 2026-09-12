@@ -1,0 +1,50 @@
+def networkLeafTestDecode : (0 A : Type 0) -> Codec A -> Bytes -> Bytes := fun (0 A : Type 0) (codec : Codec A) (raw : Bytes) =>
+  case (codecDecode A codec raw) with
+  | 0 (error : BcsError) => append b"error:" (bcsErrorText error)
+  | 1 (decoded : prod (A, BcsReader)) => append b"ok:" (bytesHex (codecWrite A codec decoded.0))
+def networkLeafTestRoundtrip : Nat -> Bytes -> Bytes := fun (kind : Nat) (raw : Bytes) =>
+  case (natEq kind 0) with | 1 (unit : prod ()) => networkLeafTestDecode NetworkVarBytes networkVarBytesCodec raw
+  | 0 (unit : prod ()) => case (natEq kind 1) with | 1 (unit : prod ()) => networkLeafTestDecode NetworkBlsPublicKey networkBlsPublicKeyCodec raw
+  | 0 (unit : prod ()) => case (natEq kind 2) with | 1 (unit : prod ()) => networkLeafTestDecode NetworkBlsSignature networkBlsSignatureCodec raw
+  | 0 (unit : prod ()) => case (natEq kind 3) with | 1 (unit : prod ()) => networkLeafTestDecode Digest networkWireDigestCodec raw
+  | 0 (unit : prod ()) => case (natEq kind 4) with | 1 (unit : prod ()) => networkLeafTestDecode HeaderDigest networkWireHeaderDigestCodec raw
+  | 0 (unit : prod ()) => case (natEq kind 5) with | 1 (unit : prod ()) => networkLeafTestDecode BatchDigest networkWireBatchDigestCodec raw
+  | 0 (unit : prod ()) => case (natEq kind 6) with | 1 (unit : prod ()) => networkLeafTestDecode AuthorityId networkWireAuthorityIdCodec raw
+  | 0 (unit : prod ()) => case (natEq kind 7) with | 1 (unit : prod ()) => networkLeafTestDecode Epoch networkWireEpochCodec raw
+  | 0 (unit : prod ()) => networkLeafTestDecode Round networkWireRoundCodec raw
+def networkLeafTestOrdering : Ordering -> Bytes := fun (value : Ordering) =>
+  match value as self in Ordering return Bytes with
+  | orderLess => b"-1" | orderEqual => b"0" | orderGreater => b"1"
+def networkLeafTestPair : (0 A : Type 0) -> (Bytes -> ValueOption A) -> (A -> Bytes) -> Codec A ->
+  (A -> A -> Bool) -> (A -> A -> Ordering) -> Bytes -> Bytes -> Bytes :=
+  fun (0 A : Type 0) (inject : Bytes -> ValueOption A) (project : A -> Bytes) (codec : Codec A)
+    (equal : A -> A -> Bool) (compare : A -> A -> Ordering) (left : Bytes) (right : Bytes) =>
+    case (inject left) with | 0 (unit : prod ()) => b"none"
+    | 1 (a : A) => case (inject right) with | 0 (unit : prod ()) => b"none"
+      | 1 (b : A) => append (bytesHex (codecWrite A codec a)) (append b":" (append (bytesHex (project a))
+        (append b":" (append (case (equal a b) with | 0 (unit : prod ()) => b"false" | 1 (unit : prod ()) => b"true")
+          (append b":" (networkLeafTestOrdering (compare a b)))))))
+def networkLeafTestConstruct : Nat -> Bytes -> Bytes -> Bytes := fun (kind : Nat) (left : Bytes) (right : Bytes) =>
+  case (natEq kind 1) with
+  | 1 (unit : prod ()) => networkLeafTestPair NetworkBlsPublicKey networkBlsPublicKeyOfBytes networkBlsPublicKeyToBytes
+    networkBlsPublicKeyCodec networkBlsPublicKeyEqual networkBlsPublicKeyCompare left right
+  | 0 (unit : prod ()) => case (natEq kind 2) with
+    | 1 (unit : prod ()) => networkLeafTestPair NetworkBlsSignature networkBlsSignatureOfBytes networkBlsSignatureToBytes
+      networkBlsSignatureCodec networkBlsSignatureEqual networkBlsSignatureCompare left right
+    | 0 (unit : prod ()) => networkLeafTestPair NetworkVarBytes (fun (bytes : Bytes) => valueSome NetworkVarBytes (networkVarBytesOfBytes bytes))
+      networkVarBytesToBytes networkVarBytesCodec networkVarBytesEqual networkVarBytesCompare left right
+def networkLeafTestProtocolResult : sum (NetworkProtocolError, Bytes) -> Bytes := fun (result : sum (NetworkProtocolError, Bytes)) =>
+  case result with | 0 (error : NetworkProtocolError) => append b"error:" (networkProtocolErrorText error)
+  | 1 (value : Bytes) => append b"ok:" (bytesHex value)
+def networkLeafTestOwned : Bytes -> Bytes := fun (name : Bytes) => networkLeafTestProtocolResult (networkOwnedProtocol name)
+def networkLeafTestProtocols : Nat -> Bytes -> Bytes -> Bytes := fun (kind : Nat) (workerRaw : Bytes) (chainRaw : Bytes) =>
+  case (hostIntParse workerRaw) with | 0 (unit : prod ()) => b"bad worker"
+  | 1 (worker : HostInt) => case (hostIntParse chainRaw) with | 0 (unit : prod ()) => b"bad chain"
+    | 1 (chainId : HostInt) =>
+      let node : NetworkProtocolNode := case (natEq kind 0) with
+        | 1 (unit : prod ()) => networkProtocolPrimary | 0 (unit : prod ()) => networkProtocolWorker worker in
+      append (networkLeafTestProtocolResult (networkReqResProtocol node chainId)) (append b";"
+        (append (networkLeafTestProtocolResult (networkKadProtocol node chainId)) (append b";"
+          (append (networkLeafTestProtocolResult (networkSyncProtocol node chainId)) (append b";"
+            (append (networkLeafTestProtocolResult (networkPeerExchangeProtocol node chainId)) (append b";"
+              (bytesHex (networkGossipProtocolIdPrefix chainId)))))))))

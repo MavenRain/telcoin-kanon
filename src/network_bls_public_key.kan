@@ -1,0 +1,14 @@
+mu NetworkBlsPublicKey : Type 0 := | networkBlsPublicKeyValue (bytes : Bytes) : NetworkBlsPublicKey
+def networkBlsPublicKeyLength : Nat := 96
+def networkBlsPublicKeyOfBytes : Bytes -> ValueOption NetworkBlsPublicKey := fun (bytes : Bytes) =>
+  case (natEq (natMul (boolNat (natEq (bytesLength bytes) networkBlsPublicKeyLength)) (bytesValid bytes)) 1) with
+  | 0 (unit : prod ()) => valueNone NetworkBlsPublicKey
+  | 1 (unit : prod ()) => valueSome NetworkBlsPublicKey (networkBlsPublicKeyValue bytes)
+def networkBlsPublicKeyToBytes : NetworkBlsPublicKey -> Bytes := fun (value : NetworkBlsPublicKey) =>
+  match value as self in NetworkBlsPublicKey return Bytes with | networkBlsPublicKeyValue bytes => bytes
+def networkBlsPublicKeyCodec : Codec NetworkBlsPublicKey := codecRefine Bytes NetworkBlsPublicKey
+  networkBlsPublicKeyOfBytes networkBlsPublicKeyToBytes (codecSizedBytes networkBlsPublicKeyLength)
+def networkBlsPublicKeyEqual : NetworkBlsPublicKey -> NetworkBlsPublicKey -> Bool := fun (a : NetworkBlsPublicKey) (b : NetworkBlsPublicKey) =>
+  bytesEqual (networkBlsPublicKeyToBytes a) (networkBlsPublicKeyToBytes b)
+def networkBlsPublicKeyCompare : NetworkBlsPublicKey -> NetworkBlsPublicKey -> Ordering := fun (a : NetworkBlsPublicKey) (b : NetworkBlsPublicKey) =>
+  bytesOrdering (networkBlsPublicKeyToBytes a) (networkBlsPublicKeyToBytes b)

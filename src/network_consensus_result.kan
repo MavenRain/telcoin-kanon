@@ -1,0 +1,17 @@
+def NetworkConsensusResult : Type 0 := prod (Epoch, Round, Nat, Digest, NetworkBlsPublicKey, NetworkBlsSignature)
+def networkConsensusResultMake : Epoch -> Round -> Nat -> Digest -> NetworkBlsPublicKey -> NetworkBlsSignature -> NetworkConsensusResult :=
+  fun (epoch : Epoch) (round : Round) (number : Nat) (hash : Digest) (key : NetworkBlsPublicKey) (signature : NetworkBlsSignature) =>
+    tuple (epoch, round, wordLow64 number, hash, key, signature)
+def NetworkConsensusResultFields : Type 0 := prod (Epoch, prod (Round, prod (Nat, prod (Digest, prod (NetworkBlsPublicKey, NetworkBlsSignature)))))
+def networkConsensusResultCodec : Codec NetworkConsensusResult := codecIso NetworkConsensusResultFields NetworkConsensusResult
+  (fun (f : NetworkConsensusResultFields) => networkConsensusResultMake f.0 f.1.0 f.1.1.0 f.1.1.1.0 f.1.1.1.1.0 f.1.1.1.1.1)
+  (fun (v : NetworkConsensusResult) => tuple (v.0, tuple (v.1, tuple (v.2, tuple (v.3, tuple (v.4, v.5))))))
+  (codecPair Epoch (prod (Round, prod (Nat, prod (Digest, prod (NetworkBlsPublicKey, NetworkBlsSignature))))) networkWireEpochCodec
+    (codecPair Round (prod (Nat, prod (Digest, prod (NetworkBlsPublicKey, NetworkBlsSignature)))) networkWireRoundCodec
+      (codecPair Nat (prod (Digest, prod (NetworkBlsPublicKey, NetworkBlsSignature))) codecU64
+        (codecPair Digest (prod (NetworkBlsPublicKey, NetworkBlsSignature)) networkWireDigestCodec
+          (codecPair NetworkBlsPublicKey NetworkBlsSignature networkBlsPublicKeyCodec networkBlsSignatureCodec)))))
+def networkConsensusResultEqual : NetworkConsensusResult -> NetworkConsensusResult -> Bool :=
+  fun (a : NetworkConsensusResult) (b : NetworkConsensusResult) =>
+    boolAnd (epochEqual a.0 b.0) (boolAnd (roundEqual a.1 b.1) (boolAnd (natEq a.2 b.2)
+      (boolAnd (digestEqual a.3 b.3) (boolAnd (networkBlsPublicKeyEqual a.4 b.4) (networkBlsSignatureEqual a.5 b.5)))))

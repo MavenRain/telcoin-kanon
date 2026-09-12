@@ -1,0 +1,24 @@
+def NetworkConsensusNumHash : Type 0 := prod (Nat, Digest)
+def networkConsensusNumHashMake : Nat -> Digest -> NetworkConsensusNumHash :=
+  fun (number : Nat) (hash : Digest) => tuple (wordLow64 number, hash)
+def networkConsensusNumHashCodec : Codec NetworkConsensusNumHash := codecPair Nat Digest codecU64 networkWireDigestCodec
+def networkBlsKeysCodec : Codec NetworkBlsKeys := codecList NetworkBlsPublicKey NetworkBlsKeys seqNetworkBlsKeyOps networkBlsPublicKeyCodec
+def networkBlsKeysEqual : NetworkBlsKeys -> NetworkBlsKeys -> Bool := fun (a : NetworkBlsKeys) (b : NetworkBlsKeys) =>
+  orderingEqual (listCompare NetworkBlsPublicKey NetworkBlsKeys seqNetworkBlsKeyOps networkBlsPublicKeyCompare a b)
+def NetworkEpochRecord : Type 0 := prod (Epoch, NetworkBlsKeys, NetworkBlsKeys, Digest, BlockNumHash, NetworkConsensusNumHash)
+def networkEpochRecordMake : Epoch -> NetworkBlsKeys -> NetworkBlsKeys -> Digest -> BlockNumHash -> NetworkConsensusNumHash -> NetworkEpochRecord :=
+  fun (epoch : Epoch) (committee : NetworkBlsKeys) (next : NetworkBlsKeys) (parent : Digest) (state : BlockNumHash) (consensus : NetworkConsensusNumHash) =>
+    tuple (epoch, committee, next, parent, state, consensus)
+def NetworkEpochRecordFields : Type 0 := prod (Epoch, prod (NetworkBlsKeys, prod (NetworkBlsKeys, prod (Digest, prod (BlockNumHash, NetworkConsensusNumHash)))))
+def networkEpochRecordCodec : Codec NetworkEpochRecord := codecIso NetworkEpochRecordFields NetworkEpochRecord
+  (fun (f : NetworkEpochRecordFields) => networkEpochRecordMake f.0 f.1.0 f.1.1.0 f.1.1.1.0 f.1.1.1.1.0 f.1.1.1.1.1)
+  (fun (v : NetworkEpochRecord) => tuple (v.0, tuple (v.1, tuple (v.2, tuple (v.3, tuple (v.4, v.5))))))
+  (codecPair Epoch (prod (NetworkBlsKeys, prod (NetworkBlsKeys, prod (Digest, prod (BlockNumHash, NetworkConsensusNumHash))))) networkWireEpochCodec
+    (codecPair NetworkBlsKeys (prod (NetworkBlsKeys, prod (Digest, prod (BlockNumHash, NetworkConsensusNumHash)))) networkBlsKeysCodec
+      (codecPair NetworkBlsKeys (prod (Digest, prod (BlockNumHash, NetworkConsensusNumHash))) networkBlsKeysCodec
+        (codecPair Digest (prod (BlockNumHash, NetworkConsensusNumHash)) networkWireDigestCodec
+          (codecPair BlockNumHash NetworkConsensusNumHash blockNumHashCodec networkConsensusNumHashCodec)))))
+def networkEpochRecordEqual : NetworkEpochRecord -> NetworkEpochRecord -> Bool := fun (a : NetworkEpochRecord) (b : NetworkEpochRecord) =>
+  boolAnd (epochEqual a.0 b.0) (boolAnd (networkBlsKeysEqual a.1 b.1) (boolAnd (networkBlsKeysEqual a.2 b.2)
+    (boolAnd (digestEqual a.3 b.3) (boolAnd (blockNumHashEqual a.4 b.4)
+      (boolAnd (natEq a.5.0 b.5.0) (digestEqual a.5.1 b.5.1))))))

@@ -1,0 +1,9 @@
+mu NetworkVarBytes : Type 0 := | networkVarBytesValue (bytes : Bytes) : NetworkVarBytes
+def networkVarBytesOfBytes : Bytes -> NetworkVarBytes := fun (bytes : Bytes) => networkVarBytesValue bytes
+def networkVarBytesToBytes : NetworkVarBytes -> Bytes := fun (value : NetworkVarBytes) =>
+  match value as self in NetworkVarBytes return Bytes with | networkVarBytesValue bytes => bytes
+def networkVarBytesCodec : Codec NetworkVarBytes := codecIso Bytes NetworkVarBytes networkVarBytesOfBytes networkVarBytesToBytes codecBytes
+def networkVarBytesEqual : NetworkVarBytes -> NetworkVarBytes -> Bool := fun (a : NetworkVarBytes) (b : NetworkVarBytes) =>
+  bytesEqual (networkVarBytesToBytes a) (networkVarBytesToBytes b)
+def networkVarBytesCompare : NetworkVarBytes -> NetworkVarBytes -> Ordering := fun (a : NetworkVarBytes) (b : NetworkVarBytes) =>
+  bytesOrdering (networkVarBytesToBytes a) (networkVarBytesToBytes b)

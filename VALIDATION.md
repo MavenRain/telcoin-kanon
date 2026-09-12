@@ -1,5 +1,36 @@
 # Validation
 
+## Network wire types and records
+
+The network leaf suite passes 1,392 OCaml differential rows in four groups,
+covering BLS wire widths, sized versus bare digest encodings, byte constructors,
+equality and ordering, protocol names, signed native IDs and Base58.
+Base58 also matches an independent JavaScript integer encoder.
+Capture: `.kanon-exec/run-oOPzhc`, exit 0, 9.4 seconds.
+
+Wire frames match 546 OCaml rows across four groups. They cover the two u32
+compression-bound clamps, exact frame bytes across 64 KiB boundaries, header and
+body error order, capped decompression, consumed-byte counts and BCS errors.
+Capture `.kanon-exec/run-19C9bE` passed all 545 differential comparisons and
+three groups, but an additional assertion incorrectly expected the take cap to
+override the earlier compressed-size gate. The corrected fixture includes a
+smaller valid capped frame; its 155-row decoding group passes in
+`.kanon-exec/run-lAcbog`, exit 0, 2.9 seconds. The other groups were unchanged.
+
+Epoch votes, consensus results, epoch records and current/legacy node records
+pass 1,800 OCaml rows in three groups, including every byte truncation, full u64
+values, field equality, malformed UTF-8 and compatibility fallback.
+Capture: `.kanon-exec/run-RV3hyl`, exit 0, 4.1 seconds. A further 12-row group
+confirms that legacy encoding drops RPC metadata while preserving the other
+fields: `.kanon-exec/run-m0bO8g`, exit 0, 2.2 seconds.
+
+Real registry integration remains pending: compilation reached the existing
+timeout (`.kanon-exec/run-qDfEi6`). Declaration profiling completed all 2,415
+groups (`.kanon-exec/run-PjzvUa`) and found that the fixture entry point alone
+took 176.6 seconds. The fixture now supplies its genesis sentinel as input to
+avoid evaluating its constant hash during checking. No compiler pin or timeout
+was changed; the runtime rerun is pending.
+
 ## Driver restart, handoff and log headers
 
 Driver restart passes 15 OCaml differential rows in two groups, covering empty

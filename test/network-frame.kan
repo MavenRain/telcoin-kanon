@@ -1,0 +1,27 @@
+def networkFrameTestEncoded : sum (NetworkWireFrameError, Bytes) -> Bytes := fun (value : sum (NetworkWireFrameError, Bytes)) =>
+  case value with | 0 (error : NetworkWireFrameError) => append b"error:" (networkWireFrameErrorText error)
+  | 1 (wire : Bytes) => bytesHex wire
+def networkFrameTest : Nat -> Bytes -> Bytes -> Bytes := fun (mode : Nat) (limitRaw : Bytes) (raw : Bytes) =>
+  case (hostIntParse limitRaw) with | 0 (unit : prod ()) => b"error:bad limit"
+  | 1 (maximum : HostInt) => case (natEq mode 0) with
+    | 1 (unit : prod ()) => hostIntText (networkWireMaxCompressLen maximum)
+    | 0 (unit : prod ()) => case (natEq mode 1) with
+      | 1 (unit : prod ()) =>
+        (case (networkWireParseHeader maximum raw) with
+        | 0 (error : NetworkWireFrameError) => append b"error:" (networkWireFrameErrorText error)
+        | 1 (header : NetworkWireHeader) => append (decimal64 header.0) (append b":" (decimal64 header.1)))
+      | 0 (unit : prod ()) => case (natEq mode 2) with
+        | 1 (unit : prod ()) => networkFrameTestEncoded (networkWireFrameEncode maximum raw)
+        | 0 (unit : prod ()) => case (natEq mode 3) with
+          | 1 (unit : prod ()) =>
+            (case (networkWireFrameDecode maximum raw) with
+            | 0 (error : NetworkWireFrameError) => append b"error:" (networkWireFrameErrorText error)
+            | 1 (decoded : prod (Bytes, Nat)) => append (bytesHex decoded.0) (append b":" (decimal64 decoded.1)))
+          | 0 (unit : prod ()) => case (natEq mode 4) with
+            | 1 (unit : prod ()) =>
+              (case (networkWireEncodeMessage Bytes maximum codecBytes raw) with
+              | 0 (error : NetworkWireMessageError) => append b"error:" (networkWireMessageErrorText error)
+              | 1 (wire : Bytes) => bytesHex wire)
+            | 0 (unit : prod ()) => case (networkWireDecodeMessage Bytes maximum codecBytes raw) with
+              | 0 (error : NetworkWireMessageError) => append b"error:" (networkWireMessageErrorText error)
+              | 1 (decoded : prod (Bytes, Nat)) => append (bytesHex decoded.0) (append b":" (decimal64 decoded.1))

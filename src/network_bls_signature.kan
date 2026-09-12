@@ -1,0 +1,14 @@
+mu NetworkBlsSignature : Type 0 := | networkBlsSignatureValue (bytes : Bytes) : NetworkBlsSignature
+def networkBlsSignatureLength : Nat := 48
+def networkBlsSignatureOfBytes : Bytes -> ValueOption NetworkBlsSignature := fun (bytes : Bytes) =>
+  case (natEq (natMul (boolNat (natEq (bytesLength bytes) networkBlsSignatureLength)) (bytesValid bytes)) 1) with
+  | 0 (unit : prod ()) => valueNone NetworkBlsSignature
+  | 1 (unit : prod ()) => valueSome NetworkBlsSignature (networkBlsSignatureValue bytes)
+def networkBlsSignatureToBytes : NetworkBlsSignature -> Bytes := fun (value : NetworkBlsSignature) =>
+  match value as self in NetworkBlsSignature return Bytes with | networkBlsSignatureValue bytes => bytes
+def networkBlsSignatureCodec : Codec NetworkBlsSignature := codecRefine Bytes NetworkBlsSignature
+  networkBlsSignatureOfBytes networkBlsSignatureToBytes (codecSizedBytes networkBlsSignatureLength)
+def networkBlsSignatureEqual : NetworkBlsSignature -> NetworkBlsSignature -> Bool := fun (a : NetworkBlsSignature) (b : NetworkBlsSignature) =>
+  bytesEqual (networkBlsSignatureToBytes a) (networkBlsSignatureToBytes b)
+def networkBlsSignatureCompare : NetworkBlsSignature -> NetworkBlsSignature -> Ordering := fun (a : NetworkBlsSignature) (b : NetworkBlsSignature) =>
+  bytesOrdering (networkBlsSignatureToBytes a) (networkBlsSignatureToBytes b)

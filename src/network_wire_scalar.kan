@@ -1,0 +1,6 @@
+def networkWireDigestCodec : Codec Digest := digestCodec
+def networkWireHeaderDigestCodec : Codec HeaderDigest := headerDigestCodec
+def networkWireBatchDigestCodec : Codec BatchDigest := batchDigestCodec
+def networkWireEpochCodec : Codec Epoch := epochCodec
+def networkWireRoundCodec : Codec Round := roundCodec
+def networkWireAuthorityIdCodec : Codec AuthorityId := authorityIdRawCodec

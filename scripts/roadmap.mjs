@@ -4,6 +4,17 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const lock = JSON.parse(readFileSync(resolve(root, 'source-lock.json'), 'utf8'));
 const coverage = {
+  'lib/network/var_bytes.ml': 'Ported: opaque variable bytes, codec, equality and ordering; shared 1392-row network leaf suite',
+  'lib/network/bls_public_key.ml': 'Ported: nominal 96-byte wire key, sized codec and comparisons; shared 1392-row network leaf suite',
+  'lib/network/bls_signature.ml': 'Ported: nominal 48-byte wire signature, sized codec and comparisons; shared 1392-row network leaf suite',
+  'lib/network/wire_scalar.ml': 'Ported: all six scalar codecs, including bare authority IDs versus sized digests; shared 1392-row network leaf suite',
+  'lib/network/protocols.ml': 'Ported: all protocol identifiers, signed native IDs and owned-name errors; shared 1392-row network leaf suite',
+  'lib/network/base58.ml': 'Ported: Bitcoin-alphabet encoding with leading zeros; OCaml and independent integer comparisons in shared 1392-row leaf suite',
+  'lib/network/wire_frame.ml': 'Ported: exact framing, size gates, error order, take cap, consumed bytes and typed BCS messages; 546 OCaml rows',
+  'lib/network/epoch_vote.ml': 'Ported: constructors, complete wire codec and field equality; shared 1800-row network record suite',
+  'lib/network/consensus_result.ml': 'Ported: constructors, complete wire codec, full u64 number and equality; shared 1800-row network record suite',
+  'lib/network/epoch_record.ml': 'Ported: both constructors, committee lists, boundary anchors, codec and equality; shared 1800-row network record suite',
+  'lib/network/node_record.ml': 'Ported: constructors, current and legacy layouts, compatibility errors, UTF-8, equality and legacy RPC omission; 1800 shared rows plus 12 omission rows',
   'lib/snappy/byte_reader.ml': 'Ported: total windows and native little-endian reads, src/byte_reader.kan; 348 OCaml rows',
   'lib/snappy/crc32c.ml': 'Ported: CRC-32C, incremental updates, masking and exact bounds errors, src/crc32c.kan; 212 OCaml rows',
   'lib/snappy/snappy_raw.ml': 'Ported: literal encoding and complete raw decoding, overlapping copies, nonminimal preambles and exact error precedence, src/snappy_raw.kan; 1639 OCaml rows',

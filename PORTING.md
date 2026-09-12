@@ -213,29 +213,29 @@ safety or liveness for every possible schedule.
 | lib/execution/replay.ml | Ported with maximum-height termination correction: gap collection and projections, src/replay.kan; ordinary-range OCaml differential tests |
 | lib/hash32/hash32.ml | Ported: checked bytes, zero, equality, ordering, hex and nominal Keccak conversion, src/fixed.kan and src/keccak.kan |
 | lib/keccak/tn_keccak.ml | Ported: legacy Keccak-256, checked stored bytes, equality and hex, src/keccak.kan; Digestif differential tests |
-| lib/network/base58.ml | Pending |
-| lib/network/bls_public_key.ml | Pending |
-| lib/network/bls_signature.ml | Pending |
+| lib/network/base58.ml | Ported: Bitcoin-alphabet encoding with leading zeros; OCaml and independent integer comparisons in shared 1392-row leaf suite |
+| lib/network/bls_public_key.ml | Ported: nominal 96-byte wire key, sized codec and comparisons; shared 1392-row network leaf suite |
+| lib/network/bls_signature.ml | Ported: nominal 48-byte wire signature, sized codec and comparisons; shared 1392-row network leaf suite |
 | lib/network/certificate_wire.ml | Pending |
-| lib/network/consensus_result.ml | Pending |
+| lib/network/consensus_result.ml | Ported: constructors, complete wire codec, full u64 number and equality; shared 1800-row network record suite |
 | lib/network/epoch_certificate.ml | Pending |
-| lib/network/epoch_record.ml | Pending |
-| lib/network/epoch_vote.ml | Pending |
+| lib/network/epoch_record.ml | Ported: both constructors, committee lists, boundary anchors, codec and equality; shared 1800-row network record suite |
+| lib/network/epoch_vote.ml | Ported: constructors, complete wire codec and field equality; shared 1800-row network record suite |
 | lib/network/gossip.ml | Pending |
-| lib/network/node_record.ml | Pending |
+| lib/network/node_record.ml | Ported: constructors, current and legacy layouts, compatibility errors, UTF-8, equality and legacy RPC omission; 1800 shared rows plus 12 omission rows |
 | lib/network/peer_exchange.ml | Pending |
 | lib/network/primary_msg.ml | Pending |
-| lib/network/protocols.ml | Pending |
+| lib/network/protocols.ml | Ported: all protocol identifiers, signed native IDs and owned-name errors; shared 1392-row network leaf suite |
 | lib/network/roaring.ml | Pending |
 | lib/network/sync_chunking.ml | Pending |
 | lib/network/sync_frame.ml | Pending |
 | lib/network/sync_reader.ml | Pending |
 | lib/network/sync_request.ml | Pending |
-| lib/network/var_bytes.ml | Pending |
+| lib/network/var_bytes.ml | Ported: opaque variable bytes, codec, equality and ordering; shared 1392-row network leaf suite |
 | lib/network/vote_wire.ml | Pending |
 | lib/network/wire.ml | Pending |
-| lib/network/wire_frame.ml | Pending |
-| lib/network/wire_scalar.ml | Pending |
+| lib/network/wire_frame.ml | Ported: exact framing, size gates, error order, take cap, consumed bytes and typed BCS messages; 546 OCaml rows |
+| lib/network/wire_scalar.ml | Ported: all six scalar codecs, including bare authority IDs versus sized digests; shared 1392-row network leaf suite |
 | lib/network/worker_msg.ml | Pending |
 | lib/rand/chacha12.ml | Ported: ChaCha12 blocks, counter and buffered stream, src/chacha12.kan; OCaml differential tests |
 | lib/rand/rand_seq.ml | Ported: reservoir sampling with typed collections, src/rand_seq.kan; OCaml differential tests |

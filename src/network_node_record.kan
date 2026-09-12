@@ -1,0 +1,53 @@
+def NetworkRpcInfo : Type 0 := prod (Bytes, ValueOption Bytes)
+def networkRpcInfoMake : Bytes -> ValueOption Bytes -> NetworkRpcInfo := fun (http : Bytes) (ws : ValueOption Bytes) => tuple (http, ws)
+def networkRpcInfoCodec : Codec NetworkRpcInfo := codecPair Bytes (ValueOption Bytes) codecStringUtf8 (codecOption Bytes codecStringUtf8)
+def networkVarBytesListCodec : Codec NetworkVarBytesList := codecList NetworkVarBytes NetworkVarBytesList seqNetworkVarBytesOps networkVarBytesCodec
+def NetworkInfo : Type 0 := prod (NetworkVarBytes, NetworkVarBytesList, Nat, ValueOption NetworkRpcInfo)
+def networkInfoMake : NetworkVarBytes -> NetworkVarBytesList -> Nat -> ValueOption NetworkRpcInfo -> NetworkInfo :=
+  fun (key : NetworkVarBytes) (addresses : NetworkVarBytesList) (timestamp : Nat) (rpc : ValueOption NetworkRpcInfo) =>
+    tuple (key, addresses, wordLow64 timestamp, rpc)
+def NetworkInfoFields : Type 0 := prod (NetworkVarBytes, prod (NetworkVarBytesList, prod (Nat, ValueOption NetworkRpcInfo)))
+def networkInfoCodec : Codec NetworkInfo := codecIso NetworkInfoFields NetworkInfo
+  (fun (f : NetworkInfoFields) => networkInfoMake f.0 f.1.0 f.1.1.0 f.1.1.1)
+  (fun (v : NetworkInfo) => tuple (v.0, tuple (v.1, tuple (v.2, v.3))))
+  (codecPair NetworkVarBytes (prod (NetworkVarBytesList, prod (Nat, ValueOption NetworkRpcInfo))) networkVarBytesCodec
+    (codecPair NetworkVarBytesList (prod (Nat, ValueOption NetworkRpcInfo)) networkVarBytesListCodec
+      (codecPair Nat (ValueOption NetworkRpcInfo) codecU64 (codecOption NetworkRpcInfo networkRpcInfoCodec))))
+def NetworkInfoLegacyFields : Type 0 := prod (NetworkVarBytes, prod (NetworkVarBytesList, Nat))
+def networkInfoLegacyCodec : Codec NetworkInfo := codecIso NetworkInfoLegacyFields NetworkInfo
+  (fun (f : NetworkInfoLegacyFields) => networkInfoMake f.0 f.1.0 f.1.1 (valueNone NetworkRpcInfo))
+  (fun (v : NetworkInfo) => tuple (v.0, tuple (v.1, v.2)))
+  (codecPair NetworkVarBytes (prod (NetworkVarBytesList, Nat)) networkVarBytesCodec
+    (codecPair NetworkVarBytesList Nat networkVarBytesListCodec codecU64))
+def NetworkNodeRecord : Type 0 := prod (NetworkInfo, NetworkBlsSignature)
+def networkNodeRecordMake : NetworkInfo -> NetworkBlsSignature -> NetworkNodeRecord :=
+  fun (info : NetworkInfo) (signature : NetworkBlsSignature) => tuple (info, signature)
+def networkNodeRecordCodec : Codec NetworkNodeRecord := codecPair NetworkInfo NetworkBlsSignature networkInfoCodec networkBlsSignatureCodec
+def networkNodeRecordLegacyCodec : Codec NetworkNodeRecord := codecPair NetworkInfo NetworkBlsSignature networkInfoLegacyCodec networkBlsSignatureCodec
+mu NetworkRecordLayout : Type 0 :=
+| networkRecordCurrent (record : NetworkNodeRecord) : NetworkRecordLayout
+| networkRecordLegacy (record : NetworkNodeRecord) : NetworkRecordLayout
+mu NetworkNodeRecordError : Type 0 :=
+| networkNodeRecordBothRejected (current : BcsError) (legacy : BcsError) : NetworkNodeRecordError
+def networkNodeRecordErrorText : NetworkNodeRecordError -> Bytes := fun (error : NetworkNodeRecordError) =>
+  match error as self in NetworkNodeRecordError return Bytes with
+  | networkNodeRecordBothRejected current legacy => append b"node record: current layout "
+    (append (bcsErrorText current) (append b"; legacy layout " (bcsErrorText legacy)))
+def networkNodeRecordDecodeCompat : Bytes -> sum (NetworkNodeRecordError, NetworkRecordLayout) := fun (wire : Bytes) =>
+  case (codecDecode NetworkNodeRecord networkNodeRecordCodec wire) with
+  | 1 (current : prod (NetworkNodeRecord, BcsReader)) => inj 1 of 2 (networkRecordCurrent current.0)
+  | 0 (currentError : BcsError) => case (codecDecode NetworkNodeRecord networkNodeRecordLegacyCodec wire) with
+    | 1 (legacy : prod (NetworkNodeRecord, BcsReader)) => inj 1 of 2 (networkRecordLegacy legacy.0)
+    | 0 (legacyError : BcsError) => inj 0 of 2 (networkNodeRecordBothRejected currentError legacyError)
+def networkOptionEqual : (0 A : Type 0) -> (A -> A -> Bool) -> ValueOption A -> ValueOption A -> Bool :=
+  fun (0 A : Type 0) (equal : A -> A -> Bool) (a : ValueOption A) (b : ValueOption A) =>
+  case a with
+  | 0 (unit : prod ()) => (case b with | 0 (unit : prod ()) => inj 1 of 2 (tuple ()) | 1 (value : A) => inj 0 of 2 (tuple ()))
+  | 1 (left : A) => case b with | 0 (unit : prod ()) => inj 0 of 2 (tuple ()) | 1 (right : A) => equal left right
+def networkRpcInfoEqual : NetworkRpcInfo -> NetworkRpcInfo -> Bool := fun (a : NetworkRpcInfo) (b : NetworkRpcInfo) =>
+  boolAnd (bytesEqual a.0 b.0) (networkOptionEqual Bytes bytesEqual a.1 b.1)
+def networkNodeRecordEqual : NetworkNodeRecord -> NetworkNodeRecord -> Bool := fun (a : NetworkNodeRecord) (b : NetworkNodeRecord) =>
+  boolAnd (networkVarBytesEqual a.0.0 b.0.0)
+    (boolAnd (orderingEqual (listCompare NetworkVarBytes NetworkVarBytesList seqNetworkVarBytesOps networkVarBytesCompare a.0.1 b.0.1))
+      (boolAnd (natEq a.0.2 b.0.2) (boolAnd (networkOptionEqual NetworkRpcInfo networkRpcInfoEqual a.0.3 b.0.3)
+        (networkBlsSignatureEqual a.1 b.1))))

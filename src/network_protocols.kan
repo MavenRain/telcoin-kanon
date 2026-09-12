@@ -1,0 +1,29 @@
+mu NetworkProtocolNode : Type 0 :=
+| networkProtocolPrimary : NetworkProtocolNode
+| networkProtocolWorker (id : HostInt) : NetworkProtocolNode
+mu NetworkProtocolError : Type 0 :=
+| networkProtocolMissingSlash (name : Bytes) : NetworkProtocolError
+def networkProtocolErrorText : NetworkProtocolError -> Bytes := fun (error : NetworkProtocolError) =>
+  match error as self in NetworkProtocolError return Bytes with
+  | networkProtocolMissingSlash name => append b"protocol name " (append (ocamlQuotedBytes name) b" does not start with '/'")
+def networkOwnedProtocol : Bytes -> sum (NetworkProtocolError, Bytes) := fun (name : Bytes) =>
+  match name as self in Bytes return sum (NetworkProtocolError, Bytes) with
+  | bytesNil => inj 0 of 2 (networkProtocolMissingSlash name)
+  | bytesCons head tail => case (natEq head 47) with
+    | 0 (unit : prod ()) => inj 0 of 2 (networkProtocolMissingSlash name)
+    | 1 (unit : prod ()) => inj 1 of 2 name
+def networkProtocolBuild : NetworkProtocolNode -> Bytes -> HostInt -> Bytes -> sum (NetworkProtocolError, Bytes) :=
+  fun (node : NetworkProtocolNode) (infix : Bytes) (chainId : HostInt) (version : Bytes) =>
+    let role : Bytes := match node as self in NetworkProtocolNode return Bytes with
+      | networkProtocolPrimary => b"/tn-primary-"
+      | networkProtocolWorker id => append b"/tn-worker-" (append (hostIntText id) b"-") in
+    networkOwnedProtocol (append role (append infix (append (hostIntText chainId) (append b"/" version))))
+def networkReqResProtocol : NetworkProtocolNode -> HostInt -> sum (NetworkProtocolError, Bytes) :=
+  fun (node : NetworkProtocolNode) (chainId : HostInt) => networkProtocolBuild node emptyBytes chainId b"0.0.2"
+def networkKadProtocol : NetworkProtocolNode -> HostInt -> sum (NetworkProtocolError, Bytes) :=
+  fun (node : NetworkProtocolNode) (chainId : HostInt) => networkProtocolBuild node b"kad-" chainId b"0.0.1"
+def networkSyncProtocol : NetworkProtocolNode -> HostInt -> sum (NetworkProtocolError, Bytes) :=
+  fun (node : NetworkProtocolNode) (chainId : HostInt) => networkProtocolBuild node b"sync-" chainId b"0.0.1"
+def networkPeerExchangeProtocol : NetworkProtocolNode -> HostInt -> sum (NetworkProtocolError, Bytes) :=
+  fun (node : NetworkProtocolNode) (chainId : HostInt) => networkProtocolBuild node b"peer-exchange-" chainId b"0.0.1"
+def networkGossipProtocolIdPrefix : HostInt -> Bytes := fun (chainId : HostInt) => append b"/tn-meshsub-" (hostIntText chainId)

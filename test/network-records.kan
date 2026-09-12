@@ -1,0 +1,45 @@
+def networkRecordTestRebuildNode : NetworkNodeRecord -> NetworkNodeRecord := fun (record : NetworkNodeRecord) =>
+  let rpc : ValueOption NetworkRpcInfo := case record.0.3 with
+    | 0 (unit : prod ()) => valueNone NetworkRpcInfo
+    | 1 (value : NetworkRpcInfo) => valueSome NetworkRpcInfo (networkRpcInfoMake value.0 value.1) in
+  networkNodeRecordMake (networkInfoMake record.0.0 record.0.1 record.0.2 rpc) record.1
+def networkRecordTestPair : (0 A : Type 0) -> Codec A -> (A -> A) -> (A -> A -> Bool) -> Bytes -> Bytes -> Bytes :=
+  fun (0 A : Type 0) (codec : Codec A) (rebuild : A -> A) (equal : A -> A -> Bool) (left : Bytes) (right : Bytes) =>
+  case (codecDecode A codec left) with
+  | 0 (error : BcsError) => append b"error:" (bcsErrorText error)
+  | 1 (decoded : prod (A, BcsReader)) =>
+    let a : A := rebuild decoded.0 in
+    let other : Bytes := case (codecDecode A codec right) with
+      | 0 (error : BcsError) => append b"error:" (bcsErrorText error)
+      | 1 (b : prod (A, BcsReader)) => stateBoolText (equal a b.0) in
+    append (bytesHex (codecWrite A codec a)) (append b":" (append (stateBoolText (equal a decoded.0)) (append b":" other)))
+def networkRecordTestCompat : Bytes -> Bytes := fun (raw : Bytes) =>
+  case (networkNodeRecordDecodeCompat raw) with
+  | 0 (error : NetworkNodeRecordError) => append b"error:" (networkNodeRecordErrorText error)
+  | 1 (layout : NetworkRecordLayout) => match layout as self in NetworkRecordLayout return Bytes with
+    | networkRecordCurrent record => append b"current:" (bytesHex (codecWrite NetworkNodeRecord networkNodeRecordCodec record))
+    | networkRecordLegacy record => append b"legacy:" (bytesHex (codecWrite NetworkNodeRecord networkNodeRecordCodec record))
+def networkRecordTestLegacy : Bytes -> Bytes := fun (raw : Bytes) =>
+  case (codecDecode NetworkNodeRecord networkNodeRecordCodec raw) with
+  | 0 (error : BcsError) => append b"error:" (bcsErrorText error)
+  | 1 (record : prod (NetworkNodeRecord, BcsReader)) =>
+    let legacy : Bytes := codecWrite NetworkNodeRecord networkNodeRecordLegacyCodec record.0 in
+    append (bytesHex legacy) (append b":" (networkRecordTestCompat legacy))
+def networkRecordTest : Nat -> Bytes -> Bytes -> Bytes := fun (kind : Nat) (left : Bytes) (right : Bytes) =>
+  case (natEq kind 0) with
+  | 1 (unit : prod ()) => networkRecordTestPair NetworkEpochVote networkEpochVoteCodec
+    (fun (v : NetworkEpochVote) => networkEpochVoteMake v.0 v.1 v.2 v.3) networkEpochVoteEqual left right
+  | 0 (unit : prod ()) => case (natEq kind 1) with
+    | 1 (unit : prod ()) => networkRecordTestPair NetworkConsensusResult networkConsensusResultCodec
+      (fun (v : NetworkConsensusResult) => networkConsensusResultMake v.0 v.1 v.2 v.3 v.4 v.5) networkConsensusResultEqual left right
+    | 0 (unit : prod ()) => case (natEq kind 2) with
+      | 1 (unit : prod ()) => networkRecordTestPair NetworkEpochRecord networkEpochRecordCodec
+        (fun (v : NetworkEpochRecord) => networkEpochRecordMake v.0 v.1 v.2 v.3 v.4 (networkConsensusNumHashMake v.5.0 v.5.1))
+        networkEpochRecordEqual left right
+      | 0 (unit : prod ()) => case (natEq kind 3) with
+        | 1 (unit : prod ()) => networkRecordTestPair NetworkNodeRecord networkNodeRecordCodec networkRecordTestRebuildNode networkNodeRecordEqual left right
+        | 0 (unit : prod ()) => case (natEq kind 4) with
+          | 1 (unit : prod ()) => networkRecordTestPair NetworkNodeRecord networkNodeRecordLegacyCodec networkRecordTestRebuildNode networkNodeRecordEqual left right
+          | 0 (unit : prod ()) => case (natEq kind 6) with
+            | 1 (unit : prod ()) => networkRecordTestLegacy left
+            | 0 (unit : prod ()) => networkRecordTestCompat left

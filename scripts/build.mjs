@@ -37,6 +37,8 @@ export const sources = ['core', 'nat64', 'scalars', 'bcs', 'codec', 'fixed', 'sc
   'blake2b_digest', 'durable_frame_types', 'durable_frame_collections', 'durable_frame',
   'durable_io_types', 'atomic_file_codec', 'bytes_rendering', 'store_lock_types', 'append_log_codec',
   'byte_reader', 'crc32c_table', 'crc32c', 'snappy_raw', 'snappy_frame',
+  'network_var_bytes', 'network_bls_public_key', 'network_bls_signature', 'network_wire_scalar', 'network_protocols', 'network_base58', 'network_wire_frame',
+  'network_leaf_collections', 'network_epoch_vote', 'network_consensus_result', 'network_epoch_record', 'network_node_record',
   'api', 'service'].map(name => resolve(project, `src/${name}.kan`));
 export function build(output, exports, extraSources = [], { scope = false } = {}) {
   const hash = createHash('sha256').update(readFileSync(compiler)).digest('hex');

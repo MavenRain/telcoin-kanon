@@ -1,0 +1,13 @@
+def NetworkEpochVote : Type 0 := prod (Epoch, Digest, NetworkBlsPublicKey, NetworkBlsSignature)
+def networkEpochVoteMake : Epoch -> Digest -> NetworkBlsPublicKey -> NetworkBlsSignature -> NetworkEpochVote :=
+  fun (epoch : Epoch) (hash : Digest) (key : NetworkBlsPublicKey) (signature : NetworkBlsSignature) => tuple (epoch, hash, key, signature)
+def NetworkEpochVoteFields : Type 0 := prod (Epoch, prod (Digest, prod (NetworkBlsPublicKey, NetworkBlsSignature)))
+def networkEpochVoteCodec : Codec NetworkEpochVote := codecIso NetworkEpochVoteFields NetworkEpochVote
+  (fun (fields : NetworkEpochVoteFields) => networkEpochVoteMake fields.0 fields.1.0 fields.1.1.0 fields.1.1.1)
+  (fun (vote : NetworkEpochVote) => tuple (vote.0, tuple (vote.1, tuple (vote.2, vote.3))))
+  (codecPair Epoch (prod (Digest, prod (NetworkBlsPublicKey, NetworkBlsSignature))) networkWireEpochCodec
+    (codecPair Digest (prod (NetworkBlsPublicKey, NetworkBlsSignature)) networkWireDigestCodec
+      (codecPair NetworkBlsPublicKey NetworkBlsSignature networkBlsPublicKeyCodec networkBlsSignatureCodec)))
+def networkEpochVoteEqual : NetworkEpochVote -> NetworkEpochVote -> Bool := fun (a : NetworkEpochVote) (b : NetworkEpochVote) =>
+  boolAnd (epochEqual a.0 b.0) (boolAnd (digestEqual a.1 b.1)
+    (boolAnd (networkBlsPublicKeyEqual a.2 b.2) (networkBlsSignatureEqual a.3 b.3)))

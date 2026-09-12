@@ -1,0 +1,32 @@
+def networkBase58Alphabet : Bytes := b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+def rec networkBase58Strip : Bytes -> Bytes := fun (digits : Bytes) =>
+  match digits as self in Bytes return Bytes with
+  | bytesNil => bytesNil
+  | bytesCons head tail => case (natEq head 0) with
+    | 0 (unit : prod ()) => digits
+    | 1 (unit : prod ()) => networkBase58Strip tail
+def rec networkBase58DivideAcc : Bytes -> Nat -> Bytes -> prod (Bytes, Nat) :=
+  fun (digits : Bytes) (carry : Nat) (out : Bytes) =>
+  match digits as self in Bytes return prod (Bytes, Nat) with
+  | bytesNil => tuple (networkBase58Strip (reverse out), carry)
+  | bytesCons head tail => let current : Nat := natAdd (natMul carry 256) head in
+    networkBase58DivideAcc tail (remainder64 current 58) (bytesCons (quotient64 current 58) out)
+def rec networkBase58Leading : Bytes -> Bytes := fun (input : Bytes) =>
+  match input as self in Bytes return Bytes with
+  | bytesNil => bytesNil
+  | bytesCons head tail => case (natEq head 0) with
+    | 0 (unit : prod ()) => bytesNil
+    | 1 (unit : prod ()) => bytesCons 49 (networkBase58Leading tail)
+def rec networkBase58Digits : Bytes -> Bytes -> Bytes -> Bytes :=
+  fun (fuel : Bytes) (digits : Bytes) (out : Bytes) =>
+  match fuel as self in Bytes return Bytes with
+  | bytesNil => out
+  | bytesCons head tail => match digits as remaining in Bytes return Bytes with
+    | bytesNil => out
+    | bytesCons first rest =>
+      let step : prod (Bytes, Nat) := networkBase58DivideAcc digits 0 bytesNil in
+      networkBase58Digits tail step.0 (append (take 1 (drop networkBase58Alphabet step.1)) out)
+-- Two base-58 digits hold more than one input byte: 58 * 58 > 256.
+-- Thus twice the input length bounds the repeated division of every input.
+def networkBase58Encode : Bytes -> Bytes := fun (input : Bytes) =>
+  append (networkBase58Leading input) (networkBase58Digits (append input input) (networkBase58Strip input) bytesNil)
