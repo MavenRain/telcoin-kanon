@@ -18,7 +18,7 @@ not a claim of complete module parity.
 | 5 | RLP, Keccak, trie/state roots, transaction envelopes, signatures and source-supported precompiles. Reuse existing golden fixtures; compare acceptance, output, gas and errors separately. | RLP, Keccak, tries, account/state roots, withdrawals, blooms, receipt encoding/roots, secp256k1 recovery, source-supported precompiles and all four signed envelope types tested. Typed block transaction wrappers remain. |
 | 6 | Batch validation, executed blocks, engine, driver, registry and epoch transitions. Compare complete committed/executed output and checkpoint consistency. | Batch validation, attachment, planning, payload filtering, registry ABI, shuffle and engine state tested. Block, complete engine execution and driver integration validation remain. |
 | 7 | Durable file framing, logs, locks and checkpoints. Audit the host's fsync, atomic replacement, locking and recovery guarantees before porting the IO shell. Test interrupted writes and restart behavior. | File codecs, durable frames and log headers tested; filesystem IO, locks and recovery remain. |
-| 8 | tn_network and Snappy pure codecs through chunk 44, then integrate source-supported crypto implementations and shells. Compare wire vectors, canonicality, corruption and size-limit cases. | Snappy and 20 network modules tested; primary/worker messages, gossip, node routing and production crypto remain. |
+| 8 | tn_network and Snappy pure codecs through chunk 44, then integrate source-supported crypto implementations and shells. Compare wire vectors, canonicality, corruption and size-limit cases. | Snappy and all 24 network modules tested; production crypto and public runtime integration remain. |
 
 Milestones 4 and 5 overlap at hash/state/transaction dependencies and should be
 split into dependency-ordered increments before implementation. The goal is
@@ -221,10 +221,10 @@ safety or liveness for every possible schedule.
 | lib/network/epoch_certificate.ml | Ported: constructor, complete codec, signer bitmap and field equality; shared 1458-row certificate suite |
 | lib/network/epoch_record.ml | Ported: both constructors, committee lists, boundary anchors, codec and equality; shared 1800-row network record suite |
 | lib/network/epoch_vote.ml | Ported: constructors, complete wire codec and field equality; shared 1800-row network record suite |
-| lib/network/gossip.ml | Pending |
+| lib/network/gossip.ml | Ported: topics, dispatch, message IDs, publisher policies, size-first admission and exact penalty targets; shared 4357-row message suite |
 | lib/network/node_record.ml | Ported: constructors, current and legacy layouts, compatibility errors, UTF-8, equality and legacy RPC omission; 1800 shared rows plus 12 omission rows |
 | lib/network/peer_exchange.ml | Ported: stable key ordering, duplicate rejection, first-occurrence address deduplication, codec and equality; shared 1458-row certificate suite |
-| lib/network/primary_msg.ml | Pending |
+| lib/network/primary_msg.ml | Ported: every request/response/gossip variant, missing-certificate request, codecs, field equality and UTF-8; shared 4357-row message suite |
 | lib/network/protocols.ml | Ported: all protocol identifiers, signed native IDs and owned-name errors; shared 1392-row network leaf suite |
 | lib/network/roaring.ml | Ported: canonical u32 sets, portable array/bitmap encoding, array/bitmap/run decoding, corruption and exact errors; 442 OCaml rows |
 | lib/network/sync_chunking.ml | Ported: pack slices, generic bounded certificate groups, digest chunks, constants and native overflow; shared 927-row sync suite |
@@ -233,10 +233,10 @@ safety or liveness for every possible schedule.
 | lib/network/sync_request.ml | Ported: worker and primary variants, canonical digest sets, opaque skip rounds, full u64 values and equality; shared 927-row sync suite |
 | lib/network/var_bytes.ml | Ported: opaque variable bytes, codec, equality and ordering; shared 1392-row network leaf suite |
 | lib/network/vote_wire.ml | Ported: full codec, accessors, equality and crypto adapters with simulation signature refusal; shared 1458-row certificate suite |
-| lib/network/wire.ml | Pending |
+| lib/network/wire.ml | Ported: every node command and ingress mapping, ordered parent checking, retries, fan-out and unmapped classes; 193 OCaml rows |
 | lib/network/wire_frame.ml | Ported: exact framing, size gates, error order, take cap, consumed bytes and typed BCS messages; 546 OCaml rows |
 | lib/network/wire_scalar.ml | Ported: all six scalar codecs, including bare authority IDs versus sized digests; shared 1392-row network leaf suite |
-| lib/network/worker_msg.ml | Pending |
+| lib/network/worker_msg.ml | Ported: requests, responses, gossip, sealed-batch claims, codecs and equality; shared 4357-row message suite |
 | lib/rand/chacha12.ml | Ported: ChaCha12 blocks, counter and buffered stream, src/chacha12.kan; OCaml differential tests |
 | lib/rand/rand_seq.ml | Ported: reservoir sampling with typed collections, src/rand_seq.kan; OCaml differential tests |
 | lib/rand/std_rng.ml | Ported: leader seeds and inclusive u32/u64 sampling with exact draw advancement, src/chacha12.kan; OCaml differential tests |

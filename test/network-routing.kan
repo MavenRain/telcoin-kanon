@@ -1,0 +1,84 @@
+def networkRoutingCertificateText : Certificate -> Bytes := fun (certificate : Certificate) =>
+  append (bytesHex (codecWrite Header headerCodec (certificateHeader certificate))) (append b"|" (bytesHex (seqAuthorityIdWrite authorityIdBytes (certificateSigners certificate))))
+def networkRoutingUnmappedText : NetworkWireUnmapped -> Bytes := fun (value : NetworkWireUnmapped) =>
+  match value as self in NetworkWireUnmapped return Bytes with
+  | networkWirePeerExchangeRequest => b"peer-request" | networkWireEpochRecordRequest => b"epoch-request"
+  | networkWireMissingParentsResponse => b"missing-response" | networkWireEpochRecordResponse => b"epoch-response"
+  | networkWirePeerExchangeResponse => b"peer-response" | networkWireRpcErrorResponse => b"error-response"
+  | networkWireRecoverableRpcErrorResponse => b"retry-response" | networkWireConsensusGossip => b"consensus"
+  | networkWireEpochVoteGossip => b"epoch-vote" | networkWireWorkerBatchGossip => b"worker-batch"
+def networkRoutingVerdictText : sum (NetworkWireError, NetworkWireInboundVerdict) -> Bytes := fun (result : sum (NetworkWireError, NetworkWireInboundVerdict)) =>
+  case result with | 0 (error : NetworkWireError) => append b"error:" (networkWireErrorText error)
+  | 1 (verdict : NetworkWireInboundVerdict) => case verdict with
+    | 1 (value : NetworkWireUnmapped) => append b"unmapped:" (networkRoutingUnmappedText value)
+    | 0 (event : NodeEvent) => match event as self in NodeEvent return Bytes with
+      | nodeOurDigest batch worker => b"digest"
+      | nodeVoteRequest sender header parents => append b"request:" (append (bytesHex (authorityIdBytes sender)) (append b"|"
+          (append (bytesHex (codecWrite Header headerCodec header)) (append b"|" (seqCertificateWrite (fun (parent : Certificate) => append (networkRoutingCertificateText parent) b";") parents)))))
+      | nodeVoteReceived vote => append b"vote:" (bytesHex (signatureBytes (voteSignature vote)))
+      | nodeCertificateReceived certificate => append b"certificate:" (networkRoutingCertificateText certificate)
+      | nodeTimerFired kind generation => b"timer"
+def networkRoutingIngress : Nat -> ByteStrings -> Bytes -> Bytes -> Bytes -> Bytes -> Bytes :=
+  fun (mode : Nat) (roster : ByteStrings) (chainRaw : Bytes) (senderRaw : Bytes) (topic : Bytes) (raw : Bytes) =>
+    case (hostIntParse chainRaw) with | 0 (unit : prod ()) => b"setup:chain"
+    | 1 (chain : HostInt) => case (cryptoKeyParse senderRaw) with | 0 (unit : prod ()) => b"setup:sender"
+      | 1 (senderKey : SecretKey) => match (cryptoCommittee roster) as built in CommitteeResult return Bytes with
+        | committeeError error => append b"setup:" (committeeErrorText error)
+        | committeeOk committee => case (natEq mode 0) with
+          | 1 (unit : prod ()) => (case (codecDecode NetworkPrimaryRequest networkPrimaryRequestCodec raw) with
+            | 0 (error : BcsError) => append b"setup:" (bcsErrorText error)
+            | 1 (read : prod (NetworkPrimaryRequest, BcsReader)) => networkRoutingVerdictText (networkWireEventOfRequest committee (authorityIdOfPublicKey (secretKeyPublic senderKey)) read.0))
+          | 0 (unit : prod ()) => case (natEq mode 1) with
+            | 1 (unit : prod ()) => (case (codecDecode NetworkPrimaryResponse networkPrimaryResponseCodec raw) with
+              | 0 (error : BcsError) => append b"setup:" (bcsErrorText error)
+              | 1 (read : prod (NetworkPrimaryResponse, BcsReader)) => networkRoutingVerdictText (networkWireEventOfResponse read.0))
+            | 0 (unit : prod ()) => case (natEq mode 2) with
+              | 1 (unit : prod ()) => networkRoutingVerdictText (networkWireEventOfGossip committee chain topic raw)
+              | 0 (unit : prod ()) => case (natEq mode 3) with
+                | 1 (unit : prod ()) => (case (codecDecode NetworkPrimaryGossip networkPrimaryGossipCodec raw) with
+                  | 0 (error : BcsError) => append b"setup:" (bcsErrorText error)
+                  | 1 (read : prod (NetworkPrimaryGossip, BcsReader)) => networkRoutingVerdictText (networkWireVerdictOfPayload committee (inj 0 of 2 read.0)))
+                | 0 (unit : prod ()) => case (codecDecode NetworkWorkerGossip networkWorkerGossipCodec raw) with
+                  | 0 (error : BcsError) => append b"setup:" (bcsErrorText error)
+                  | 1 (read : prod (NetworkWorkerGossip, BcsReader)) => networkRoutingVerdictText (networkWireVerdictOfPayload committee (inj 1 of 2 read.0))
+def networkRoutingOutboundText : NetworkWireOutbound -> Bytes := fun (value : NetworkWireOutbound) =>
+  match value as self in NetworkWireOutbound return Bytes with
+  | networkWirePublish topic payload => append b"publish:" (append (bytesHex topic) (append b"|" (bytesHex payload)))
+  | networkWireRequest recipient request => append b"request:" (append (bytesHex (authorityIdBytes recipient)) (append b"|" (bytesHex (codecWrite NetworkPrimaryRequest networkPrimaryRequestCodec request))))
+  | networkWireResponse response => append b"response:" (bytesHex (codecWrite NetworkPrimaryResponse networkPrimaryResponseCodec response))
+  | networkWireLocal => b"local"
+def networkRoutingOutbound : Nat -> ByteStrings -> Bytes -> Bytes -> Bytes -> Bytes -> ByteStrings -> Bytes :=
+  fun (mode : Nat) (roster : ByteStrings) (chainRaw : Bytes) (seedRaw : Bytes) (headerRaw : Bytes) (digestsRaw : Bytes) (signerSeeds : ByteStrings) =>
+  case (hostIntParse chainRaw) with | 0 (unit : prod ()) => b"setup:chain"
+  | 1 (chain : HostInt) => case (cryptoKeyParse seedRaw) with | 0 (unit : prod ()) => b"setup:seed"
+    | 1 (key : SecretKey) => match (cryptoCommittee roster) as built in CommitteeResult return Bytes with
+      | committeeError error => append b"setup:" (committeeErrorText error)
+      | committeeOk committee => case (codecDecode Header headerCodec headerRaw) with
+        | 0 (error : BcsError) => append b"setup:" (bcsErrorText error)
+        | 1 (read : prod (Header, BcsReader)) => case (codecDecode HeaderDigests (codecList HeaderDigest HeaderDigests seqHeaderDigestOps networkWireHeaderDigestCodec) digestsRaw) with
+          | 0 (error : BcsError) => append b"setup:" (bcsErrorText error)
+          | 1 (digests : prod (HeaderDigests, BcsReader)) => case (cryptoAuthorities signerSeeds) with
+            | 0 (unit : prod ()) => b"setup:signers"
+            | 1 (authorities : Authorities) => case (cryptoSignatures signerSeeds (voteSigningMessage (headerDigest read.0))) with
+              | 0 (unit : prod ()) => b"setup:signatures"
+              | 1 (signatures : Signatures) =>
+                let signers : AuthorityIds := canonicalSigners (listMapInto Authority Authorities AuthorityId AuthorityIds seqAuthorityOps seqAuthorityIdOps authorityId authorities) in
+                let certificate : Certificate := certificateValue read.0 signers (case (natEq mode 6) with
+                  | 1 (unit : prod ()) => certificateAggregateState (cryptoAggregate signatures)
+                  | 0 (unit : prod ()) => certificateGenesisState) in
+                let command : NodeCommand := case (natEq mode 0) with | 1 (unit : prod ()) => nodeBroadcastHeader read.0
+                  | 0 (unit : prod ()) => case (natEq mode 1) with | 1 (unit : prod ()) => nodeSendVote authorityIdZero (voteSign key (authorityIdOfPublicKey (secretKeyPublic key)) read.0)
+                    | 0 (unit : prod ()) => case (natEq mode 2) with | 1 (unit : prod ()) => nodeSendMissingParents authorityIdZero digests.0
+                      | 0 (unit : prod ()) => case (natEq mode 4) with | 1 (unit : prod ()) => nodeArmTimer proposerMinDelay 42 (durationValue 5)
+                        | 0 (unit : prod ()) => case (natEq mode 5) with
+                          | 1 (unit : prod ()) => nodeEmitCommitted (subDagOfPersisted (nonemptySingleton Header Headers seqHeaderOps read.0) (reputationFresh committee) timestampZero hash32Zero)
+                          | 0 (unit : prod ()) => case (natEq mode 7) with | 1 (unit : prod ()) => nodeArmTimer proposerMaxDelay 42 (durationValue 5)
+                            | 0 (unit : prod ()) => nodeBroadcastCertificate certificate in
+                case (networkWireOutboundOfCommand committee chain command) with
+                | 0 (error : NetworkWireError) => append b"error:" (networkWireErrorText error)
+                | 1 (out : NetworkWireOutbounds) => seqNetworkWireOutboundWrite (fun (value : NetworkWireOutbound) => append (networkRoutingOutboundText value) b";") out
+def networkRoutingRetry : Bytes -> Bytes -> Bytes := fun (headerRaw : Bytes) (parentsRaw : Bytes) =>
+  case (codecDecode Header headerCodec headerRaw) with | 0 (error : BcsError) => append b"setup:" (bcsErrorText error)
+  | 1 (header : prod (Header, BcsReader)) => case (codecDecode NetworkCertificates networkCertReaderBatchCodec parentsRaw) with
+    | 0 (error : BcsError) => append b"setup:" (bcsErrorText error)
+    | 1 (parents : prod (NetworkCertificates, BcsReader)) => bytesHex (codecWrite NetworkPrimaryRequest networkPrimaryRequestCodec (networkWireRetryVoteRequest header.0 parents.0))

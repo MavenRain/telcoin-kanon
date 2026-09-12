@@ -1,0 +1,65 @@
+def networkMessageTestRecord : Nat -> Bytes -> Bytes -> Bytes := fun (kind : Nat) (left : Bytes) (right : Bytes) =>
+case (natEq kind 0) with
+| 1 (unit : prod ()) => networkRecordTestPair NetworkPrimaryRequest networkPrimaryRequestCodec (fun (value : NetworkPrimaryRequest) => value) networkPrimaryRequestEqual left right
+| 0 (unit : prod ()) =>   case (natEq kind 1) with
+  | 1 (unit : prod ()) => networkRecordTestPair NetworkPrimaryResponse networkPrimaryResponseCodec (fun (value : NetworkPrimaryResponse) => value) networkPrimaryResponseEqual left right
+  | 0 (unit : prod ()) =>     case (natEq kind 2) with
+    | 1 (unit : prod ()) => networkRecordTestPair NetworkPrimaryGossip networkPrimaryGossipCodec (fun (value : NetworkPrimaryGossip) => value) networkPrimaryGossipEqual left right
+    | 0 (unit : prod ()) =>       case (natEq kind 3) with
+      | 1 (unit : prod ()) => networkRecordTestPair NetworkWorkerRequest networkWorkerRequestCodec (fun (value : NetworkWorkerRequest) => value) networkWorkerRequestEqual left right
+      | 0 (unit : prod ()) =>         case (natEq kind 4) with
+        | 1 (unit : prod ()) => networkRecordTestPair NetworkWorkerResponse networkWorkerResponseCodec (fun (value : NetworkWorkerResponse) => value) networkWorkerResponseEqual left right
+        | 0 (unit : prod ()) =>           case (natEq kind 5) with
+          | 1 (unit : prod ()) => networkRecordTestPair NetworkWorkerGossip networkWorkerGossipCodec (fun (value : NetworkWorkerGossip) => value) networkWorkerGossipEqual left right
+          | 0 (unit : prod ()) => networkRecordTestPair NetworkMissingCertificatesRequest networkMissingCertificatesRequestCodec
+  (fun (value : NetworkMissingCertificatesRequest) => networkMissingCertificatesRequestMake value.0 value.1 value.2)
+  (fun (a : NetworkMissingCertificatesRequest) (b : NetworkMissingCertificatesRequest) =>
+    bytesEqual (codecWrite NetworkMissingCertificatesRequest networkMissingCertificatesRequestCodec a) (codecWrite NetworkMissingCertificatesRequest networkMissingCertificatesRequestCodec b)) left right
+def networkGossipTestKind : Nat -> NetworkTopicKind := fun (kind : Nat) => case (natEq kind 0) with
+  | 1 (unit : prod ()) => networkTopicPrimaryCertificate
+  | 0 (unit : prod ()) => case (natEq kind 1) with
+    | 1 (unit : prod ()) => networkTopicConsensusOutput
+    | 0 (unit : prod ()) => case (natEq kind 2) with | 1 (unit : prod ()) => networkTopicEpochVote | 0 (unit : prod ()) => networkTopicWorkerBatch
+def networkGossipTestKindText : NetworkTopicKind -> Bytes := fun (kind : NetworkTopicKind) => match kind as self in NetworkTopicKind return Bytes with
+  | networkTopicPrimaryCertificate => b"0" | networkTopicConsensusOutput => b"1" | networkTopicEpochVote => b"2" | networkTopicWorkerBatch => b"3"
+def networkGossipTestTopic : Bytes -> Nat -> Bytes -> Bytes := fun (chainRaw : Bytes) (kind : Nat) (topic : Bytes) =>
+  case (hostIntParse chainRaw) with | 0 (unit : prod ()) => b"setup:chain"
+  | 1 (chain : HostInt) => append (networkGossipTopicOfKind chain (networkGossipTestKind kind)) (append b"|"
+    (case (networkGossipTopicKind chain topic) with | 0 (unit : prod ()) => b"none" | 1 (kind : NetworkTopicKind) => networkGossipTestKindText kind))
+def networkGossipTestMessageId : Bytes -> Bytes := fun (raw : Bytes) =>
+  case (codecDecode (prod (ValueOption Bytes, ValueOption Nat)) (codecPair (ValueOption Bytes) (ValueOption Nat) (codecOption Bytes codecBytes) (codecOption Nat codecU64)) raw) with
+  | 0 (error : BcsError) => append b"error:" (bcsErrorText error)
+  | 1 (read : prod (prod (ValueOption Bytes, ValueOption Nat), BcsReader)) => networkGossipMessageId read.0.0 read.0.1
+def networkGossipTestDecode : Bytes -> Bytes -> Bytes -> Bytes := fun (chainRaw : Bytes) (topic : Bytes) (bytes : Bytes) =>
+  case (hostIntParse chainRaw) with | 0 (unit : prod ()) => b"setup:chain"
+  | 1 (chain : HostInt) => case (networkGossipDecode chain topic bytes) with
+    | 0 (error : NetworkGossipError) => append b"error:" (networkGossipErrorText error)
+    | 1 (payload : NetworkGossipPayload) => case payload with
+      | 0 (primary : NetworkPrimaryGossip) => append b"primary:" (bytesHex (codecWrite NetworkPrimaryGossip networkPrimaryGossipCodec primary))
+      | 1 (worker : NetworkWorkerGossip) => append b"worker:" (bytesHex (codecWrite NetworkWorkerGossip networkWorkerGossipCodec worker))
+def networkGossipTestPublishersCodec : Codec NetworkPublishers := codecIso (ValueOption NetworkBlsKeys) NetworkPublishers
+  (fun (value : ValueOption NetworkBlsKeys) => case value with | 0 (unit : prod ()) => networkPublishersOpen | 1 (keys : NetworkBlsKeys) => networkPublishersRestricted keys)
+  (fun (value : NetworkPublishers) => match value as self in NetworkPublishers return ValueOption NetworkBlsKeys with
+    | networkPublishersOpen => valueNone NetworkBlsKeys | networkPublishersRestricted keys => valueSome NetworkBlsKeys keys)
+  (codecOption NetworkBlsKeys networkBlsKeysCodec)
+def NetworkGossipTestAuthInput : Type 0 := prod (ValueOption Bytes, ValueOption NetworkBlsPublicKey, NetworkGossipAuthorizations)
+def networkGossipTestAuthCodec : Codec NetworkGossipTestAuthInput :=
+  codecTriple (ValueOption Bytes) (ValueOption NetworkBlsPublicKey) NetworkGossipAuthorizations
+    (codecOption Bytes codecBytes) (codecOption NetworkBlsPublicKey networkBlsPublicKeyCodec)
+    (codecList (prod (Bytes, NetworkPublishers)) NetworkGossipAuthorizations seqNetworkGossipAuthorizationOps (codecPair Bytes NetworkPublishers codecBytes networkGossipTestPublishersCodec))
+def networkGossipTestPenaltyText : NetworkGossipPenaltyTarget -> Bytes := fun (target : NetworkGossipPenaltyTarget) =>
+  match target as self in NetworkGossipPenaltyTarget return Bytes with
+  | networkGossipFatalRelayer => b"relayer" | networkGossipFatalAuthor => b"author" | networkGossipSkip => b"skip"
+def networkGossipTestAuth : Bytes -> Bytes -> Bytes -> Nat -> Bytes := fun (sizeRaw : Bytes) (topic : Bytes) (raw : Bytes) (resolved : Nat) =>
+  case (hostIntParse sizeRaw) with | 0 (unit : prod ()) => b"setup:size"
+  | 1 (size : HostInt) => case (codecDecode NetworkGossipTestAuthInput networkGossipTestAuthCodec raw) with
+    | 0 (error : BcsError) => append b"setup:" (bcsErrorText error)
+    | 1 (read : prod (NetworkGossipTestAuthInput, BcsReader)) =>
+      let value : NetworkGossipTestAuthInput := read.0 in
+      let accepted : Bytes := match (networkGossipVerify size topic value.0 value.1 value.2) as verdict in NetworkGossipAcceptance return Bytes with
+        | networkGossipAccept => b"accept"
+        | networkGossipReject reason =>
+          let name : Bytes := match reason as why in NetworkGossipRejectReason return Bytes with
+            | networkGossipTooLarge => b"large" | networkGossipUnauthorizedAuthor => b"unauthorized" in
+          append name (append b":" (networkGossipTestPenaltyText (networkGossipPenalty reason (natEq (remainder64 resolved 2) 1) (natLt 1 resolved)))) in
+      append (stateBoolText (networkGossipPublisherAllowed value.2 topic value.0 value.1)) (append b"|" accepted)

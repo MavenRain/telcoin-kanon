@@ -43,6 +43,9 @@ export const sources = ['core', 'nat64', 'scalars', 'bcs', 'codec', 'fixed', 'sc
   'network_epoch_certificate', 'network_vote_wire', 'network_certificate_wire', 'network_peer_types', 'network_peer_collections', 'network_peer_exchange',
   'network_sync_frame', 'network_sync_request_types', 'network_sync_collections', 'network_sync_request',
   'network_sync_chunking', 'network_sync_reader',
+  'list_equal', 'network_primary_msg', 'network_worker_msg',
+  'network_gossip_types', 'network_gossip_collections', 'network_gossip',
+  'network_wire_types', 'network_wire_collections', 'network_wire',
   'api', 'service'].map(name => resolve(project, `src/${name}.kan`));
 export function build(output, exports, extraSources = [], { scope = false } = {}) {
   const hash = createHash('sha256').update(readFileSync(compiler)).digest('hex');

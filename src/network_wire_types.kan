@@ -1,0 +1,26 @@
+mu NetworkWireOutbound : Type 0 :=
+| networkWirePublish (topic : Bytes) (payload : Bytes) : NetworkWireOutbound
+| networkWireRequest (recipient : AuthorityId) (request : NetworkPrimaryRequest) : NetworkWireOutbound
+| networkWireResponse (response : NetworkPrimaryResponse) : NetworkWireOutbound
+| networkWireLocal : NetworkWireOutbound
+mu NetworkWireUnmapped : Type 0 :=
+| networkWirePeerExchangeRequest : NetworkWireUnmapped
+| networkWireEpochRecordRequest : NetworkWireUnmapped
+| networkWireMissingParentsResponse : NetworkWireUnmapped
+| networkWireEpochRecordResponse : NetworkWireUnmapped
+| networkWirePeerExchangeResponse : NetworkWireUnmapped
+| networkWireRpcErrorResponse : NetworkWireUnmapped
+| networkWireRecoverableRpcErrorResponse : NetworkWireUnmapped
+| networkWireConsensusGossip : NetworkWireUnmapped
+| networkWireEpochVoteGossip : NetworkWireUnmapped
+| networkWireWorkerBatchGossip : NetworkWireUnmapped
+def NetworkWireInboundVerdict : Type 0 := sum (NodeEvent, NetworkWireUnmapped)
+mu NetworkWireError : Type 0 :=
+| networkWireVoteIngress (error : NetworkVoteWireError) : NetworkWireError
+| networkWireCertificateIngress (error : NetworkCertificateWireError) : NetworkWireError
+| networkWireGossipDecode (error : NetworkGossipError) : NetworkWireError
+def networkWireErrorText : NetworkWireError -> Bytes := fun (error : NetworkWireError) =>
+  match error as self in NetworkWireError return Bytes with
+  | networkWireVoteIngress error => append b"wire: " (networkVoteWireErrorText error)
+  | networkWireCertificateIngress error => append b"wire: " (networkCertificateWireErrorText error)
+  | networkWireGossipDecode error => append b"wire: " (networkGossipErrorText error)

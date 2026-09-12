@@ -1,0 +1,72 @@
+def networkMaxGossipMessageSize : Nat := 12000
+def networkGossipPrimaryTopic : HostInt -> Bytes := fun (chain : HostInt) => append b"tn-primary-" (hostIntText chain)
+def networkGossipConsensusOutputTopic : HostInt -> Bytes := fun (chain : HostInt) => append b"tn-consensus-output-" (hostIntText chain)
+def networkGossipEpochVoteTopic : HostInt -> Bytes := fun (chain : HostInt) => append b"tn-epoch-vote-" (hostIntText chain)
+def networkGossipWorkerBatchTopic : HostInt -> Bytes := fun (chain : HostInt) => append b"tn-worker-" (hostIntText chain)
+def networkGossipTopicOfKind : HostInt -> NetworkTopicKind -> Bytes := fun (chain : HostInt) (kind : NetworkTopicKind) =>
+  match kind as self in NetworkTopicKind return Bytes with
+  | networkTopicPrimaryCertificate => networkGossipPrimaryTopic chain
+  | networkTopicConsensusOutput => networkGossipConsensusOutputTopic chain
+  | networkTopicEpochVote => networkGossipEpochVoteTopic chain
+  | networkTopicWorkerBatch => networkGossipWorkerBatchTopic chain
+def networkGossipTopicKind : HostInt -> Bytes -> ValueOption NetworkTopicKind := fun (chain : HostInt) (topic : Bytes) =>
+  case (bytesEqual topic (networkGossipPrimaryTopic chain)) with
+  | 1 (unit : prod ()) => valueSome NetworkTopicKind networkTopicPrimaryCertificate
+  | 0 (unit : prod ()) => case (bytesEqual topic (networkGossipConsensusOutputTopic chain)) with
+    | 1 (unit : prod ()) => valueSome NetworkTopicKind networkTopicConsensusOutput
+    | 0 (unit : prod ()) => case (bytesEqual topic (networkGossipEpochVoteTopic chain)) with
+      | 1 (unit : prod ()) => valueSome NetworkTopicKind networkTopicEpochVote
+      | 0 (unit : prod ()) => case (bytesEqual topic (networkGossipWorkerBatchTopic chain)) with
+        | 1 (unit : prod ()) => valueSome NetworkTopicKind networkTopicWorkerBatch
+        | 0 (unit : prod ()) => valueNone NetworkTopicKind
+def networkGossipErrorText : NetworkGossipError -> Bytes := fun (error : NetworkGossipError) =>
+  match error as self in NetworkGossipError return Bytes with
+  | networkGossipUnknownTopic topic => append b"gossip: unknown topic " (ocamlQuotedBytes topic)
+  | networkGossipBcs error => append b"gossip: " (bcsErrorText error)
+def networkGossipDecodePrimary : Bytes -> sum (NetworkGossipError, NetworkGossipPayload) := fun (bytes : Bytes) =>
+  case (codecDecode NetworkPrimaryGossip networkPrimaryGossipCodec bytes) with
+  | 0 (error : BcsError) => inj 0 of 2 (networkGossipBcs error)
+  | 1 (read : prod (NetworkPrimaryGossip, BcsReader)) => inj 1 of 2 (inj 0 of 2 read.0)
+def networkGossipDecodeKind : NetworkTopicKind -> Bytes -> sum (NetworkGossipError, NetworkGossipPayload) :=
+  fun (kind : NetworkTopicKind) (bytes : Bytes) => match kind as self in NetworkTopicKind return sum (NetworkGossipError, NetworkGossipPayload) with
+  | networkTopicPrimaryCertificate => networkGossipDecodePrimary bytes
+  | networkTopicConsensusOutput => networkGossipDecodePrimary bytes
+  | networkTopicEpochVote => networkGossipDecodePrimary bytes
+  | networkTopicWorkerBatch => case (codecDecode NetworkWorkerGossip networkWorkerGossipCodec bytes) with
+    | 0 (error : BcsError) => inj 0 of 2 (networkGossipBcs error)
+    | 1 (read : prod (NetworkWorkerGossip, BcsReader)) => inj 1 of 2 (inj 1 of 2 read.0)
+def networkGossipDecode : HostInt -> Bytes -> Bytes -> sum (NetworkGossipError, NetworkGossipPayload) :=
+  fun (chain : HostInt) (topic : Bytes) (bytes : Bytes) => case (networkGossipTopicKind chain topic) with
+  | 0 (unit : prod ()) => inj 0 of 2 (networkGossipUnknownTopic topic)
+  | 1 (kind : NetworkTopicKind) => networkGossipDecodeKind kind bytes
+def networkGossipFallbackSource : Bytes := b"\x00\x01\x00"
+def networkGossipMessageId : ValueOption Bytes -> ValueOption Nat -> Bytes := fun (source : ValueOption Bytes) (sequence : ValueOption Nat) =>
+  let peer : Bytes := case source with | 0 (unit : prod ()) => networkGossipFallbackSource | 1 (bytes : Bytes) => bytes in
+  let number : Nat := case sequence with | 0 (unit : prod ()) => 0 | 1 (number : Nat) => wordLow64 number in
+  append (networkBase58Encode peer) (decimal64 number)
+def networkGossipTopicAllows : ValueOption NetworkBlsPublicKey -> NetworkPublishers -> Bool :=
+  fun (author : ValueOption NetworkBlsPublicKey) (publishers : NetworkPublishers) => match publishers as self in NetworkPublishers return Bool with
+  | networkPublishersOpen => inj 1 of 2 (tuple ())
+  | networkPublishersRestricted keys => case author with
+    | 0 (unit : prod ()) => inj 0 of 2 (tuple ())
+    | 1 (key : NetworkBlsPublicKey) => optionIsSome NetworkBlsPublicKey
+      (listFind NetworkBlsPublicKey NetworkBlsKeys seqNetworkBlsKeyOps (networkBlsPublicKeyEqual key) keys)
+def networkGossipPublisherAllowed : NetworkGossipAuthorizations -> Bytes -> ValueOption Bytes -> ValueOption NetworkBlsPublicKey -> Bool :=
+  fun (authorized : NetworkGossipAuthorizations) (topic : Bytes) (source : ValueOption Bytes) (author : ValueOption NetworkBlsPublicKey) =>
+    case source with
+    | 0 (unit : prod ()) => inj 0 of 2 (tuple ())
+    | 1 (peer : Bytes) => case (mapLookup Bytes NetworkPublishers NetworkGossipAuthorizations seqNetworkGossipAuthorizationOps bytesEqual topic authorized) with
+      | 0 (unit : prod ()) => inj 0 of 2 (tuple ())
+      | 1 (publishers : NetworkPublishers) => networkGossipTopicAllows author publishers
+def networkGossipVerify : HostInt -> Bytes -> ValueOption Bytes -> ValueOption NetworkBlsPublicKey -> NetworkGossipAuthorizations -> NetworkGossipAcceptance :=
+  fun (dataLen : HostInt) (topic : Bytes) (source : ValueOption Bytes) (author : ValueOption NetworkBlsPublicKey) (authorized : NetworkGossipAuthorizations) =>
+    case (natEq (hostIntLess (hostIntPositive networkMaxGossipMessageSize) dataLen) 1) with
+    | 1 (unit : prod ()) => networkGossipReject networkGossipTooLarge
+    | 0 (unit : prod ()) => case (networkGossipPublisherAllowed authorized topic source author) with
+      | 0 (unit : prod ()) => networkGossipReject networkGossipUnauthorizedAuthor
+      | 1 (unit : prod ()) => networkGossipAccept
+def networkGossipPenalty : NetworkGossipRejectReason -> Bool -> Bool -> NetworkGossipPenaltyTarget :=
+  fun (reason : NetworkGossipRejectReason) (relayerResolved : Bool) (authorResolved : Bool) =>
+    match reason as self in NetworkGossipRejectReason return NetworkGossipPenaltyTarget with
+    | networkGossipTooLarge => (case relayerResolved with | 0 (unit : prod ()) => networkGossipSkip | 1 (unit : prod ()) => networkGossipFatalRelayer)
+    | networkGossipUnauthorizedAuthor => case authorResolved with | 0 (unit : prod ()) => networkGossipSkip | 1 (unit : prod ()) => networkGossipFatalAuthor

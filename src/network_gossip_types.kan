@@ -1,0 +1,22 @@
+mu NetworkTopicKind : Type 0 :=
+| networkTopicPrimaryCertificate : NetworkTopicKind
+| networkTopicConsensusOutput : NetworkTopicKind
+| networkTopicEpochVote : NetworkTopicKind
+| networkTopicWorkerBatch : NetworkTopicKind
+def NetworkGossipPayload : Type 0 := sum (NetworkPrimaryGossip, NetworkWorkerGossip)
+mu NetworkGossipError : Type 0 :=
+| networkGossipUnknownTopic (topic : Bytes) : NetworkGossipError
+| networkGossipBcs (error : BcsError) : NetworkGossipError
+mu NetworkPublishers : Type 0 :=
+| networkPublishersOpen : NetworkPublishers
+| networkPublishersRestricted (keys : NetworkBlsKeys) : NetworkPublishers
+mu NetworkGossipRejectReason : Type 0 :=
+| networkGossipTooLarge : NetworkGossipRejectReason
+| networkGossipUnauthorizedAuthor : NetworkGossipRejectReason
+mu NetworkGossipAcceptance : Type 0 :=
+| networkGossipAccept : NetworkGossipAcceptance
+| networkGossipReject (reason : NetworkGossipRejectReason) : NetworkGossipAcceptance
+mu NetworkGossipPenaltyTarget : Type 0 :=
+| networkGossipFatalRelayer : NetworkGossipPenaltyTarget
+| networkGossipFatalAuthor : NetworkGossipPenaltyTarget
+| networkGossipSkip : NetworkGossipPenaltyTarget

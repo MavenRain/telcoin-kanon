@@ -1,0 +1,180 @@
+def networkPrimaryVoteRequestEqual : prod (Header, NetworkCertificates) -> prod (Header, NetworkCertificates) -> Bool :=
+  fun (a : prod (Header, NetworkCertificates)) (b : prod (Header, NetworkCertificates)) => boolAnd (headerEqual a.0 b.0)
+    (listEqualBy NetworkCertificateWire NetworkCertificates seqNetworkCertificateOps networkCertificateWireEqual a.1 b.1)
+def networkPrimaryEpochRequestEqual : prod (ValueOption Epoch, ValueOption Digest) -> prod (ValueOption Epoch, ValueOption Digest) -> Bool :=
+  fun (a : prod (ValueOption Epoch, ValueOption Digest)) (b : prod (ValueOption Epoch, ValueOption Digest)) =>
+    boolAnd (networkOptionEqual Epoch epochEqual a.0 b.0) (networkOptionEqual Digest digestEqual a.1 b.1)
+def networkPrimaryEpochResponseEqual : prod (NetworkEpochRecord, NetworkEpochCertificate) -> prod (NetworkEpochRecord, NetworkEpochCertificate) -> Bool :=
+  fun (a : prod (NetworkEpochRecord, NetworkEpochCertificate)) (b : prod (NetworkEpochRecord, NetworkEpochCertificate)) =>
+    boolAnd (networkEpochRecordEqual a.0 b.0) (networkEpochCertificateEqual a.1 b.1)
+def networkHeaderDigestsEqual : HeaderDigests -> HeaderDigests -> Bool := listEqualBy HeaderDigest HeaderDigests seqHeaderDigestOps headerDigestEqual
+def NetworkPrimaryRequest : Type 0 := sum (prod (Header, NetworkCertificates), NetworkPeerExchange, prod (ValueOption Epoch, ValueOption Digest))
+def networkPrimaryReqVote : prod (Header, NetworkCertificates) -> NetworkPrimaryRequest := fun (value : prod (Header, NetworkCertificates)) => inj 0 of 3 value
+def networkPrimaryReqPeerExchange : NetworkPeerExchange -> NetworkPrimaryRequest := fun (value : NetworkPeerExchange) => inj 1 of 3 value
+def networkPrimaryReqEpochRecord : prod (ValueOption Epoch, ValueOption Digest) -> NetworkPrimaryRequest := fun (value : prod (ValueOption Epoch, ValueOption Digest)) => inj 2 of 3 value
+def networkPrimaryRequestCodec : Codec NetworkPrimaryRequest := codecSum NetworkPrimaryRequest
+  (codecCasesPrepend NetworkPrimaryRequest (codecCase NetworkPrimaryRequest (prod (Header, NetworkCertificates)) 0 (codecPair Header NetworkCertificates headerCodec networkCertReaderBatchCodec) networkPrimaryReqVote
+    (fun (value : NetworkPrimaryRequest) => case value with
+    | 0 (payload : prod (Header, NetworkCertificates)) => valueSome (prod (Header, NetworkCertificates)) payload
+    | 1 (payload : NetworkPeerExchange) => valueNone (prod (Header, NetworkCertificates))
+    | 2 (payload : prod (ValueOption Epoch, ValueOption Digest)) => valueNone (prod (Header, NetworkCertificates))))
+    (codecCasesPrepend NetworkPrimaryRequest (codecCase NetworkPrimaryRequest (NetworkPeerExchange) 1 (networkPeerExchangeCodec) networkPrimaryReqPeerExchange
+    (fun (value : NetworkPrimaryRequest) => case value with
+    | 0 (payload : prod (Header, NetworkCertificates)) => valueNone (NetworkPeerExchange)
+    | 1 (payload : NetworkPeerExchange) => valueSome (NetworkPeerExchange) payload
+    | 2 (payload : prod (ValueOption Epoch, ValueOption Digest)) => valueNone (NetworkPeerExchange)))
+    (codecCase NetworkPrimaryRequest (prod (ValueOption Epoch, ValueOption Digest)) 2 (codecPair (ValueOption Epoch) (ValueOption Digest) (codecOption Epoch networkWireEpochCodec) (codecOption Digest networkWireDigestCodec)) networkPrimaryReqEpochRecord
+    (fun (value : NetworkPrimaryRequest) => case value with
+    | 0 (payload : prod (Header, NetworkCertificates)) => valueNone (prod (ValueOption Epoch, ValueOption Digest))
+    | 1 (payload : NetworkPeerExchange) => valueNone (prod (ValueOption Epoch, ValueOption Digest))
+    | 2 (payload : prod (ValueOption Epoch, ValueOption Digest)) => valueSome (prod (ValueOption Epoch, ValueOption Digest)) payload))))
+def networkPrimaryRequestEqual : NetworkPrimaryRequest -> NetworkPrimaryRequest -> Bool := fun (a : NetworkPrimaryRequest) (b : NetworkPrimaryRequest) => case a with
+  | 0 (left : prod (Header, NetworkCertificates)) => (case b with
+    | 0 (right : prod (Header, NetworkCertificates)) => networkPrimaryVoteRequestEqual left right
+    | 1 (right : NetworkPeerExchange) => inj 0 of 2 (tuple ())
+    | 2 (right : prod (ValueOption Epoch, ValueOption Digest)) => inj 0 of 2 (tuple ()))
+  | 1 (left : NetworkPeerExchange) => (case b with
+    | 0 (right : prod (Header, NetworkCertificates)) => inj 0 of 2 (tuple ())
+    | 1 (right : NetworkPeerExchange) => networkPeerExchangeEqual left right
+    | 2 (right : prod (ValueOption Epoch, ValueOption Digest)) => inj 0 of 2 (tuple ()))
+  | 2 (left : prod (ValueOption Epoch, ValueOption Digest)) => (case b with
+    | 0 (right : prod (Header, NetworkCertificates)) => inj 0 of 2 (tuple ())
+    | 1 (right : NetworkPeerExchange) => inj 0 of 2 (tuple ())
+    | 2 (right : prod (ValueOption Epoch, ValueOption Digest)) => networkPrimaryEpochRequestEqual left right)
+def NetworkPrimaryResponse : Type 0 := sum (NetworkVoteWire, HeaderDigests, prod (NetworkEpochRecord, NetworkEpochCertificate), NetworkPeerExchange, Bytes, Bytes)
+def networkPrimaryResVote : NetworkVoteWire -> NetworkPrimaryResponse := fun (value : NetworkVoteWire) => inj 0 of 6 value
+def networkPrimaryResMissingParents : HeaderDigests -> NetworkPrimaryResponse := fun (value : HeaderDigests) => inj 1 of 6 value
+def networkPrimaryResEpochRecord : prod (NetworkEpochRecord, NetworkEpochCertificate) -> NetworkPrimaryResponse := fun (value : prod (NetworkEpochRecord, NetworkEpochCertificate)) => inj 2 of 6 value
+def networkPrimaryResPeerExchange : NetworkPeerExchange -> NetworkPrimaryResponse := fun (value : NetworkPeerExchange) => inj 3 of 6 value
+def networkPrimaryResError : Bytes -> NetworkPrimaryResponse := fun (value : Bytes) => inj 4 of 6 value
+def networkPrimaryResRecoverableError : Bytes -> NetworkPrimaryResponse := fun (value : Bytes) => inj 5 of 6 value
+def networkPrimaryResponseCodec : Codec NetworkPrimaryResponse := codecSum NetworkPrimaryResponse
+  (codecCasesPrepend NetworkPrimaryResponse (codecCase NetworkPrimaryResponse (NetworkVoteWire) 0 (networkVoteWireCodec) networkPrimaryResVote
+    (fun (value : NetworkPrimaryResponse) => case value with
+    | 0 (payload : NetworkVoteWire) => valueSome (NetworkVoteWire) payload
+    | 1 (payload : HeaderDigests) => valueNone (NetworkVoteWire)
+    | 2 (payload : prod (NetworkEpochRecord, NetworkEpochCertificate)) => valueNone (NetworkVoteWire)
+    | 3 (payload : NetworkPeerExchange) => valueNone (NetworkVoteWire)
+    | 4 (payload : Bytes) => valueNone (NetworkVoteWire)
+    | 5 (payload : Bytes) => valueNone (NetworkVoteWire)))
+    (codecCasesPrepend NetworkPrimaryResponse (codecCase NetworkPrimaryResponse (HeaderDigests) 1 (codecList HeaderDigest HeaderDigests seqHeaderDigestOps networkWireHeaderDigestCodec) networkPrimaryResMissingParents
+    (fun (value : NetworkPrimaryResponse) => case value with
+    | 0 (payload : NetworkVoteWire) => valueNone (HeaderDigests)
+    | 1 (payload : HeaderDigests) => valueSome (HeaderDigests) payload
+    | 2 (payload : prod (NetworkEpochRecord, NetworkEpochCertificate)) => valueNone (HeaderDigests)
+    | 3 (payload : NetworkPeerExchange) => valueNone (HeaderDigests)
+    | 4 (payload : Bytes) => valueNone (HeaderDigests)
+    | 5 (payload : Bytes) => valueNone (HeaderDigests)))
+    (codecCasesPrepend NetworkPrimaryResponse (codecCase NetworkPrimaryResponse (prod (NetworkEpochRecord, NetworkEpochCertificate)) 2 (codecPair NetworkEpochRecord NetworkEpochCertificate networkEpochRecordCodec networkEpochCertificateCodec) networkPrimaryResEpochRecord
+    (fun (value : NetworkPrimaryResponse) => case value with
+    | 0 (payload : NetworkVoteWire) => valueNone (prod (NetworkEpochRecord, NetworkEpochCertificate))
+    | 1 (payload : HeaderDigests) => valueNone (prod (NetworkEpochRecord, NetworkEpochCertificate))
+    | 2 (payload : prod (NetworkEpochRecord, NetworkEpochCertificate)) => valueSome (prod (NetworkEpochRecord, NetworkEpochCertificate)) payload
+    | 3 (payload : NetworkPeerExchange) => valueNone (prod (NetworkEpochRecord, NetworkEpochCertificate))
+    | 4 (payload : Bytes) => valueNone (prod (NetworkEpochRecord, NetworkEpochCertificate))
+    | 5 (payload : Bytes) => valueNone (prod (NetworkEpochRecord, NetworkEpochCertificate))))
+    (codecCasesPrepend NetworkPrimaryResponse (codecCase NetworkPrimaryResponse (NetworkPeerExchange) 3 (networkPeerExchangeCodec) networkPrimaryResPeerExchange
+    (fun (value : NetworkPrimaryResponse) => case value with
+    | 0 (payload : NetworkVoteWire) => valueNone (NetworkPeerExchange)
+    | 1 (payload : HeaderDigests) => valueNone (NetworkPeerExchange)
+    | 2 (payload : prod (NetworkEpochRecord, NetworkEpochCertificate)) => valueNone (NetworkPeerExchange)
+    | 3 (payload : NetworkPeerExchange) => valueSome (NetworkPeerExchange) payload
+    | 4 (payload : Bytes) => valueNone (NetworkPeerExchange)
+    | 5 (payload : Bytes) => valueNone (NetworkPeerExchange)))
+    (codecCasesPrepend NetworkPrimaryResponse (codecCase NetworkPrimaryResponse (Bytes) 4 (codecStringUtf8) networkPrimaryResError
+    (fun (value : NetworkPrimaryResponse) => case value with
+    | 0 (payload : NetworkVoteWire) => valueNone (Bytes)
+    | 1 (payload : HeaderDigests) => valueNone (Bytes)
+    | 2 (payload : prod (NetworkEpochRecord, NetworkEpochCertificate)) => valueNone (Bytes)
+    | 3 (payload : NetworkPeerExchange) => valueNone (Bytes)
+    | 4 (payload : Bytes) => valueSome (Bytes) payload
+    | 5 (payload : Bytes) => valueNone (Bytes)))
+    (codecCase NetworkPrimaryResponse (Bytes) 5 (codecStringUtf8) networkPrimaryResRecoverableError
+    (fun (value : NetworkPrimaryResponse) => case value with
+    | 0 (payload : NetworkVoteWire) => valueNone (Bytes)
+    | 1 (payload : HeaderDigests) => valueNone (Bytes)
+    | 2 (payload : prod (NetworkEpochRecord, NetworkEpochCertificate)) => valueNone (Bytes)
+    | 3 (payload : NetworkPeerExchange) => valueNone (Bytes)
+    | 4 (payload : Bytes) => valueNone (Bytes)
+    | 5 (payload : Bytes) => valueSome (Bytes) payload)))))))
+def networkPrimaryResponseEqual : NetworkPrimaryResponse -> NetworkPrimaryResponse -> Bool := fun (a : NetworkPrimaryResponse) (b : NetworkPrimaryResponse) => case a with
+  | 0 (left : NetworkVoteWire) => (case b with
+    | 0 (right : NetworkVoteWire) => networkVoteWireEqual left right
+    | 1 (right : HeaderDigests) => inj 0 of 2 (tuple ())
+    | 2 (right : prod (NetworkEpochRecord, NetworkEpochCertificate)) => inj 0 of 2 (tuple ())
+    | 3 (right : NetworkPeerExchange) => inj 0 of 2 (tuple ())
+    | 4 (right : Bytes) => inj 0 of 2 (tuple ())
+    | 5 (right : Bytes) => inj 0 of 2 (tuple ()))
+  | 1 (left : HeaderDigests) => (case b with
+    | 0 (right : NetworkVoteWire) => inj 0 of 2 (tuple ())
+    | 1 (right : HeaderDigests) => networkHeaderDigestsEqual left right
+    | 2 (right : prod (NetworkEpochRecord, NetworkEpochCertificate)) => inj 0 of 2 (tuple ())
+    | 3 (right : NetworkPeerExchange) => inj 0 of 2 (tuple ())
+    | 4 (right : Bytes) => inj 0 of 2 (tuple ())
+    | 5 (right : Bytes) => inj 0 of 2 (tuple ()))
+  | 2 (left : prod (NetworkEpochRecord, NetworkEpochCertificate)) => (case b with
+    | 0 (right : NetworkVoteWire) => inj 0 of 2 (tuple ())
+    | 1 (right : HeaderDigests) => inj 0 of 2 (tuple ())
+    | 2 (right : prod (NetworkEpochRecord, NetworkEpochCertificate)) => networkPrimaryEpochResponseEqual left right
+    | 3 (right : NetworkPeerExchange) => inj 0 of 2 (tuple ())
+    | 4 (right : Bytes) => inj 0 of 2 (tuple ())
+    | 5 (right : Bytes) => inj 0 of 2 (tuple ()))
+  | 3 (left : NetworkPeerExchange) => (case b with
+    | 0 (right : NetworkVoteWire) => inj 0 of 2 (tuple ())
+    | 1 (right : HeaderDigests) => inj 0 of 2 (tuple ())
+    | 2 (right : prod (NetworkEpochRecord, NetworkEpochCertificate)) => inj 0 of 2 (tuple ())
+    | 3 (right : NetworkPeerExchange) => networkPeerExchangeEqual left right
+    | 4 (right : Bytes) => inj 0 of 2 (tuple ())
+    | 5 (right : Bytes) => inj 0 of 2 (tuple ()))
+  | 4 (left : Bytes) => (case b with
+    | 0 (right : NetworkVoteWire) => inj 0 of 2 (tuple ())
+    | 1 (right : HeaderDigests) => inj 0 of 2 (tuple ())
+    | 2 (right : prod (NetworkEpochRecord, NetworkEpochCertificate)) => inj 0 of 2 (tuple ())
+    | 3 (right : NetworkPeerExchange) => inj 0 of 2 (tuple ())
+    | 4 (right : Bytes) => bytesEqual left right
+    | 5 (right : Bytes) => inj 0 of 2 (tuple ()))
+  | 5 (left : Bytes) => (case b with
+    | 0 (right : NetworkVoteWire) => inj 0 of 2 (tuple ())
+    | 1 (right : HeaderDigests) => inj 0 of 2 (tuple ())
+    | 2 (right : prod (NetworkEpochRecord, NetworkEpochCertificate)) => inj 0 of 2 (tuple ())
+    | 3 (right : NetworkPeerExchange) => inj 0 of 2 (tuple ())
+    | 4 (right : Bytes) => inj 0 of 2 (tuple ())
+    | 5 (right : Bytes) => bytesEqual left right)
+def NetworkPrimaryGossip : Type 0 := sum (NetworkCertificateWire, NetworkConsensusResult, NetworkEpochVote)
+def networkPrimaryGossipCertificate : NetworkCertificateWire -> NetworkPrimaryGossip := fun (value : NetworkCertificateWire) => inj 0 of 3 value
+def networkPrimaryGossipConsensus : NetworkConsensusResult -> NetworkPrimaryGossip := fun (value : NetworkConsensusResult) => inj 1 of 3 value
+def networkPrimaryGossipEpochVote : NetworkEpochVote -> NetworkPrimaryGossip := fun (value : NetworkEpochVote) => inj 2 of 3 value
+def networkPrimaryGossipCodec : Codec NetworkPrimaryGossip := codecSum NetworkPrimaryGossip
+  (codecCasesPrepend NetworkPrimaryGossip (codecCase NetworkPrimaryGossip (NetworkCertificateWire) 0 (networkCertificateWireCodec) networkPrimaryGossipCertificate
+    (fun (value : NetworkPrimaryGossip) => case value with
+    | 0 (payload : NetworkCertificateWire) => valueSome (NetworkCertificateWire) payload
+    | 1 (payload : NetworkConsensusResult) => valueNone (NetworkCertificateWire)
+    | 2 (payload : NetworkEpochVote) => valueNone (NetworkCertificateWire)))
+    (codecCasesPrepend NetworkPrimaryGossip (codecCase NetworkPrimaryGossip (NetworkConsensusResult) 1 (networkConsensusResultCodec) networkPrimaryGossipConsensus
+    (fun (value : NetworkPrimaryGossip) => case value with
+    | 0 (payload : NetworkCertificateWire) => valueNone (NetworkConsensusResult)
+    | 1 (payload : NetworkConsensusResult) => valueSome (NetworkConsensusResult) payload
+    | 2 (payload : NetworkEpochVote) => valueNone (NetworkConsensusResult)))
+    (codecCase NetworkPrimaryGossip (NetworkEpochVote) 2 (networkEpochVoteCodec) networkPrimaryGossipEpochVote
+    (fun (value : NetworkPrimaryGossip) => case value with
+    | 0 (payload : NetworkCertificateWire) => valueNone (NetworkEpochVote)
+    | 1 (payload : NetworkConsensusResult) => valueNone (NetworkEpochVote)
+    | 2 (payload : NetworkEpochVote) => valueSome (NetworkEpochVote) payload))))
+def networkPrimaryGossipEqual : NetworkPrimaryGossip -> NetworkPrimaryGossip -> Bool := fun (a : NetworkPrimaryGossip) (b : NetworkPrimaryGossip) => case a with
+  | 0 (left : NetworkCertificateWire) => (case b with
+    | 0 (right : NetworkCertificateWire) => networkCertificateWireEqual left right
+    | 1 (right : NetworkConsensusResult) => inj 0 of 2 (tuple ())
+    | 2 (right : NetworkEpochVote) => inj 0 of 2 (tuple ()))
+  | 1 (left : NetworkConsensusResult) => (case b with
+    | 0 (right : NetworkCertificateWire) => inj 0 of 2 (tuple ())
+    | 1 (right : NetworkConsensusResult) => networkConsensusResultEqual left right
+    | 2 (right : NetworkEpochVote) => inj 0 of 2 (tuple ()))
+  | 2 (left : NetworkEpochVote) => (case b with
+    | 0 (right : NetworkCertificateWire) => inj 0 of 2 (tuple ())
+    | 1 (right : NetworkConsensusResult) => inj 0 of 2 (tuple ())
+    | 2 (right : NetworkEpochVote) => networkEpochVoteEqual left right)
+def NetworkMissingCertificatesRequest : Type 0 := prod (Round, NetworkSkipRounds, Nat)
+def networkMissingCertificatesRequestMake : Round -> NetworkSkipRounds -> Nat -> NetworkMissingCertificatesRequest :=
+  fun (lower : Round) (skip : NetworkSkipRounds) (maxResponse : Nat) => tuple (lower, skip, wordLow64 maxResponse)
+def networkMissingCertificatesRequestCodec : Codec NetworkMissingCertificatesRequest :=
+  codecTriple Round NetworkSkipRounds Nat networkWireRoundCodec networkSyncSkipRoundsCodec codecU64

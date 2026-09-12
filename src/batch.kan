@@ -45,6 +45,8 @@ def sealedBatchSplit : SealedBatch -> prod (Batch, BatchDigest) := fun (sealed :
   | sealedBatchValue batch claimed => tuple (batch, claimed)
 def sealedBatchBatch : SealedBatch -> Batch := fun (sealed : SealedBatch) => (sealedBatchSplit sealed).0
 def sealedBatchDigest : SealedBatch -> BatchDigest := fun (sealed : SealedBatch) => (sealedBatchSplit sealed).1
+def sealedBatchEqual : SealedBatch -> SealedBatch -> Bool := fun (a : SealedBatch) (b : SealedBatch) =>
+  boolAnd (batchEqual (sealedBatchBatch a) (sealedBatchBatch b)) (batchDigestEqual (sealedBatchDigest a) (sealedBatchDigest b))
 def sealedBatchCodec : Codec SealedBatch := codecIso (prod (Batch, BatchDigest)) SealedBatch
   (fun (pair : prod (Batch, BatchDigest)) => sealedBatchClaim pair.0 pair.1) sealedBatchSplit
   (codecPair Batch BatchDigest batchCodec batchDigestCodec)

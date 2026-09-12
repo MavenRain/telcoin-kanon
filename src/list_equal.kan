@@ -1,0 +1,10 @@
+def listEqualBy : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> (A -> A -> Bool) -> L -> L -> Bool :=
+  fun (0 A : Type 0) (0 L : Type 0) (ops : ListOps A L) (equal : A -> A -> Bool) (left : L) (right : L) =>
+    let result : prod (L, Bool) := listFoldLeft A L (prod (L, Bool)) ops
+      (fun (state : prod (L, Bool)) (value : A) => case state.1 with
+      | 0 (unit : prod ()) => state
+      | 1 (unit : prod ()) => case (ops.4 state.0) with
+        | 0 (unit : prod ()) => tuple (state.0, inj 0 of 2 (tuple ()))
+        | 1 (other : A) => tuple (ops.5 state.0, equal value other))
+      (tuple (right, inj 1 of 2 (tuple ()))) left in
+    case (ops.4 result.0) with | 0 (unit : prod ()) => result.1 | 1 (value : A) => inj 0 of 2 (tuple ())

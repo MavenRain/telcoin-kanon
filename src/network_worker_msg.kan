@@ -1,0 +1,77 @@
+def NetworkWorkerRequest : Type 0 := sum (SealedBatch, NetworkPeerExchange)
+def networkWorkerReqReportBatch : SealedBatch -> NetworkWorkerRequest := fun (value : SealedBatch) => inj 0 of 2 value
+def networkWorkerReqPeerExchange : NetworkPeerExchange -> NetworkWorkerRequest := fun (value : NetworkPeerExchange) => inj 1 of 2 value
+def networkWorkerRequestCodec : Codec NetworkWorkerRequest := codecSum NetworkWorkerRequest
+  (codecCasesPrepend NetworkWorkerRequest (codecCase NetworkWorkerRequest (SealedBatch) 0 (sealedBatchCodec) networkWorkerReqReportBatch
+    (fun (value : NetworkWorkerRequest) => case value with
+    | 0 (payload : SealedBatch) => valueSome (SealedBatch) payload
+    | 1 (payload : NetworkPeerExchange) => valueNone (SealedBatch)))
+    (codecCase NetworkWorkerRequest (NetworkPeerExchange) 1 (networkPeerExchangeCodec) networkWorkerReqPeerExchange
+    (fun (value : NetworkWorkerRequest) => case value with
+    | 0 (payload : SealedBatch) => valueNone (NetworkPeerExchange)
+    | 1 (payload : NetworkPeerExchange) => valueSome (NetworkPeerExchange) payload)))
+def networkWorkerRequestEqual : NetworkWorkerRequest -> NetworkWorkerRequest -> Bool := fun (a : NetworkWorkerRequest) (b : NetworkWorkerRequest) => case a with
+  | 0 (left : SealedBatch) => (case b with
+    | 0 (right : SealedBatch) => sealedBatchEqual left right
+    | 1 (right : NetworkPeerExchange) => inj 0 of 2 (tuple ()))
+  | 1 (left : NetworkPeerExchange) => (case b with
+    | 0 (right : SealedBatch) => inj 0 of 2 (tuple ())
+    | 1 (right : NetworkPeerExchange) => networkPeerExchangeEqual left right)
+def networkCodecUnitEqual : CodecUnit -> CodecUnit -> Bool := fun (a : CodecUnit) (b : CodecUnit) => natEq 0 0
+def NetworkWorkerResponse : Type 0 := sum (CodecUnit, NetworkPeerExchange, Bytes, Bytes)
+def networkWorkerResReportBatch : CodecUnit -> NetworkWorkerResponse := fun (value : CodecUnit) => inj 0 of 4 value
+def networkWorkerResPeerExchange : NetworkPeerExchange -> NetworkWorkerResponse := fun (value : NetworkPeerExchange) => inj 1 of 4 value
+def networkWorkerResError : Bytes -> NetworkWorkerResponse := fun (value : Bytes) => inj 2 of 4 value
+def networkWorkerResRecoverableError : Bytes -> NetworkWorkerResponse := fun (value : Bytes) => inj 3 of 4 value
+def networkWorkerResponseCodec : Codec NetworkWorkerResponse := codecSum NetworkWorkerResponse
+  (codecCasesPrepend NetworkWorkerResponse (codecCase NetworkWorkerResponse (CodecUnit) 0 (codecUnit) networkWorkerResReportBatch
+    (fun (value : NetworkWorkerResponse) => case value with
+    | 0 (payload : CodecUnit) => valueSome (CodecUnit) payload
+    | 1 (payload : NetworkPeerExchange) => valueNone (CodecUnit)
+    | 2 (payload : Bytes) => valueNone (CodecUnit)
+    | 3 (payload : Bytes) => valueNone (CodecUnit)))
+    (codecCasesPrepend NetworkWorkerResponse (codecCase NetworkWorkerResponse (NetworkPeerExchange) 1 (networkPeerExchangeCodec) networkWorkerResPeerExchange
+    (fun (value : NetworkWorkerResponse) => case value with
+    | 0 (payload : CodecUnit) => valueNone (NetworkPeerExchange)
+    | 1 (payload : NetworkPeerExchange) => valueSome (NetworkPeerExchange) payload
+    | 2 (payload : Bytes) => valueNone (NetworkPeerExchange)
+    | 3 (payload : Bytes) => valueNone (NetworkPeerExchange)))
+    (codecCasesPrepend NetworkWorkerResponse (codecCase NetworkWorkerResponse (Bytes) 2 (codecStringUtf8) networkWorkerResError
+    (fun (value : NetworkWorkerResponse) => case value with
+    | 0 (payload : CodecUnit) => valueNone (Bytes)
+    | 1 (payload : NetworkPeerExchange) => valueNone (Bytes)
+    | 2 (payload : Bytes) => valueSome (Bytes) payload
+    | 3 (payload : Bytes) => valueNone (Bytes)))
+    (codecCase NetworkWorkerResponse (Bytes) 3 (codecStringUtf8) networkWorkerResRecoverableError
+    (fun (value : NetworkWorkerResponse) => case value with
+    | 0 (payload : CodecUnit) => valueNone (Bytes)
+    | 1 (payload : NetworkPeerExchange) => valueNone (Bytes)
+    | 2 (payload : Bytes) => valueNone (Bytes)
+    | 3 (payload : Bytes) => valueSome (Bytes) payload)))))
+def networkWorkerResponseEqual : NetworkWorkerResponse -> NetworkWorkerResponse -> Bool := fun (a : NetworkWorkerResponse) (b : NetworkWorkerResponse) => case a with
+  | 0 (left : CodecUnit) => (case b with
+    | 0 (right : CodecUnit) => networkCodecUnitEqual left right
+    | 1 (right : NetworkPeerExchange) => inj 0 of 2 (tuple ())
+    | 2 (right : Bytes) => inj 0 of 2 (tuple ())
+    | 3 (right : Bytes) => inj 0 of 2 (tuple ()))
+  | 1 (left : NetworkPeerExchange) => (case b with
+    | 0 (right : CodecUnit) => inj 0 of 2 (tuple ())
+    | 1 (right : NetworkPeerExchange) => networkPeerExchangeEqual left right
+    | 2 (right : Bytes) => inj 0 of 2 (tuple ())
+    | 3 (right : Bytes) => inj 0 of 2 (tuple ()))
+  | 2 (left : Bytes) => (case b with
+    | 0 (right : CodecUnit) => inj 0 of 2 (tuple ())
+    | 1 (right : NetworkPeerExchange) => inj 0 of 2 (tuple ())
+    | 2 (right : Bytes) => bytesEqual left right
+    | 3 (right : Bytes) => inj 0 of 2 (tuple ()))
+  | 3 (left : Bytes) => (case b with
+    | 0 (right : CodecUnit) => inj 0 of 2 (tuple ())
+    | 1 (right : NetworkPeerExchange) => inj 0 of 2 (tuple ())
+    | 2 (right : Bytes) => inj 0 of 2 (tuple ())
+    | 3 (right : Bytes) => bytesEqual left right)
+def NetworkWorkerGossip : Type 0 := prod (Epoch, BatchDigest)
+def networkWorkerGossipBatch : Epoch -> BatchDigest -> NetworkWorkerGossip := fun (epoch : Epoch) (hash : BatchDigest) => tuple (epoch, hash)
+def networkWorkerGossipCodec : Codec NetworkWorkerGossip := codecSum NetworkWorkerGossip
+  (codecCase NetworkWorkerGossip NetworkWorkerGossip 0 (codecPair Epoch BatchDigest networkWireEpochCodec networkWireBatchDigestCodec)
+    (fun (value : NetworkWorkerGossip) => networkWorkerGossipBatch value.0 value.1) (fun (value : NetworkWorkerGossip) => valueSome NetworkWorkerGossip value))
+def networkWorkerGossipEqual : NetworkWorkerGossip -> NetworkWorkerGossip -> Bool := fun (a : NetworkWorkerGossip) (b : NetworkWorkerGossip) => boolAnd (epochEqual a.0 b.0) (batchDigestEqual a.1 b.1)

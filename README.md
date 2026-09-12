@@ -30,9 +30,11 @@ Network scalar and BLS wire types, Base58, protocol identifiers, frame envelopes
 epoch records and node record compatibility pass focused comparisons. Roaring
 bitmaps, vote and certificate adapters, epoch certificates and peer exchange also
 match the OCaml reference. Synchronization requests, frames, chunking and pure
-stream readers pass 927 further comparisons.
-The live persistence protocol, filesystem durability, production consensus crypto
-and the remaining network messages and state machines still need work. The source has 178 implementation modules
+stream readers pass 927 further comparisons. All 24 pinned network modules now
+have differential coverage, including primary and worker messages, gossip rules
+and node routing.
+The live persistence protocol, explicit fork integration, filesystem durability,
+production consensus crypto and the complete public runtime interface still need work. The source has 178 implementation modules
 across 25 libraries. [PORTING.md](PORTING.md) records module coverage and the
 next acceptance target. [VALIDATION.md](VALIDATION.md) records tested behavior.
 

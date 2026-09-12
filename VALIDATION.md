@@ -1,5 +1,28 @@
 # Validation
 
+## Complete pinned network module coverage
+
+Primary and worker messages and gossip rules pass 4,357 OCaml differential rows
+in five groups. Checks cover every message variant, field equality, unverified
+sealed-batch claims, all byte truncations, malformed UTF-8, optional fields,
+signed chain IDs, cross-topic primary payload decoding, unsigned u64 message IDs,
+fallback sources, first-match topic policies, missing sources and penalty order.
+Capture: `.kanon-exec/run-ZBhLs2`, exit 0, 34.1 seconds.
+
+Node routing passes 193 OCaml differential rows in three groups: all request,
+response and gossip verdicts; all ten unmapped classes; ordered checked parents;
+all five certificate states; retries; committee fan-out; response routing;
+certificate publication; and both timer kinds and committed outputs staying local.
+Capture: `.kanon-exec/run-GBdwf3`, exit 0, 88.4 seconds.
+All 32 generated collection families match their templates:
+`.kanon-exec/run-lPKrjt`, exit 0.
+
+These milestones bring all 24 network modules in the pinned OCaml revision under
+focused differential coverage, totaling 11,127 comparisons across the recorded
+network suites. The source itself defers sockets, gossip mesh operation and peer
+management. Production consensus crypto and the complete port's final regression
+and public runtime surface remain separate work.
+
 ## Roaring, certificates and peer exchange
 
 Synchronization passes 927 OCaml differential rows in six groups: worker and
