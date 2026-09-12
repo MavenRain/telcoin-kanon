@@ -1,0 +1,3 @@
+-- The upstream EVM library re-exports the shared Hash32 representation.
+def EvmHash32 : Type 0 := Hash32
+def evmHexOfBytes : Bytes -> Bytes := bytesHex

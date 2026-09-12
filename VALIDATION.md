@@ -1,5 +1,31 @@
 # Validation
 
+## Durable codecs and live driver writes
+
+All 30 checkpoint codecs and durable record/metadata payloads pass 4,724 OCaml
+differential comparisons in four groups. Coverage includes every byte truncation
+of representative values, exact trailing counts, native/u32/timestamp bounds,
+key widths, ordered map rejection, zero storage/account elimination, committee
+reconstruction, capped recent hashes, rewards restoration, both phase and anchor
+variants, all 22 stored header fields and executed consensus tips.
+Capture: `.kanon-exec/run-6LnQoa`, exit 0, 175.5 seconds.
+An earlier fixture incorrectly required malformed inputs to succeed; correcting
+that assertion preserves exact comparison of both successful and rejected inputs.
+
+The live mint, record, receive, step and snapshot protocol passes 13 comparisons
+in three groups. They cover repeated pure minting, equality of persisted and
+executed blocks, received records surviving a failed attachment, replay from
+stored bodies and rejection of crossed consensus histories at the checkpoint floor.
+Capture: `.kanon-exec/run-7d3HuV`, exit 0, 583.6 seconds.
+
+Test artifact reuse requires matching pinned compiler, current source closure,
+ordered exports and Wasm content hashes. OCaml compilation and all comparisons
+still run. Two artifact rejection tests and three source-closure tests pass:
+`.kanon-exec/run-6d3nd7`, exit 0. A full fixed-revision regression remains pending.
+The complete 4,724-row codec suite also passes with verified artifact reuse:
+`.kanon-exec/run-Q3EbXs`, exit 0, 86.5 seconds. The preceding retry reached the
+unchanged 30-second OCaml compiler timeout; a serial retry completed successfully.
+
 ## Complete pinned network module coverage
 
 Primary and worker messages and gossip rules pass 4,357 OCaml differential rows

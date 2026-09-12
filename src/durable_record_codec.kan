@@ -1,0 +1,38 @@
+mu DurableRecordError : Type 0 :=
+| durableRecordBcs (error : BcsError) : DurableRecordError
+| durableRecordTrailing (left : Nat) : DurableRecordError
+| durableRecordRebuild (error : ConsensusRecordError) : DurableRecordError
+def durableRecordErrorText : DurableRecordError -> Bytes := fun (error : DurableRecordError) =>
+  append b"record payload: " (match error as self in DurableRecordError return Bytes with
+  | durableRecordBcs inner => bcsErrorText inner
+  | durableRecordTrailing left => append (decimal64 left) b" byte(s) left over after decoding"
+  | durableRecordRebuild inner => consensusRecordErrorText inner)
+def durableRecordExactly : (0 A : Type 0) -> Codec A -> Bytes -> sum (DurableRecordError, A) :=
+  fun (0 A : Type 0) (codec : Codec A) (bytes : Bytes) => case (codecRead A codec (bcsStart bytes)) with
+  | 0 (error : BcsError) => inj 0 of 2 (durableRecordBcs error)
+  | 1 (decoded : prod (A, BcsReader)) =>
+    let left : Nat := bytesLength (bcsRemaining decoded.1) in case (natEq left 0) with
+    | 0 (unit : prod ()) => inj 0 of 2 (durableRecordTrailing left)
+    | 1 (unit : prod ()) => inj 1 of 2 decoded.0
+def durableRecordWireCodec : Codec (prod (ConsensusBlock, Batches)) :=
+  codecPair ConsensusBlock Batches consensusBlockCodec (codecList Batch Batches seqBatchOps batchCodec)
+def durableRecordEncode : ConsensusRecord -> Bytes := fun (record : ConsensusRecord) =>
+  codecWrite (prod (ConsensusBlock, Batches)) durableRecordWireCodec (consensusRecordFields record)
+def durableRecordDecode : Bytes -> sum (DurableRecordError, ConsensusRecord) := fun (bytes : Bytes) =>
+  case (durableRecordExactly (prod (ConsensusBlock, Batches)) durableRecordWireCodec bytes) with
+  | 0 (error : DurableRecordError) => inj 0 of 2 error
+  | 1 (wire : prod (ConsensusBlock, Batches)) => case (consensusRecordOfWire wire) with
+    | 0 (error : ConsensusRecordError) => inj 0 of 2 (durableRecordRebuild error)
+    | 1 (record : ConsensusRecord) => inj 1 of 2 record
+def durableEpochOption : Nat -> ValueOption Epoch := fun (n : Nat) => case (natLt 4294967295 n) with
+  | 1 (unit : prod ()) => valueNone Epoch
+  | 0 (unit : prod ()) => valueSome Epoch (epochValue n)
+def durableEpochCodec : Codec Epoch := codecRefine Nat Epoch durableEpochOption epochNat codecU64
+def DurableRecordMeta : Type 0 := prod (Epoch, ConsensusBlockNumber, OutputDigest)
+def durableRecordMetaCodec : Codec DurableRecordMeta := codecTriple Epoch ConsensusBlockNumber OutputDigest
+  durableEpochCodec consensusBlockNumberCodec (codecIso Bytes OutputDigest
+    (fun (raw : Bytes) => outputDigestValue raw) outputDigestBytes (codecFixedBytes 32))
+def durableRecordMetaEncode : DurableRecordMeta -> Bytes := codecWrite DurableRecordMeta durableRecordMetaCodec
+def durableRecordMetaDecode : Bytes -> sum (DurableRecordError, DurableRecordMeta) := durableRecordExactly DurableRecordMeta durableRecordMetaCodec
+def durableRecordMetaEqual : DurableRecordMeta -> DurableRecordMeta -> Bool := fun (a : DurableRecordMeta) (b : DurableRecordMeta) =>
+  boolAnd (epochEqual a.0 b.0) (boolAnd (consensusBlockNumberEqual a.1 b.1) (outputDigestEqual a.2 b.2))

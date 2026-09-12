@@ -1,0 +1,43 @@
+def checkpointHostIntOfU64 : Nat -> ValueOption HostInt := fun (n : Nat) => case (natLt hostIntMax n) with
+  | 1 (unit : prod ()) => valueNone HostInt
+  | 0 (unit : prod ()) => valueSome HostInt (hostIntPositive n)
+def checkpointHostIntU64 : HostInt -> Nat := fun (value : HostInt) => match value as self in HostInt return Nat with
+  | hostIntPositive n => n
+  | hostIntNegative n => natSub 18446744073709551616 n
+def checkpointNatCodec : Codec HostInt := codecRefine Nat HostInt checkpointHostIntOfU64 checkpointHostIntU64 codecU64
+def checkpointU256Codec : Codec U256 := codecRefine Bytes U256 u256OfBeBytes u256ToBeBytes (codecFixedBytes 32)
+def checkpointKeccakCodec : Codec Keccak := codecRefine Bytes Keccak keccakOfStoredBytes keccakBytes (codecFixedBytes 32)
+def checkpointHash32Codec : Codec Hash32 := codecRefine Bytes Hash32 hash32OfBytes hash32Bytes (codecFixedBytes 32)
+def checkpointAddressCodec : Codec Address := codecRefine Bytes Address addressOfBytes addressBytes (codecFixedBytes 20)
+def checkpointDigestCodec : Codec Digest := codecRefine Bytes Digest digestOfBytes digestBytes (codecFixedBytes 32)
+def checkpointBatchDigestCodec : Codec BatchDigest := codecRefine Bytes BatchDigest batchDigestOfBytes batchDigestBytes (codecFixedBytes 32)
+def checkpointOutputDigestCodec : Codec OutputDigest := codecRefine Bytes OutputDigest outputDigestOfBytes outputDigestBytes (codecFixedBytes 32)
+def checkpointEpochCodec : Codec Epoch := durableEpochCodec
+def checkpointRoundOption : Nat -> ValueOption Round := fun (n : Nat) => case (natLt 4294967295 n) with
+  | 1 (unit : prod ()) => valueNone Round
+  | 0 (unit : prod ()) => valueSome Round (roundValue n)
+def checkpointRoundCodec : Codec Round := codecRefine Nat Round checkpointRoundOption roundNat codecU64
+def checkpointTimestampCodec : Codec Timestamp := timestampCodec
+def checkpointSequenceCodec : Codec SequenceNumber := codecIso (prod (Epoch, Round)) SequenceNumber
+  (fun (pair : prod (Epoch, Round)) => sequenceNumber pair.0 pair.1)
+  (fun (value : SequenceNumber) => tuple (sequenceEpoch value, sequenceRound value))
+  (codecPair Epoch Round checkpointEpochCodec checkpointRoundCodec)
+def checkpointNonceCodec : Codec Nonce := codecRefine Nat Nonce nonceOfNat nonceNat codecU64
+def checkpointBloomCodec : Codec Bloom := codecRefine Bytes Bloom bloomOfBytes bloomBytes (codecFixedBytes 256)
+def checkpointPositionCodec : Codec EvmBatchPosition := codecIso U256 EvmBatchPosition evmBatchPositionOfWord evmBatchPositionWord checkpointU256Codec
+def CheckpointWithdrawalWire : Type 0 := prod (HostInt, HostInt, Address, HostInt)
+def checkpointWithdrawalWireCodec : Codec CheckpointWithdrawalWire := codecIso (prod (prod (HostInt, HostInt, Address), HostInt)) CheckpointWithdrawalWire
+  (fun (pair : prod (prod (HostInt, HostInt, Address), HostInt)) => tuple (pair.0.0, pair.0.1, pair.0.2, pair.1))
+  (fun (value : CheckpointWithdrawalWire) => tuple (tuple (value.0, value.1, value.2), value.3))
+  (codecPair (prod (HostInt, HostInt, Address)) HostInt
+    (codecTriple HostInt HostInt Address checkpointNatCodec checkpointNatCodec checkpointAddressCodec) checkpointNatCodec)
+def checkpointWithdrawalCodec : Codec Withdrawal := codecRefine CheckpointWithdrawalWire Withdrawal
+  (fun (wire : CheckpointWithdrawalWire) => withdrawalMake wire.0 wire.1 wire.2 wire.3)
+  (fun (value : Withdrawal) => tuple (hostIntPositive value.0, hostIntPositive value.1, value.2, hostIntPositive value.3))
+  checkpointWithdrawalWireCodec
+def checkpointPublicKeyCodec : Codec PublicKey := codecRefine Bytes PublicKey publicKeyOfBytes publicKeyBytes codecBytes
+def checkpointAuthorityIdCodec : Codec AuthorityId := codecRefine Bytes AuthorityId authorityIdOfBytes authorityIdBytes codecBytes
+def checkpointAuthorityCodec : Codec Authority := codecIso (prod (PublicKey, Address)) Authority
+  (fun (pair : prod (PublicKey, Address)) => authorityMake pair.0 pair.1)
+  (fun (authority : Authority) => tuple (authorityKey authority, authorityAddress authority))
+  (codecPair PublicKey Address checkpointPublicKeyCodec checkpointAddressCodec)

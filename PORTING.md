@@ -16,8 +16,8 @@ not a claim of complete module parity.
 | 3 | Timing, consensus recovery and tn_execution. Compare durable-before-action transitions, restart transcripts and consensus-chain hashes. | Pure execution, replay, reference store and consensus recovery tested. Durable shells remain. |
 | 4 | tn_state and EVM ALU/interpreter, then environment, access/refund, storage, calls, creation and transaction execution. Preserve full U256 arithmetic, gas, rollback and fork-specific outcomes. | Account state, EVM primitives, environments, instruction execution, calls, creation, rollback, fork schedules, all nine precompiles and transaction execution tested. |
 | 5 | RLP, Keccak, trie/state roots, transaction envelopes, signatures and source-supported precompiles. Reuse existing golden fixtures; compare acceptance, output, gas and errors separately. | RLP, Keccak, tries, account/state roots, withdrawals, blooms, receipt encoding/roots, secp256k1 recovery, source-supported precompiles and all four signed envelope types tested. Typed block transaction wrappers remain. |
-| 6 | Batch validation, executed blocks, engine, driver, registry and epoch transitions. Compare complete committed/executed output and checkpoint consistency. | Batch validation, attachment, planning, payload filtering, registry ABI, shuffle and engine state tested. Block, complete engine execution and driver integration validation remain. |
-| 7 | Durable file framing, logs, locks and checkpoints. Audit the host's fsync, atomic replacement, locking and recovery guarantees before porting the IO shell. Test interrupted writes and restart behavior. | File codecs, durable frames and log headers tested; filesystem IO, locks and recovery remain. |
+| 6 | Batch validation, executed blocks, engine, driver, registry and epoch transitions. Compare complete committed/executed output and checkpoint consistency. | Block execution, real registry transitions, driver writes and replay tested. Explicit fork and transaction-skip integration remains. |
+| 7 | Durable file framing, logs, locks and checkpoints. Audit the host's fsync, atomic replacement, locking and recovery guarantees before porting the IO shell. Test interrupted writes and restart behavior. | File containers, record/checkpoint codecs, durable frames and log headers tested; filesystem IO, locks and recovery remain. |
 | 8 | tn_network and Snappy pure codecs through chunk 44, then integrate source-supported crypto implementations and shells. Compare wire vectors, canonicality, corruption and size-limit cases. | Snappy and all 24 network modules tested; production crypto and public runtime integration remain. |
 
 Milestones 4 and 5 overlap at hash/state/transaction dependencies and should be
@@ -121,7 +121,7 @@ safety or liveness for every possible schedule.
 | lib/driver/batch_store.ml | Ported: digest-keyed body storage and lookup, src/batch_store.kan; 15 OCaml differential rows |
 | lib/driver/chain_spec.ml | Partial: real registry genesis, system predeploys and saturating boundaries validated through driver integration; explicit fork schedule scenarios remain, src/chain_spec.kan |
 | lib/driver/checkpoint.ml | Ported: persisted engine and executed consensus tip with watermark, accumulator and phase validated by 15 restart rows and real registry closing replay, src/checkpoint.kan |
-| lib/driver/driver.ml | Partial: handoff passes 36 OCaml rows, output folds 22 rows, restart 15 rows and real registry closing/replay/handoff three scenarios; live persistence protocol and explicit fork schedules remain |
+| lib/driver/driver.ml | Partial: handoff, folds, restart, real registry transitions and the live write protocol are validated; 13 additional rows cover mint purity, failed-step recovery and crossed histories; explicit fork schedules remain |
 | lib/driver/outcome.ml | Ported: advance/sealed/halted outcomes, typed errors, executed prefixes and unconsumed suffixes validated through driver folds and registry integration, src/driver_types.kan and src/driver_outcome.kan |
 | lib/driver/subscriber.ml | Ported: shared mint operation and atomic payload attachment, src/subscriber.kan; 36 OCaml differential rows |
 | lib/durable/append_log.ml | Partial: header validation, ordered identity comparisons and errors pass 657 shared OCaml rows, src/append_log_codec.kan; filesystem append, locking and healing pending |
@@ -130,10 +130,10 @@ safety or liveness for every possible schedule.
 | lib/durable/io.ml | Partial: operation and error types/renderers defined in src/durable_io_types.kan; guarded syscalls and counters pending |
 | lib/durable/io_ops.ml | Pending |
 | lib/durable/store_lock.ml | Partial: typed errors and exact rendering, src/store_lock_types.kan; process register and POSIX locking pending |
-| lib/durable_checkpoint/checkpoint_codec.ml | Pending |
+| lib/durable_checkpoint/checkpoint_codec.ml | Ported: all 30 scalar and composite codecs, constructor restoration and full stored checkpoint shape; shares 4724 OCaml rows with record payloads, src/checkpoint_*codec*.kan |
 | lib/durable_checkpoint/checkpoint_file.ml | Pending |
 | lib/durable_store/consensus_store_disk.ml | Pending |
-| lib/durable_store/record_codec.ml | Pending |
+| lib/durable_store/record_codec.ml | Ported: exact record and metadata codecs, trailing counts and typed record reconstruction; shares 4724 OCaml rows with checkpoint codecs, src/durable_record_codec.kan |
 | lib/engine/anchor.ml | Ported: genesis anchors, header conversion and advancing hashes validated by snapshots, driver folds and real registry integration, src/execution_engine_types.kan |
 | lib/engine/block_number.ml | Ported: native signed block heights and wrapping successor, src/execution_engine_types.kan; seven OCaml boundary comparisons |
 | lib/engine/config.ml | Partial: default configuration and restoration validated with 144 snapshot cases; explicit schedule execution validation pending, src/execution_engine_types.kan |
@@ -173,8 +173,8 @@ safety or liveness for every possible schedule.
 | lib/evm/fork_schedule.ml | Ported: monotone admission and inclusive activation timestamps, src/fork_schedule.kan; OCaml comparisons |
 | lib/evm/gas.ml | Ported: static and dynamic costs, checked memory/log pricing, SSTORE refunds, CALL/CREATE caps and stipend, src/gas.kan; OCaml boundary comparisons |
 | lib/evm/gas_penalty.ml | Ported: fixed-point penalty with wide intermediates, src/evm_spec.kan; boundary comparisons against OCaml/Zarith |
-| lib/evm/hash32.ml | Pending |
-| lib/evm/hex.ml | Pending |
+| lib/evm/hash32.ml | Ported: type-identical alias of the tested shared Hash32 implementation, src/evm_leaf_aliases.kan and src/fixed.kan |
+| lib/evm/hex.ml | Ported: lowercase byte rendering through the shared bytesHex implementation, src/evm_leaf_aliases.kan |
 | lib/evm/interpreter.ml | Ported: instruction bodies, dispatch, calls, creation, heap frames and all nine precompiles, src/interpreter*.kan; complete-frame OCaml comparisons |
 | lib/evm/intrinsic.ml | Ported: token costs, wire-list charges and floor gas, src/execution_primitives.kan; authorization count passed explicitly and compared with OCaml |
 | lib/evm/lifecycle.ml | Ported: created and destroyed address sets, src/lifecycle.kan; effect trace comparisons |

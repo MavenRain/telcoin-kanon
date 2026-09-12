@@ -28,7 +28,7 @@ export const sources = ['core', 'nat64', 'scalars', 'bcs', 'codec', 'fixed', 'sc
   'committee_shuffle', 'epoch_close_types', 'epoch_close', 'block_transaction_roots', 'block_execution_types',
   'block_execution_collections', 'block_pre_execution', 'block_execution', 'block_finish', 'block_header',
   'tx_shape_types', 'tx_shape', 'batch_validator_types', 'batch_validator',
-  'output_collections', 'batch_output_types', 'batch_output', 'batch_payload',
+  'evm_leaf_aliases', 'output_collections', 'batch_output_types', 'batch_output', 'batch_payload',
   'block_plan_types', 'block_plan_collections', 'block_plan',
   'execution_engine_types', 'execution_engine_collections', 'rewards_counter',
   'execution_engine_state_types', 'execution_engine_state', 'execution_engine',
@@ -36,6 +36,7 @@ export const sources = ['core', 'nat64', 'scalars', 'bcs', 'codec', 'fixed', 'sc
   'subscriber', 'driver_types', 'driver_outcome_collections', 'driver_outcome', 'driver',
   'blake2b_digest', 'durable_frame_types', 'durable_frame_collections', 'durable_frame',
   'durable_io_types', 'atomic_file_codec', 'bytes_rendering', 'store_lock_types', 'append_log_codec',
+  'durable_record_codec', 'checkpoint_scalar_codecs', 'checkpoint_state_codecs', 'checkpoint_header_codec', 'checkpoint_codec',
   'byte_reader', 'crc32c_table', 'crc32c', 'snappy_raw', 'snappy_frame',
   'network_var_bytes', 'network_bls_public_key', 'network_bls_signature', 'network_wire_scalar', 'network_protocols', 'network_base58', 'network_wire_frame',
   'network_leaf_collections', 'network_epoch_vote', 'network_consensus_result', 'network_epoch_record', 'network_node_record',
@@ -47,9 +48,13 @@ export const sources = ['core', 'nat64', 'scalars', 'bcs', 'codec', 'fixed', 'sc
   'network_gossip_types', 'network_gossip_collections', 'network_gossip',
   'network_wire_types', 'network_wire_collections', 'network_wire',
   'api', 'service'].map(name => resolve(project, `src/${name}.kan`));
-export function build(output, exports, extraSources = [], { scope = false } = {}) {
+export function pinnedCompilerSha() {
   const hash = createHash('sha256').update(readFileSync(compiler)).digest('hex');
   if (hash !== lock.toolchain.compilerSha256) throw new Error('Compiler differs from source-lock.json. Review and repin before building.');
+  return hash;
+}
+export function build(output, exports, extraSources = [], { scope = false } = {}) {
+  const hash = pinnedCompilerSha();
   let inputs = [...sources, ...extraSources];
   const projection = `${output}.kan`;
   const projected = scope || extraSources.length > 0;

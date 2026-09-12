@@ -5,7 +5,9 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { after } from 'node:test';
-import { build, project } from '../scripts/build.mjs';
+import { build, project, sources as kanonSources, pinnedCompilerSha } from '../scripts/build.mjs';
+import { sourceClosure } from '../scripts/source-closure.mjs';
+import { reusableTestArtifact } from '../scripts/test-artifact.mjs';
 import { byteAdapter } from '../runtime.mjs';
 
 export const protocolSources = ['lib/codec/bcs.ml', 'lib/crypto_stub/tn_crypto.ml', 'lib/types/round.ml', 'lib/types/units.ml',
@@ -54,13 +56,24 @@ export function compileOracle({ name, sources, modules, oracle, extraAliases = {
 export async function harness({ name, sources, modules, oracle, fixtures, exports, extraAliases = {}, packages = 'digestif.c', sortModules = false }) {
   const { directory, runOracle } = compileOracle({ name, sources, modules, oracle, extraAliases, packages, sortModules });
   const wasm = join(directory, `${name}.wasm`);
-  build(wasm, ['emptyBytes', 'consBytes', 'bytesEmpty', 'bytesHead', 'bytesTail', 'seqBytesEmpty', 'seqBytesCons', ...exports], fixtures.map(path => resolve(project, path)), { scope: true });
-  const bytes = readFileSync(wasm);
+  const wasmExports = ['emptyBytes', 'consBytes', 'bytesEmpty', 'bytesHead', 'bytesTail', 'seqBytesEmpty', 'seqBytesCons', ...exports];
+  const fixturePaths = fixtures.map(path => resolve(project, path));
   const artifactDirectory = resolve(project, 'build/test-artifacts');
   mkdirSync(artifactDirectory, { recursive: true });
-  const retained = join(artifactDirectory, `${name}-${createHash('sha256').update(bytes).digest('hex')}.wasm`);
-  copyFileSync(wasm, retained);
-  copyFileSync(`${wasm}.sources.json`, `${retained}.sources.json`);
+  const closure = sourceClosure([...kanonSources, ...fixturePaths].map(path => ({path, text:readFileSync(path,'utf8')})), wasmExports);
+  const cached = reusableTestArtifact({directory:artifactDirectory,name,compiler:pinnedCompilerSha(),
+    sourceSha:createHash('sha256').update(closure.text).digest('hex'),exports:wasmExports});
+  let bytes;
+  if(cached) {
+    bytes=cached.bytes;
+    console.log(`${name} Kanon artifact reused: ${cached.digest}`);
+  } else {
+    build(wasm, wasmExports, fixturePaths, { scope: true });
+    bytes=readFileSync(wasm);
+    const retained=join(artifactDirectory,`${name}-${createHash('sha256').update(bytes).digest('hex')}.wasm`);
+    copyFileSync(wasm,retained);
+    copyFileSync(`${wasm}.sources.json`,`${retained}.sources.json`);
+  }
   const { instance } = await WebAssembly.instantiate(bytes, {});
   const e = instance.exports;
   const { toBytes, fromBytes } = byteAdapter(e);

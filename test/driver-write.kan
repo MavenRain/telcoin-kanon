@@ -1,0 +1,81 @@
+def driverWriteTestLatest : ConsensusStore -> Bytes := fun (store : ConsensusStore) =>
+  case (consensusStoreLatestReceived store) with
+  | 0 (unit : prod ()) => b"none"
+  | 1 (record : ConsensusRecord) => consensusBlockNumberText (consensusRecordNumber record)
+def driverWriteTestSummary : Driver -> ConsensusStore -> Bytes := fun (driver : Driver) (store : ConsensusStore) =>
+  append (driverResumeTestCheckpointText (driverSnapshot driver)) (append b"|" (driverWriteTestLatest store))
+def driverWriteTestReceive : Driver -> SubDag -> ConsensusStore -> BatchStore -> sum (Bytes, prod (ConsensusBlock, ConsensusStore)) :=
+  fun (driver : Driver) (dag : SubDag) (store : ConsensusStore) (bodies : BatchStore) =>
+  case (driverMint driver dag) with
+  | 0 (error : DriverError) => inj 0 of 2 (driverErrorText error)
+  | 1 (block : ConsensusBlock) => case (consensusRecordCreate block (fun (digest : BatchDigest) => batchStoreFind bodies digest)) with
+    | 0 (error : ConsensusRecordError) => inj 0 of 2 (consensusRecordErrorText error)
+    | 1 (record : ConsensusRecord) => case (consensusStoreReceive store record) with
+      | 0 (error : ConsensusStoreError) => inj 0 of 2 (consensusStoreErrorText error)
+      | 1 (received : ConsensusStore) => inj 1 of 2 (tuple (block, received))
+def rec driverWriteTestPrefix : SubDags -> Driver -> ConsensusStore -> BatchStore -> AddressBook -> sum (Bytes, prod (Driver, ConsensusStore, Bytes)) :=
+  fun (dags : SubDags) (driver : Driver) (store : ConsensusStore) (bodies : BatchStore) (book : AddressBook) =>
+  match dags as self in SubDags return sum (Bytes, prod (Driver, ConsensusStore, Bytes)) with
+  | subDagsNil => inj 1 of 2 (tuple (driver, store, b""))
+  | subDagsCons dag tail => case (driverWriteTestReceive driver dag store bodies) with
+    | 0 (error : Bytes) => inj 0 of 2 error
+    | 1 (received : prod (ConsensusBlock, ConsensusStore)) => case (driverMint driver dag) with
+      | 0 (error : DriverError) => inj 0 of 2 (driverErrorText error)
+      | 1 (again : ConsensusBlock) => case (driverStep driver dag bodies (fun (id : AuthorityId) => addressBookFind book id)) with
+        | 0 (error : DriverError) => inj 0 of 2 (driverErrorText error)
+        | 1 (advanced : prod (Driver, DriverAdvance)) => case (driverWriteTestPrefix tail advanced.0 received.1 bodies book) with
+          | 0 (error : Bytes) => inj 0 of 2 error
+          | 1 (rest : prod (Driver, ConsensusStore, Bytes)) =>
+            let trace : Bytes := append (consensusBlockNumberText (driverLastForwarded driver)) (append b":"
+              (append (evmTestBool (consensusBlockEqual received.0 again)) (append b":"
+                (append (evmTestBool (consensusBlockEqual received.0 advanced.1.0)) (append b":" (driverPipelineAdvance advanced.1)))))) in
+            inj 1 of 2 (tuple (rest.0, rest.1, append b"{" (append trace (append b"}" rest.2))))
+def rec driverWriteTestDrop : SubDags -> Nat -> SubDags := fun (dags : SubDags) (count : Nat) =>
+  match dags as self in SubDags return SubDags with
+  | subDagsNil => subDagsNil
+  | subDagsCons head tail => case (natEq count 0) with
+    | 1 (unit : prod ()) => dags
+    | 0 (unit : prod ()) => driverWriteTestDrop tail (natSub count 1)
+def driverWriteTestResume : ChainSpec -> Committee -> Checkpoint -> ConsensusStore -> AddressBook -> Bytes :=
+  fun (spec : ChainSpec) (committee : Committee) (checkpoint : Checkpoint) (store : ConsensusStore) (book : AddressBook) =>
+    case (driverResume spec committee checkpoint store (fun (id : AuthorityId) => addressBookFind book id)) with
+    | 0 (error : DriverResumeError) => append b"error:" (driverResumeErrorText error)
+    | 1 (outcome : DriverOutcome Driver) => driverPipelineOutcome outcome
+def driverWriteTestFailed : ChainSpec -> Committee -> Driver -> ConsensusStore -> SubDags -> BatchStore -> AddressBook -> Bytes :=
+  fun (spec : ChainSpec) (committee : Committee) (driver : Driver) (store : ConsensusStore) (dags : SubDags) (bodies : BatchStore) (book : AddressBook) =>
+  match dags as self in SubDags return Bytes with
+  | subDagsNil => b"setup:no next output"
+  | subDagsCons dag tail => case (driverWriteTestReceive driver dag store bodies) with
+    | 0 (error : Bytes) => append b"setup:" error
+    | 1 (received : prod (ConsensusBlock, ConsensusStore)) =>
+      let stepped : Bytes := case (driverStep driver dag batchStoreEmpty (fun (id : AuthorityId) => addressBookFind book id)) with
+        | 0 (error : DriverError) => append b"error:" (driverErrorText error)
+        | 1 (advanced : prod (Driver, DriverAdvance)) => append b"unexpected-success:" (driverPipelineAdvance advanced.1) in
+      append stepped (append b"~" (append (driverWriteTestSummary driver received.1) (append b"~"
+        (driverWriteTestResume spec committee (driverSnapshot driver) received.1 book))))
+def driverWriteTestRun : ChainSpec -> Committee -> SubDags -> SubDags -> Batches -> Nat -> Nat -> Bytes :=
+  fun (spec : ChainSpec) (committee : Committee) (dags : SubDags) (other : SubDags) (batches : Batches) (prefix : Nat) (mode : Nat) =>
+  let initial : Driver := driverCreate spec committee in
+  let store : ConsensusStore := consensusStoreCreate (committeeEpoch committee) consensusBlockNumberGenesis consensusBlockGenesisParent in
+  let bodies : BatchStore := batchStoreOfBodies batches in let book : AddressBook := addressBookOfCommittee committee in
+  case (driverWriteTestPrefix (driverResumeTestTake dags prefix) initial store bodies book) with
+  | 0 (error : Bytes) => append b"setup:" error
+  | 1 (live : prod (Driver, ConsensusStore, Bytes)) =>
+    let finish : Bytes := case (natEq mode 1) with
+      | 1 (unit : prod ()) => driverWriteTestFailed spec committee live.0 live.1 (driverWriteTestDrop dags prefix) bodies book
+      | 0 (unit : prod ()) => (case (natEq mode 2) with
+        | 0 (unit : prod ()) => driverPipelineState live.0
+        | 1 (unit : prod ()) => case (driverWriteTestPrefix (driverResumeTestTake other prefix) initial store bodies book) with
+          | 0 (error : Bytes) => append b"setup:" error
+          | 1 (crossed : prod (Driver, ConsensusStore, Bytes)) => driverWriteTestResume spec committee (driverSnapshot live.0) crossed.1 book) in
+    append live.2 (append b"~" (append (driverWriteTestSummary live.0 live.1) (append b"~" finish)))
+def driverTestWrite : ByteStrings -> Bytes -> Bytes -> Bytes -> Nat -> Nat -> Bytes -> Bytes :=
+  fun (members : ByteStrings) (dagsRaw : Bytes) (otherRaw : Bytes) (bodiesRaw : Bytes) (prefix : Nat) (mode : Nat) (registryCode : Bytes) =>
+  match (driverPipelineCommittee members 0) as result in CommitteeResult return Bytes with
+  | committeeError error => append b"setup:" (committeeErrorText error)
+  | committeeOk committee => case (driverPipelineSpec (timestampValue 0) 1000 (hostIntPositive 30000000) registryCode) with
+    | 0 (error : ChainSpecError) => append b"setup:" (chainSpecErrorText error)
+    | 1 (spec : ChainSpec) => executionWith SubDags (codecList SubDag SubDags seqSubDagOps subDagCodec) dagsRaw (fun (dags : SubDags) =>
+      executionWith SubDags (codecList SubDag SubDags seqSubDagOps subDagCodec) otherRaw (fun (other : SubDags) =>
+      executionWith Batches (codecList Batch Batches seqBatchOps batchCodec) bodiesRaw (fun (batches : Batches) =>
+        driverWriteTestRun spec committee dags other batches prefix mode)))

@@ -1,0 +1,72 @@
+def checkpointTestCodec : (0 A : Type 0) -> Codec A -> Bytes -> Bytes := fun (0 A : Type 0) (codec : Codec A) (raw : Bytes) =>
+  case (codecDecode A codec raw) with
+  | 0 (error : BcsError) => append b"error:" (bcsErrorText error)
+  | 1 (value : prod (A, BcsReader)) => bytesHex (codecWrite A codec value.0)
+def checkpointTestRead : Nat -> Bytes -> Bytes := fun (kind : Nat) (raw : Bytes) =>
+  case (natEq kind 0) with
+  | 1 (unit : prod ()) => checkpointTestCodec HostInt checkpointNatCodec raw
+  | 0 (unit : prod ()) =>   case (natEq kind 1) with
+  | 1 (unit : prod ()) => checkpointTestCodec U256 checkpointU256Codec raw
+  | 0 (unit : prod ()) =>   case (natEq kind 2) with
+  | 1 (unit : prod ()) => checkpointTestCodec Keccak checkpointKeccakCodec raw
+  | 0 (unit : prod ()) =>   case (natEq kind 3) with
+  | 1 (unit : prod ()) => checkpointTestCodec Hash32 checkpointHash32Codec raw
+  | 0 (unit : prod ()) =>   case (natEq kind 4) with
+  | 1 (unit : prod ()) => checkpointTestCodec Address checkpointAddressCodec raw
+  | 0 (unit : prod ()) =>   case (natEq kind 5) with
+  | 1 (unit : prod ()) => checkpointTestCodec Digest checkpointDigestCodec raw
+  | 0 (unit : prod ()) =>   case (natEq kind 6) with
+  | 1 (unit : prod ()) => checkpointTestCodec BatchDigest checkpointBatchDigestCodec raw
+  | 0 (unit : prod ()) =>   case (natEq kind 7) with
+  | 1 (unit : prod ()) => checkpointTestCodec OutputDigest checkpointOutputDigestCodec raw
+  | 0 (unit : prod ()) =>   case (natEq kind 8) with
+  | 1 (unit : prod ()) => checkpointTestCodec Epoch checkpointEpochCodec raw
+  | 0 (unit : prod ()) =>   case (natEq kind 9) with
+  | 1 (unit : prod ()) => checkpointTestCodec Round checkpointRoundCodec raw
+  | 0 (unit : prod ()) =>   case (natEq kind 10) with
+  | 1 (unit : prod ()) => checkpointTestCodec Timestamp checkpointTimestampCodec raw
+  | 0 (unit : prod ()) =>   case (natEq kind 11) with
+  | 1 (unit : prod ()) => checkpointTestCodec SequenceNumber checkpointSequenceCodec raw
+  | 0 (unit : prod ()) =>   case (natEq kind 12) with
+  | 1 (unit : prod ()) => checkpointTestCodec Nonce checkpointNonceCodec raw
+  | 0 (unit : prod ()) =>   case (natEq kind 13) with
+  | 1 (unit : prod ()) => checkpointTestCodec Bloom checkpointBloomCodec raw
+  | 0 (unit : prod ()) =>   case (natEq kind 14) with
+  | 1 (unit : prod ()) => checkpointTestCodec EvmBatchPosition checkpointPositionCodec raw
+  | 0 (unit : prod ()) =>   case (natEq kind 15) with
+  | 1 (unit : prod ()) => checkpointTestCodec Withdrawal checkpointWithdrawalCodec raw
+  | 0 (unit : prod ()) =>   case (natEq kind 16) with
+  | 1 (unit : prod ()) => checkpointTestCodec PublicKey checkpointPublicKeyCodec raw
+  | 0 (unit : prod ()) =>   case (natEq kind 17) with
+  | 1 (unit : prod ()) => checkpointTestCodec AuthorityId checkpointAuthorityIdCodec raw
+  | 0 (unit : prod ()) =>   case (natEq kind 18) with
+  | 1 (unit : prod ()) => checkpointTestCodec Authority checkpointAuthorityCodec raw
+  | 0 (unit : prod ()) =>   case (natEq kind 19) with
+  | 1 (unit : prod ()) => checkpointTestCodec Storage checkpointStorageCodec raw
+  | 0 (unit : prod ()) =>   case (natEq kind 20) with
+  | 1 (unit : prod ()) => checkpointTestCodec Account checkpointAccountCodec raw
+  | 0 (unit : prod ()) =>   case (natEq kind 21) with
+  | 1 (unit : prod ()) => checkpointTestCodec WorldState checkpointWorldCodec raw
+  | 0 (unit : prod ()) =>   case (natEq kind 22) with
+  | 1 (unit : prod ()) => checkpointTestCodec BlockHeader checkpointHeaderCodec raw
+  | 0 (unit : prod ()) =>   case (natEq kind 23) with
+  | 1 (unit : prod ()) => checkpointTestCodec ExecutionAnchor checkpointAnchorCodec raw
+  | 0 (unit : prod ()) =>   case (natEq kind 24) with
+  | 1 (unit : prod ()) => checkpointTestCodec RecentHashes checkpointRecentHashesCodec raw
+  | 0 (unit : prod ()) =>   case (natEq kind 25) with
+  | 1 (unit : prod ()) => checkpointTestCodec Committee checkpointCommitteeCodec raw
+  | 0 (unit : prod ()) =>   case (natEq kind 26) with
+  | 1 (unit : prod ()) => checkpointTestCodec RewardsCounter checkpointRewardsCodec raw
+  | 0 (unit : prod ()) =>   case (natEq kind 27) with
+  | 1 (unit : prod ()) => checkpointTestCodec ExecutionPhase checkpointPhaseCodec raw
+  | 0 (unit : prod ()) =>   case (natEq kind 28) with
+  | 1 (unit : prod ()) => checkpointTestCodec ExecutionPersisted checkpointEngineCodec raw
+  | 0 (unit : prod ()) => checkpointTestCodec Checkpoint checkpointCodec raw
+def durableRecordTest : Nat -> Bytes -> Bytes := fun (kind : Nat) (raw : Bytes) =>
+  case (natEq kind 0) with
+  | 1 (unit : prod ()) => (case (durableRecordDecode raw) with
+    | 0 (error : DurableRecordError) => append b"error:" (durableRecordErrorText error)
+    | 1 (record : ConsensusRecord) => bytesHex (durableRecordEncode record))
+  | 0 (unit : prod ()) => case (durableRecordMetaDecode raw) with
+    | 0 (error : DurableRecordError) => append b"error:" (durableRecordErrorText error)
+    | 1 (meta : DurableRecordMeta) => bytesHex (durableRecordMetaEncode meta)

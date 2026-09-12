@@ -1,0 +1,31 @@
+def checkpointAnchorCodec : Codec ExecutionAnchor := codecSum ExecutionAnchor (codecCasesPrepend ExecutionAnchor
+  (codecCase ExecutionAnchor (prod (Keccak, U256, HostInt)) 0
+    (codecTriple Keccak U256 HostInt checkpointKeccakCodec checkpointU256Codec checkpointNatCodec)
+    (fun (wire : prod (Keccak, U256, HostInt)) => executionAnchorOfGenesis wire.0 wire.1 wire.2)
+    (fun (anchor : ExecutionAnchor) => case (executionAnchorHeader anchor) with
+      | 0 (unit : prod ()) => valueSome (prod (Keccak, U256, HostInt))
+          (tuple (executionAnchorHash anchor, executionAnchorBaseFee anchor, executionAnchorGasLimit anchor))
+      | 1 (header : BlockHeader) => valueNone (prod (Keccak, U256, HostInt))))
+  (codecCase ExecutionAnchor BlockHeader 1 checkpointHeaderCodec executionAnchorOfHeader executionAnchorHeader))
+def checkpointPhaseCodec : Codec ExecutionPhase := codecSum ExecutionPhase (codecCasesPrepend ExecutionPhase
+  (codecCase ExecutionPhase (prod (Timestamp, Committee)) 0 (codecPair Timestamp Committee checkpointTimestampCodec checkpointCommitteeCodec)
+    (fun (wire : prod (Timestamp, Committee)) => executionRunning wire.0 wire.1)
+    (fun (phase : ExecutionPhase) => match phase as self in ExecutionPhase return ValueOption (prod (Timestamp, Committee)) with
+      | executionRunning boundary committee => valueSome (prod (Timestamp, Committee)) (tuple (boundary, committee))
+      | executionSealed closedAt committee => valueNone (prod (Timestamp, Committee))))
+  (codecCase ExecutionPhase (prod (Timestamp, Committee)) 1 (codecPair Timestamp Committee checkpointTimestampCodec checkpointCommitteeCodec)
+    (fun (wire : prod (Timestamp, Committee)) => executionSealed wire.0 wire.1)
+    (fun (phase : ExecutionPhase) => match phase as self in ExecutionPhase return ValueOption (prod (Timestamp, Committee)) with
+      | executionRunning boundary committee => valueNone (prod (Timestamp, Committee))
+      | executionSealed closedAt committee => valueSome (prod (Timestamp, Committee)) (tuple (closedAt, committee)))))
+def CheckpointEngineWire : Type 0 := prod (prod (ExecutionAnchor, WorldState, RecentHashes), prod (RewardsCounter, ExecutionPhase))
+def checkpointEngineCodec : Codec ExecutionPersisted := codecIso CheckpointEngineWire ExecutionPersisted
+  (fun (wire : CheckpointEngineWire) => tuple (wire.0.0, wire.0.1, wire.0.2, wire.1.0, wire.1.1))
+  (fun (engine : ExecutionPersisted) => tuple (tuple (engine.0, engine.1, engine.2), tuple (engine.3, engine.4)))
+  (codecPair (prod (ExecutionAnchor, WorldState, RecentHashes)) (prod (RewardsCounter, ExecutionPhase))
+    (codecTriple ExecutionAnchor WorldState RecentHashes checkpointAnchorCodec checkpointWorldCodec checkpointRecentHashesCodec)
+    (codecPair RewardsCounter ExecutionPhase checkpointRewardsCodec checkpointPhaseCodec))
+def checkpointCodec : Codec Checkpoint := codecIso (prod (ExecutionPersisted, ValueOption ConsensusBlock)) Checkpoint
+  (fun (wire : prod (ExecutionPersisted, ValueOption ConsensusBlock)) => checkpointOfExecution wire.0 wire.1)
+  (fun (checkpoint : Checkpoint) => tuple (checkpointEngine checkpoint, checkpointLastExecuted checkpoint))
+  (codecPair ExecutionPersisted (ValueOption ConsensusBlock) checkpointEngineCodec (codecOption ConsensusBlock consensusBlockCodec))

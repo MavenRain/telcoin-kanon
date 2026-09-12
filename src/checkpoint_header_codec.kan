@@ -1,0 +1,28 @@
+-- The wire follows the 22 stored fields in BlockHeader declaration order.
+def CheckpointHeaderFields : Type 0 := prod (prod (prod (prod (Keccak, BatchDigest), prod (Address, prod (Hash32, Hash32))), prod (prod (Hash32, prod (Bloom, EvmBatchPosition)), prod (HostInt, prod (HostInt, HostInt)))), prod (prod (prod (HostInt, Bytes), prod (U256, prod (SequenceNumber, U256))), prod (prod (Withdrawals, prod (Hash32, OutputDigest)), prod (HostInt, prod (HostInt, Hash32)))))
+def checkpointHeaderFieldsCodec : Codec CheckpointHeaderFields := (codecPair (prod (prod (prod (Keccak, BatchDigest), prod (Address, prod (Hash32, Hash32))), prod (prod (Hash32, prod (Bloom, EvmBatchPosition)), prod (HostInt, prod (HostInt, HostInt))))) (prod (prod (prod (HostInt, Bytes), prod (U256, prod (SequenceNumber, U256))), prod (prod (Withdrawals, prod (Hash32, OutputDigest)), prod (HostInt, prod (HostInt, Hash32)))))
+    (codecPair (prod (prod (Keccak, BatchDigest), prod (Address, prod (Hash32, Hash32)))) (prod (prod (Hash32, prod (Bloom, EvmBatchPosition)), prod (HostInt, prod (HostInt, HostInt))))
+    (codecPair (prod (Keccak, BatchDigest)) (prod (Address, prod (Hash32, Hash32)))
+    (codecPair Keccak BatchDigest
+    checkpointKeccakCodec checkpointBatchDigestCodec) (codecPair Address (prod (Hash32, Hash32))
+    checkpointAddressCodec (codecPair Hash32 Hash32
+    checkpointHash32Codec checkpointHash32Codec))) (codecPair (prod (Hash32, prod (Bloom, EvmBatchPosition))) (prod (HostInt, prod (HostInt, HostInt)))
+    (codecPair Hash32 (prod (Bloom, EvmBatchPosition))
+    checkpointHash32Codec (codecPair Bloom EvmBatchPosition
+    checkpointBloomCodec checkpointPositionCodec)) (codecPair HostInt (prod (HostInt, HostInt))
+    checkpointNatCodec (codecPair HostInt HostInt
+    checkpointNatCodec checkpointNatCodec)))) (codecPair (prod (prod (HostInt, Bytes), prod (U256, prod (SequenceNumber, U256)))) (prod (prod (Withdrawals, prod (Hash32, OutputDigest)), prod (HostInt, prod (HostInt, Hash32))))
+    (codecPair (prod (HostInt, Bytes)) (prod (U256, prod (SequenceNumber, U256)))
+    (codecPair HostInt Bytes
+    checkpointNatCodec codecBytes) (codecPair U256 (prod (SequenceNumber, U256))
+    checkpointU256Codec (codecPair SequenceNumber U256
+    checkpointSequenceCodec checkpointU256Codec))) (codecPair (prod (Withdrawals, prod (Hash32, OutputDigest))) (prod (HostInt, prod (HostInt, Hash32)))
+    (codecPair Withdrawals (prod (Hash32, OutputDigest))
+    (codecList Withdrawal Withdrawals seqWithdrawalOps checkpointWithdrawalCodec) (codecPair Hash32 OutputDigest
+    checkpointHash32Codec checkpointOutputDigestCodec)) (codecPair HostInt (prod (HostInt, Hash32))
+    checkpointNatCodec (codecPair HostInt Hash32
+    checkpointNatCodec checkpointHash32Codec)))))
+def checkpointHeaderCodec : Codec BlockHeader := codecIso CheckpointHeaderFields BlockHeader
+  (fun (wire : CheckpointHeaderFields) => blockHeaderOfPersisted
+    wire.0.0.0.0 wire.0.0.0.1 wire.0.0.1.0 wire.0.0.1.1.0 wire.0.0.1.1.1 wire.0.1.0.0 wire.0.1.0.1.0 wire.0.1.0.1.1 wire.0.1.1.0 wire.0.1.1.1.0 wire.0.1.1.1.1 wire.1.0.0.0 wire.1.0.0.1 wire.1.0.1.0 wire.1.0.1.1.0 wire.1.0.1.1.1 wire.1.1.0.0 wire.1.1.0.1.0 wire.1.1.0.1.1 wire.1.1.1.0 wire.1.1.1.1.0 wire.1.1.1.1.1)
+  (fun (header : BlockHeader) => tuple (tuple (tuple (tuple (header.0, header.1), tuple (header.2, tuple (header.3, header.4))), tuple (tuple (header.5, tuple (header.6, header.7)), tuple (header.8, tuple (header.9, header.10)))), tuple (tuple (tuple (header.11, header.12), tuple (header.13, tuple (header.14, header.15))), tuple (tuple (header.16, tuple (header.17, header.18)), tuple (header.19, tuple (header.20, header.21)))))) checkpointHeaderFieldsCodec

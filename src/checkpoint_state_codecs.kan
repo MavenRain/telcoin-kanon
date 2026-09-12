@@ -1,0 +1,43 @@
+def checkpointStorageCodec : Codec Storage := codecIso StorageSlots Storage
+  (fun (slots : StorageSlots) => listFoldLeft (prod (U256, U256)) StorageSlots Storage seqStorageSlotOps
+    (fun (storage : Storage) (slot : prod (U256, U256)) => storageSet storage slot.0 slot.1) storageEmpty slots)
+  storageBindings (codecSortedMap U256 U256 StorageSlots seqStorageSlotOps checkpointU256Codec checkpointU256Codec u256Compare)
+def CheckpointAccountWire : Type 0 := prod (prod (Nonce, U256), prod (Bytes, Storage))
+def checkpointAccountCodec : Codec Account := codecIso CheckpointAccountWire Account
+  (fun (wire : CheckpointAccountWire) => accountWithStorage (accountWithCode (accountMake wire.0.0 wire.0.1) wire.1.0) wire.1.1)
+  (fun (account : Account) => tuple (tuple (accountNonce account, accountBalance account), tuple (accountCode account, accountStorage account)))
+  (codecPair (prod (Nonce, U256)) (prod (Bytes, Storage))
+    (codecPair Nonce U256 checkpointNonceCodec checkpointU256Codec) (codecPair Bytes Storage codecBytes checkpointStorageCodec))
+def checkpointWorldCodec : Codec WorldState := codecIso WorldAccounts WorldState
+  (fun (accounts : WorldAccounts) => listFoldLeft (prod (Address, Account)) WorldAccounts WorldState seqWorldAccountOps
+    (fun (world : WorldState) (entry : prod (Address, Account)) => worldStateSetAccount world entry.0 entry.1) worldStateEmpty accounts)
+  worldStateAccounts (codecSortedMap Address Account WorldAccounts seqWorldAccountOps checkpointAddressCodec checkpointAccountCodec addressCompare)
+def checkpointCommitteeOption : prod (Epoch, Authorities) -> ValueOption Committee := fun (wire : prod (Epoch, Authorities)) =>
+  match (committeeCreate wire.0 wire.1) as result in CommitteeResult return ValueOption Committee with
+  | committeeError error => valueNone Committee
+  | committeeOk committee => valueSome Committee committee
+def checkpointCommitteeCodec : Codec Committee := codecRefine (prod (Epoch, Authorities)) Committee checkpointCommitteeOption
+  (fun (committee : Committee) => tuple (committeeEpoch committee, committeeAuthorities committee))
+  (codecPair Epoch Authorities checkpointEpochCodec (codecList Authority Authorities seqAuthorityOps checkpointAuthorityCodec))
+def checkpointRecentHashesCodec : Codec RecentHashes := codecIso (prod (Keccak, Keccaks)) RecentHashes
+  (fun (wire : prod (Keccak, Keccaks)) => recentHashesOfGenesis wire.0 wire.1)
+  (fun (hashes : RecentHashes) => tuple (recentHashesNewest hashes, recentHashesAncestors hashes))
+  (codecPair Keccak Keccaks checkpointKeccakCodec (codecList Keccak Keccaks seqKeccakOps checkpointKeccakCodec))
+def checkpointRewardsBump : RewardsCounter -> AuthorityId -> HostInt -> RewardsCounter :=
+  fun (counter : RewardsCounter) (id : AuthorityId) (count : HostInt) =>
+    let final : prod (Nat, RewardsCounter) := stepsFold (prod (Nat, RewardsCounter)) steps32
+      (fun (state : prod (Nat, RewardsCounter)) => boolNat (natEq state.0 (hostIntClampZero count)))
+      (fun (state : prod (Nat, RewardsCounter)) => tuple (natAdd state.0 1, rewardsCounterIncLeader state.1 id))
+      (tuple (0, counter)) in final.1
+def checkpointCountCodec : Codec HostInt := codecIso Nat HostInt (fun (n : Nat) => hostIntPositive n) checkpointHostIntU64 codecU32
+def CheckpointRewardsWire : Type 0 := prod (ValueOption Committee, LeaderCounts)
+def checkpointRewardsCodec : Codec RewardsCounter := codecIso CheckpointRewardsWire RewardsCounter
+  (fun (wire : CheckpointRewardsWire) =>
+    let initial : RewardsCounter := case wire.0 with
+      | 0 (unit : prod ()) => rewardsCounterEmpty
+      | 1 (committee : Committee) => rewardsCounterSetCommittee rewardsCounterEmpty committee in
+    listFoldLeft (prod (AuthorityId, HostInt)) LeaderCounts RewardsCounter seqLeaderCountOps
+      (fun (counter : RewardsCounter) (entry : prod (AuthorityId, HostInt)) => checkpointRewardsBump counter entry.0 entry.1) initial wire.1)
+  (fun (counter : RewardsCounter) => tuple (rewardsCounterCommittee counter, rewardsCounterLeaderCounts counter))
+  (codecPair (ValueOption Committee) LeaderCounts (codecOption Committee checkpointCommitteeCodec)
+    (codecSortedMap AuthorityId HostInt LeaderCounts seqLeaderCountOps checkpointAuthorityIdCodec checkpointCountCodec authorityIdCompare))
