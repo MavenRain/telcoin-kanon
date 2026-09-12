@@ -1,0 +1,26 @@
+def snappyPrimitiveInt : Bytes -> HostInt := fun (text : Bytes) =>
+  case (hostIntParse text) with | 0 (unit : prod ()) => hostIntPositive 0 | 1 (value : HostInt) => value
+def snappyPrimitiveOptionalInt : ValueOption HostInt -> Bytes := fun (value : ValueOption HostInt) =>
+  case value with | 0 (unit : prod ()) => b"none" | 1 (number : HostInt) => hostIntText number
+def snappyPrimitiveRead : Bytes -> Bytes -> Bytes -> Bytes := fun (bytes : Bytes) (posRaw : Bytes) (lenRaw : Bytes) =>
+  let reader : ByteReader := byteReaderOfString bytes in
+  let pos : HostInt := snappyPrimitiveInt posRaw in
+  let len : HostInt := snappyPrimitiveInt lenRaw in
+  let inside : Bytes := case (byteReaderInside reader pos len) with
+    | 0 (unit : prod ()) => b"false" | 1 (unit : prod ()) => b"true" in
+  let part : Bytes := case (byteReaderSub reader pos len) with
+    | 0 (unit : prod ()) => b"none" | 1 (value : Bytes) => append b"some:" (bytesHex value) in
+  append inside (append b"|" (append part (append b"|"
+    (append (snappyPrimitiveOptionalInt (byteReaderLe reader pos len)) (append b"|"
+      (append (snappyPrimitiveOptionalInt (byteReaderByte reader pos)) (append b"|" (hostIntText (byteReaderLength reader)))))))))
+def snappyPrimitiveDigest : Bytes -> Bytes := fun (bytes : Bytes) =>
+  let crc : HostInt := crc32cDigest bytes in
+  append (hostIntText crc) (append b":" (hostIntText (crc32cMask crc)))
+def snappyPrimitiveUpdate : Bytes -> Bytes -> Bytes -> Bytes -> Bytes :=
+  fun (prev : Bytes) (bytes : Bytes) (pos : Bytes) (len : Bytes) =>
+    case (crc32cUpdate (snappyPrimitiveInt prev) bytes (snappyPrimitiveInt pos) (snappyPrimitiveInt len)) with
+    | 0 (error : Crc32cError) => append b"error:" (crc32cErrorText error)
+    | 1 (crc : HostInt) => hostIntText crc
+def snappyPrimitiveMask : Bytes -> Bytes := fun (value : Bytes) => hostIntText (crc32cMask (snappyPrimitiveInt value))
+def snappyPrimitiveStep : Bytes -> Bytes -> Bytes := fun (register : Bytes) (byte : Bytes) =>
+  hostIntText (crc32cStep (snappyPrimitiveInt register) (snappyPrimitiveInt byte))

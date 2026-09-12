@@ -1,0 +1,23 @@
+def appendTestResult : sum (AppendLogError, prod ()) -> Bytes := fun (result : sum (AppendLogError, prod ())) =>
+  case result with | 0 (error : AppendLogError) => append b"error:" (appendLogErrorText error)
+  | 1 (unit : prod ()) => b"ok"
+def appendTestHeader : Bytes -> Bytes -> Bytes := fun (stored : Bytes) (wanted : Bytes) =>
+  appendTestResult (appendLogValidateHeader stored wanted)
+def appendTestMismatch : Bytes -> Bytes -> Bytes := fun (stored : Bytes) (wanted : Bytes) =>
+  case (appendLogMismatching stored wanted) with
+  | 0 (unit : prod ()) => b"none"
+  | 1 (error : AppendLogError) => append b"error:" (appendLogErrorText error)
+def appendTestError : Nat -> Bytes -> Bytes -> Bytes -> Bytes :=
+  fun (kind : Nat) (firstRaw : Bytes) (secondRaw : Bytes) (path : Bytes) =>
+    let first : HostInt := atomicTestInt firstRaw in
+    let second : HostInt := atomicTestInt secondRaw in
+    let error : AppendLogError := case (natEq kind 0) with
+      | 1 (unit : prod ()) => appendLogIo (durableIoFailed durableFsync path b"test fault")
+      | 0 (unit : prod ()) => case (natEq kind 1) with
+        | 1 (unit : prod ()) => appendLogLock (storeLockHeld path)
+        | 0 (unit : prod ()) => case (natEq kind 2) with
+          | 1 (unit : prod ()) => appendLogLock (storeLockIo (durableIoWouldBlock durableLockf path))
+          | 0 (unit : prod ()) => case (natEq kind 3) with
+            | 1 (unit : prod ()) => appendLogCorrupt first (frameBadBodyTag first) second
+            | 0 (unit : prod ()) => appendLogBadPayloadLen first second in
+    appendLogErrorText error

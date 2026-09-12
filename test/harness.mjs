@@ -45,7 +45,7 @@ export function compileOracle({ name, sources, modules, oracle, extraAliases = {
     assert.deepEqual([...ordered].sort(), [...modules].sort(), 'Dependency sorting must preserve every pinned module');
   }
   const compiled = spawnSync('opam', [...opamArgs, 'ocamlc',
-    '-package', packages, '-linkpkg', '-custom', '-o', 'oracle.exe', ...ordered, 'oracle_bytes.ml', 'oracle.ml'],
+    '-package', packages, '-linkpkg', '-custom', '-o', 'oracle.exe', 'oracle_bytes.ml', ...ordered, 'oracle.ml'],
   { cwd: directory, encoding: 'utf8', timeout: 30000 });
   assert.equal(compiled.status, 0, compiled.error?.message ?? compiled.stderr);
   return { directory, runOracle: (args = [], input) => spawnSync(join(directory, 'oracle.exe'), args,

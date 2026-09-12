@@ -29,6 +29,7 @@ def gasPenalty : HostInt -> HostInt -> Nat := fun (gasLimit : HostInt) (gasSpent
       divQuotient (divide256 (natMul (natMul inefficiency inefficiency) (natSub limit spent)) 10000000000000000)
 mu EvmBatchPosition : Type 0 :=
 | evmBatchPositionValue (word : U256) : EvmBatchPosition
+def evmBatchPositionOfWord : U256 -> EvmBatchPosition := fun (word : U256) => evmBatchPositionValue word
 def evmBatchPositionWord : EvmBatchPosition -> U256 := fun (position : EvmBatchPosition) => match position as self in EvmBatchPosition return U256 with | evmBatchPositionValue word => word
 def evmBatchPositionOfBatch : HostInt -> WorkerId -> ValueOption EvmBatchPosition := fun (index : HostInt) (worker : WorkerId) =>
   match index as self in HostInt return ValueOption EvmBatchPosition with | hostIntNegative n => valueNone EvmBatchPosition

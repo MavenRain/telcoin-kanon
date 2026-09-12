@@ -1,0 +1,70 @@
+mu AppendLogError : Type 0 :=
+| appendLogIo (error : DurableIoError) : AppendLogError
+| appendLogLock (error : StoreLockError) : AppendLogError
+| appendLogCorrupt (at : HostInt) (why : FrameBad) (nextGood : HostInt) : AppendLogError
+| appendLogBadMagic (found : Bytes) : AppendLogError
+| appendLogBadFormat (found : HostInt) (supported : HostInt) : AppendLogError
+| appendLogBadHeaderLen (found : HostInt) : AppendLogError
+| appendLogHeaderMismatch (field : Bytes) (stored : Bytes) (wanted : Bytes) : AppendLogError
+| appendLogBadPayloadLen (len : HostInt) (cap : HostInt) : AppendLogError
+def appendLogErrorText : AppendLogError -> Bytes := fun (error : AppendLogError) =>
+  match error as self in AppendLogError return Bytes with
+  | appendLogIo failure => durableIoErrorText failure
+  | appendLogLock failure => storeLockErrorText failure
+  | appendLogCorrupt at why nextGood => append (frameBadText why)
+      (append b": committed frames continue at " (append (hostIntText nextGood)
+        (append b", so this is damage, not a torn write; nothing was truncated (damage at " (append (hostIntText at) b")"))))
+  | appendLogBadMagic found => append b"not a consensus log: it starts with " (ocamlQuotedBytes found)
+  | appendLogBadFormat found supported => append b"container format " (append (hostIntText found) (append b", this reader supports " (hostIntText supported)))
+  | appendLogBadHeaderLen found => append b"header length " (append (hostIntText found) b", this format uses 64")
+  | appendLogHeaderMismatch field stored wanted => append b"this root is not the caller's: "
+      (append field (append b" is " (append stored (append b" on disk, the caller says " wanted))))
+  | appendLogBadPayloadLen len cap => append b"a payload of " (append (hostIntText len) (append b" bytes is outside 1 .. " (hostIntText cap)))
+def appendLogName : Bytes := b"consensus.log"
+def appendLogFileHeaderSize : Nat := 64
+mu AppendLogHeal : Type 0 :=
+| appendLogNoHeal : AppendLogHeal
+| appendLogHealedTail (lastGood : HostInt) (dropped : HostInt) : AppendLogHeal
+def appendLogMismatchAt : Bytes -> Bytes -> Bytes -> Nat -> Nat -> ValueOption AppendLogError :=
+  fun (stored : Bytes) (wanted : Bytes) (field : Bytes) (offset : Nat) (len : Nat) =>
+    let found : Bytes := take len (drop stored offset) in
+    let asked : Bytes := take len (drop wanted offset) in
+    case (bytesEqual found asked) with
+    | 1 (unit : prod ()) => inj 0 of 2 (tuple ())
+    | 0 (unit : prod ()) => inj 1 of 2 (appendLogHeaderMismatch field (bytesHex found) (bytesHex asked))
+def appendLogMismatching : Bytes -> Bytes -> ValueOption AppendLogError := fun (stored : Bytes) (wanted : Bytes) =>
+  case (appendLogMismatchAt stored wanted b"epoch0" 16 8) with
+  | 1 (failure : AppendLogError) => inj 1 of 2 failure
+  | 0 (unit : prod ()) => case (appendLogMismatchAt stored wanted b"anchor0" 24 8) with
+    | 1 (failure : AppendLogError) => inj 1 of 2 failure
+    | 0 (unit : prod ()) => appendLogMismatchAt stored wanted b"parent0" 32 32
+def appendLogValidateHeader : Bytes -> Bytes -> sum (AppendLogError, prod ()) := fun (stored : Bytes) (wanted : Bytes) =>
+  case (natLt (bytesLength stored) 64) with
+  | 1 (unit : prod ()) => inj 0 of 2 (appendLogBadHeaderLen (hostIntPositive (bytesLength stored)))
+  | 0 (unit : prod ()) => case (bytesEqual (take 8 stored) (take 8 wanted)) with
+    | 0 (unit : prod ()) => inj 0 of 2 (appendLogBadMagic (take 8 stored))
+    | 1 (unit : prod ()) =>
+      let found : HostInt := frameUintAt stored (hostIntPositive 8) 4 in
+      let asked : HostInt := frameUintAt wanted (hostIntPositive 8) 4 in
+      case (hostIntEqual found asked) with
+      | 0 (unit : prod ()) => inj 0 of 2 (appendLogBadFormat found asked)
+      | 1 (unit : prod ()) =>
+        let headerLen : HostInt := frameUintAt stored (hostIntPositive 12) 4 in
+        case (hostIntEqual headerLen (hostIntPositive 64)) with
+        | 0 (unit : prod ()) => inj 0 of 2 (appendLogBadHeaderLen headerLen)
+        | 1 (unit : prod ()) => case (appendLogMismatching stored wanted) with
+          | 0 (unit : prod ()) => inj 1 of 2 (tuple ())
+          | 1 (failure : AppendLogError) => inj 0 of 2 failure
+def appendLogValidateOpenHeader : Bytes -> sum (AppendLogError, prod ()) := fun (header : Bytes) =>
+  case (natEq (bytesLength header) 64) with
+  | 1 (unit : prod ()) => inj 1 of 2 (tuple ())
+  | 0 (unit : prod ()) => inj 0 of 2 (appendLogBadHeaderLen (hostIntPositive (bytesLength header)))
+def appendLogValidatePayloadLength : HostInt -> sum (AppendLogError, prod ()) := fun (len : HostInt) =>
+  let failure : AppendLogError := appendLogBadPayloadLen len (hostIntPositive 16777216) in
+  match len as self in HostInt return sum (AppendLogError, prod ()) with
+  | hostIntNegative magnitude => inj 0 of 2 failure
+  | hostIntPositive value => case (natEq value 0) with
+    | 1 (unit : prod ()) => inj 0 of 2 failure
+    | 0 (unit : prod ()) => case (natLt 16777216 value) with
+      | 1 (unit : prod ()) => inj 0 of 2 failure
+      | 0 (unit : prod ()) => inj 1 of 2 (tuple ())

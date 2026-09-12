@@ -1,0 +1,151 @@
+mu SnappyRawError : Type 0 :=
+| snappyRawTruncated : SnappyRawError
+| snappyRawPreambleOverflow : SnappyRawError
+| snappyRawCopyOffset (offset : HostInt) (produced : HostInt) : SnappyRawError
+| snappyRawLengthMismatch (declared : HostInt) (produced : HostInt) : SnappyRawError
+| snappyRawExceedsMax (declared : HostInt) (maximum : HostInt) : SnappyRawError
+def snappyRawErrorText : SnappyRawError -> Bytes := fun (error : SnappyRawError) =>
+  match error as self in SnappyRawError return Bytes with
+  | snappyRawTruncated => b"snappy raw: input ends inside a tag"
+  | snappyRawPreambleOverflow => b"snappy raw: preamble does not fit in 32 bits"
+  | snappyRawCopyOffset offset produced => append b"snappy raw: copy offset " (append (hostIntText offset) (append b" with " (append (hostIntText produced) b" bytes produced")))
+  | snappyRawLengthMismatch declared produced => append b"snappy raw: declared " (append (hostIntText declared) (append b" bytes, tags produce " (hostIntText produced)))
+  | snappyRawExceedsMax declared maximum => append b"snappy raw: declared " (append (hostIntText declared) (append b" bytes, at most " (append (hostIntText maximum) b" allowed")))
+def rec snappyRawPreambleAcc : Bytes -> Nat -> Nat -> Nat -> Nat -> sum (SnappyRawError, prod (Nat, Nat)) :=
+  fun (bytes : Bytes) (shift : Nat) (factor : Nat) (acc : Nat) (pos : Nat) =>
+    match bytes as self in Bytes return sum (SnappyRawError, prod (Nat, Nat)) with
+    | bytesNil => inj 0 of 2 snappyRawTruncated
+    | bytesCons byte tail => case (natLt shift 70) with
+      | 0 (unit : prod ()) => inj 0 of 2 snappyRawPreambleOverflow
+      | 1 (unit : prod ()) =>
+        let payload : Nat := case (natEq shift 63) with
+          | 1 (unit : prod ()) => remainder64 byte 2
+          | 0 (unit : prod ()) => remainder64 byte 128 in
+        let high : Bool := boolNot (natLt shift 35) in
+        case (boolAnd high (boolNot (natEq payload 0))) with
+        | 1 (unit : prod ()) => inj 0 of 2 snappyRawPreambleOverflow
+        | 0 (unit : prod ()) =>
+          let next : Nat := case high with
+            | 1 (unit : prod ()) => acc
+            | 0 (unit : prod ()) => nativeOrBits acc (natMul payload factor) in
+          case (natLt byte 128) with
+          | 0 (unit : prod ()) => snappyRawPreambleAcc tail (natAdd shift 7) (natMul factor 128) next (natAdd pos 1)
+          | 1 (unit : prod ()) => case (natLt 4294967295 next) with
+            | 1 (unit : prod ()) => inj 0 of 2 snappyRawPreambleOverflow
+            | 0 (unit : prod ()) => inj 1 of 2 (tuple (next, natAdd pos 1))
+def snappyRawPreamble : ByteReader -> sum (SnappyRawError, prod (Nat, Nat)) := fun (reader : ByteReader) =>
+  snappyRawPreambleAcc (byteReaderBytes reader) 0 1 0 0
+def snappyRawReadLe : ByteReader -> Nat -> Nat -> sum (SnappyRawError, Nat) := fun (reader : ByteReader) (pos : Nat) (width : Nat) =>
+  case (byteReaderLe reader (hostIntPositive pos) (hostIntPositive width)) with
+  | 0 (unit : prod ()) => inj 0 of 2 snappyRawTruncated
+  | 1 (value : HostInt) => inj 1 of 2 (hostIntClampZero value)
+def snappyRawLiteralLength : ByteReader -> Nat -> Nat -> sum (SnappyRawError, prod (Nat, Nat)) :=
+  fun (reader : ByteReader) (pos : Nat) (tag : Nat) =>
+    let field : Nat := quotient64 tag 4 in
+    case (natLt field 60) with
+    | 1 (unit : prod ()) => inj 1 of 2 (tuple (natAdd field 1, pos))
+    | 0 (unit : prod ()) =>
+      let width : Nat := natSub field 59 in
+      case (snappyRawReadLe reader pos width) with
+      | 0 (error : SnappyRawError) => inj 0 of 2 error
+      | 1 (value : Nat) => inj 1 of 2 (tuple (natAdd value 1, natAdd pos width))
+def snappyRawCopyOp : ByteReader -> Nat -> Nat -> Nat -> sum (SnappyRawError, prod (Nat, Nat, Nat)) :=
+  fun (reader : ByteReader) (pos : Nat) (tag : Nat) (kind : Nat) =>
+    let width : Nat := case (natEq kind 1) with
+      | 1 (unit : prod ()) => 1
+      | 0 (unit : prod ()) => case (natEq kind 2) with | 1 (unit : prod ()) => 2 | 0 (unit : prod ()) => 4 in
+    case (snappyRawReadLe reader pos width) with
+    | 0 (error : SnappyRawError) => inj 0 of 2 error
+    | 1 (value : Nat) => case (natEq kind 1) with
+      | 1 (unit : prod ()) => inj 1 of 2 (tuple (natAdd 4 (remainder64 (quotient64 tag 4) 8),
+          natAdd (natMul (remainder64 (quotient64 tag 32) 8) 256) value, natAdd pos width))
+      | 0 (unit : prod ()) => inj 1 of 2 (tuple (natAdd (quotient64 tag 4) 1, value, natAdd pos width))
+def snappyRawMismatch : Nat -> Nat -> SnappyRawError := fun (declared : Nat) (produced : Nat) =>
+  snappyRawLengthMismatch (hostIntPositive declared) (hostIntPositive produced)
+def rec snappyRawCopyAcc : Bytes -> Bytes -> Nat -> Nat -> sum (SnappyRawError, Bytes) :=
+  fun (fuel : Bytes) (reversed : Bytes) (offset : Nat) (produced : Nat) =>
+    match fuel as self in Bytes return sum (SnappyRawError, Bytes) with
+    | bytesNil => inj 1 of 2 reversed
+    | bytesCons ignored tail => match (drop reversed (natSub offset 1)) as window in Bytes return sum (SnappyRawError, Bytes) with
+      | bytesNil => inj 0 of 2 (snappyRawCopyOffset (hostIntPositive offset) (hostIntPositive produced))
+      | bytesCons byte rest => snappyRawCopyAcc tail (bytesCons byte reversed) offset (natAdd produced 1)
+def snappyRawLiteralStep : ByteReader -> Nat -> Nat -> Bytes -> Nat -> Nat -> sum (SnappyRawError, prod (Nat, Bytes, Nat)) :=
+  fun (reader : ByteReader) (pos : Nat) (tag : Nat) (reversed : Bytes) (produced : Nat) (declared : Nat) =>
+    case (snappyRawLiteralLength reader pos tag) with
+    | 0 (error : SnappyRawError) => inj 0 of 2 error
+    | 1 (literal : prod (Nat, Nat)) =>
+      let total : Nat := natAdd produced literal.0 in
+      case (natLt declared total) with
+      | 1 (unit : prod ()) => inj 0 of 2 (snappyRawMismatch declared total)
+      | 0 (unit : prod ()) => case (byteReaderSub reader (hostIntPositive literal.1) (hostIntPositive literal.0)) with
+        | 0 (unit : prod ()) => inj 0 of 2 snappyRawTruncated
+        | 1 (bytes : Bytes) => inj 1 of 2 (tuple (natAdd literal.1 literal.0, append (reverse bytes) reversed, total))
+def snappyRawCopyStep : ByteReader -> Nat -> Nat -> Nat -> Bytes -> Nat -> Nat -> sum (SnappyRawError, prod (Nat, Bytes, Nat)) :=
+  fun (reader : ByteReader) (pos : Nat) (tag : Nat) (kind : Nat) (reversed : Bytes) (produced : Nat) (declared : Nat) =>
+    case (snappyRawCopyOp reader pos tag kind) with
+    | 0 (error : SnappyRawError) => inj 0 of 2 error
+    | 1 (copy : prod (Nat, Nat, Nat)) =>
+      case (boolOr (natEq copy.1 0) (natLt produced copy.1)) with
+      | 1 (unit : prod ()) => inj 0 of 2 (snappyRawCopyOffset (hostIntPositive copy.1) (hostIntPositive produced))
+      | 0 (unit : prod ()) =>
+        let total : Nat := natAdd produced copy.0 in
+        case (natLt declared total) with
+        | 1 (unit : prod ()) => inj 0 of 2 (snappyRawMismatch declared total)
+        | 0 (unit : prod ()) => case (snappyRawCopyAcc (take copy.0 fuel64) reversed copy.1 produced) with
+          | 0 (error : SnappyRawError) => inj 0 of 2 error
+          | 1 (out : Bytes) => inj 1 of 2 (tuple (copy.2, out, total))
+def snappyRawStep : ByteReader -> Nat -> Bytes -> Nat -> Nat -> sum (SnappyRawError, prod (Nat, Bytes, Nat)) :=
+  fun (reader : ByteReader) (pos : Nat) (reversed : Bytes) (produced : Nat) (declared : Nat) =>
+    case (snappyRawReadLe reader pos 1) with
+    | 0 (error : SnappyRawError) => inj 0 of 2 error
+    | 1 (tag : Nat) =>
+      let kind : Nat := remainder64 tag 4 in
+      case (natEq kind 0) with
+      | 1 (unit : prod ()) => snappyRawLiteralStep reader (natAdd pos 1) tag reversed produced declared
+      | 0 (unit : prod ()) => snappyRawCopyStep reader (natAdd pos 1) tag kind reversed produced declared
+def snappyRawFinish : Bytes -> Nat -> Nat -> sum (SnappyRawError, Bytes) := fun (reversed : Bytes) (produced : Nat) (declared : Nat) =>
+  case (natEq produced declared) with
+  | 1 (unit : prod ()) => inj 1 of 2 (reverse reversed)
+  | 0 (unit : prod ()) => inj 0 of 2 (snappyRawMismatch declared produced)
+def rec snappyRawRun : Bytes -> ByteReader -> Nat -> Bytes -> Nat -> Nat -> sum (SnappyRawError, Bytes) :=
+  fun (fuel : Bytes) (reader : ByteReader) (pos : Nat) (reversed : Bytes) (produced : Nat) (declared : Nat) =>
+    match fuel as self in Bytes return sum (SnappyRawError, Bytes) with
+    | bytesNil => (case (natLt pos (bytesLength (byteReaderBytes reader))) with
+      | 1 (unit : prod ()) => inj 0 of 2 snappyRawTruncated
+      | 0 (unit : prod ()) => snappyRawFinish reversed produced declared)
+    | bytesCons ignored tail => case (natLt pos (bytesLength (byteReaderBytes reader))) with
+      | 0 (unit : prod ()) => snappyRawFinish reversed produced declared
+      | 1 (unit : prod ()) => case (snappyRawStep reader pos reversed produced declared) with
+        | 0 (error : SnappyRawError) => inj 0 of 2 error
+        | 1 (next : prod (Nat, Bytes, Nat)) => snappyRawRun tail reader next.0 next.1 next.2 declared
+def snappyRawDecode : HostInt -> Bytes -> sum (SnappyRawError, Bytes) := fun (maxLen : HostInt) (source : Bytes) =>
+  let reader : ByteReader := byteReaderOfString source in
+  case (snappyRawPreamble reader) with
+  | 0 (error : SnappyRawError) => inj 0 of 2 error
+  | 1 (head : prod (Nat, Nat)) => case (hostIntNonnegative maxLen) with
+    | 0 (unit : prod ()) => inj 0 of 2 (snappyRawExceedsMax (hostIntPositive head.0) maxLen)
+    | 1 (maximum : Nat) => case (natLt maximum head.0) with
+      | 1 (unit : prod ()) => inj 0 of 2 (snappyRawExceedsMax (hostIntPositive head.0) maxLen)
+      | 0 (unit : prod ()) => snappyRawRun (drop source head.1) reader head.1 bytesNil 0 head.0
+def rec snappyRawVarintAcc : Bytes -> Nat -> Bytes := fun (fuel : Bytes) (value : Nat) =>
+  match fuel as self in Bytes return Bytes with
+  | bytesNil => (case (natLt value 128) with | 1 (unit : prod ()) => bytesCons value bytesNil | 0 (unit : prod ()) => bytesNil)
+  | bytesCons ignored tail => case (natLt value 128) with
+    | 1 (unit : prod ()) => bytesCons value bytesNil
+    | 0 (unit : prod ()) => bytesCons (natAdd 128 (remainder64 value 128)) (snappyRawVarintAcc tail (quotient64 value 128))
+def snappyRawLiteralTag : Nat -> Bytes := fun (length : Nat) =>
+  let value : Nat := natSub length 1 in
+  case (natLt 60 length) with
+  | 0 (unit : prod ()) => bytesCons (natMul value 4) bytesNil
+  | 1 (unit : prod ()) =>
+    let width : Nat := case (natLt 256 length) with
+      | 0 (unit : prod ()) => 1
+      | 1 (unit : prod ()) => case (natLt 65536 length) with
+        | 0 (unit : prod ()) => 2
+        | 1 (unit : prod ()) => case (natLt 16777216 length) with | 0 (unit : prod ()) => 3 | 1 (unit : prod ()) => 4 in
+    bytesCons (natMul (natAdd 59 width) 4) (bcsEncodeLEAcc (take width fuel8) value bytesNil)
+def snappyRawEncode : Bytes -> Bytes := fun (source : Bytes) =>
+  let length : Nat := bytesLength source in
+  append (snappyRawVarintAcc fuel64 length) (case (natEq length 0) with
+    | 1 (unit : prod ()) => bytesNil
+    | 0 (unit : prod ()) => append (snappyRawLiteralTag length) source)

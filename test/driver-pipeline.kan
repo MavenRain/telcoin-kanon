@@ -2,9 +2,11 @@ def driverPipelineCommittee : ByteStrings -> Nat -> CommitteeResult := fun (memb
   case (engineTestAuthorities members 0 1) with
   | 0 (unit : prod ()) => committeeError (committeeTooSmall 0)
   | 1 (authorities : Authorities) => committeeCreate (epochValue epoch) authorities
+def driverPipelineGenesisHash : Keccak := keccakValue (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 1 bytesNil))))))))))))))))))))))))))))))))
+def driverPipelineFeeAddress : Address := addressValue (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 0 (bytesCons 9 bytesNil))))))))))))))))))))
 def driverPipelineSpec : Timestamp -> Nat -> HostInt -> Bytes -> sum (ChainSpecError, ChainSpec) :=
   fun (timestamp : Timestamp) (duration : Nat) (gasLimit : HostInt) (registryCode : Bytes) =>
-    chainSpecCreate (u256Value 42) (addressOfWord (u256Value 9)) (keccakValue (u256ToBeBytes (u256Value 1)))
+    chainSpecCreate (u256Value 42) driverPipelineFeeAddress driverPipelineGenesisHash
       (u256Value 7) gasLimit timestamp (epochDurationValue duration)
       (tuple (nonceZero, u256Zero, valueSome Bytes registryCode, storageEmpty)) genesisEntriesNil
 def driverPipelineState : Driver -> Bytes := fun (driver : Driver) =>

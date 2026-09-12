@@ -1,0 +1,39 @@
+mu Crc32cError : Type 0 :=
+| crc32cOutOfBounds (pos : HostInt) (len : HostInt) (length : HostInt) : Crc32cError
+def crc32cErrorText : Crc32cError -> Bytes := fun (error : Crc32cError) =>
+  match error as self in Crc32cError return Bytes with
+  | crc32cOutOfBounds pos len length => append b"crc32c: window pos=" (append (hostIntText pos)
+      (append b" len=" (append (hostIntText len) (append b" is not inside a string of " (append (hostIntText length) b" bytes")))))
+def crc32cPoly : Nat := 2197175160
+def crc32cAllOnes : Nat := 4294967295
+def crc32cMaskAddend : Nat := 2726488792
+def rec crc32cBits : Bytes -> Nat -> Nat := fun (fuel : Bytes) (register : Nat) =>
+  match fuel as self in Bytes return Nat with
+  | bytesNil => register
+  | bytesCons ignored tail =>
+    let shifted : Nat := quotient64 register 2 in
+    crc32cBits tail (case (natEq (remainder64 register 2) 1) with
+      | 0 (unit : prod ()) => shifted
+      | 1 (unit : prod ()) => wordXor64 shifted crc32cPoly)
+def crc32cStep : HostInt -> HostInt -> HostInt := fun (register : HostInt) (byte : HostInt) =>
+  let bits : Nat := hostIntBits register in
+  let index : Nat := wordXor32 (remainder64 bits 256) (remainder64 (hostIntBits byte) 256) in
+  hostIntFromBits (wordXor64 (quotient64 bits 256) (crc32cTable index))
+def rec crc32cAcc : Bytes -> Nat -> Nat := fun (bytes : Bytes) (register : Nat) =>
+  match bytes as self in Bytes return Nat with
+  | bytesNil => register
+  | bytesCons byte tail =>
+    let index : Nat := wordXor32 (remainder64 register 256) byte in
+    crc32cAcc tail (wordXor64 (quotient64 register 256) (crc32cTable index))
+def crc32cDigest : Bytes -> HostInt := fun (bytes : Bytes) =>
+  hostIntFromBits (wordXor64 (crc32cAcc bytes crc32cAllOnes) crc32cAllOnes)
+def crc32cUpdate : HostInt -> Bytes -> HostInt -> HostInt -> sum (Crc32cError, HostInt) :=
+  fun (previous : HostInt) (bytes : Bytes) (pos : HostInt) (len : HostInt) =>
+    case (byteReaderSub (byteReaderOfString bytes) pos len) with
+    | 0 (unit : prod ()) => inj 0 of 2 (crc32cOutOfBounds pos len (hostIntPositive (bytesLength bytes)))
+    | 1 (window : Bytes) => inj 1 of 2 (hostIntFromBits
+        (wordXor64 (crc32cAcc window (wordXor64 (hostIntBits previous) crc32cAllOnes)) crc32cAllOnes))
+def crc32cMask : HostInt -> HostInt := fun (crc : HostInt) =>
+  let bits : Nat := hostIntBits crc in
+  let rotated : Nat := nativeOrBits (quotient64 bits 32768) (natMul (remainder64 bits 32768) 131072) in
+  hostIntPositive (remainder64 (natAdd rotated crc32cMaskAddend) 4294967296)

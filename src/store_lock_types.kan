@@ -1,0 +1,8 @@
+mu StoreLockError : Type 0 :=
+| storeLockIo (error : DurableIoError) : StoreLockError
+| storeLockHeld (path : Bytes) : StoreLockError
+def storeLockErrorText : StoreLockError -> Bytes := fun (error : StoreLockError) =>
+  match error as self in StoreLockError return Bytes with
+  | storeLockIo failure => durableIoErrorText failure
+  | storeLockHeld path => append path b": another handle already holds this root"
+def storeLockName : Bytes := b"LOCK"

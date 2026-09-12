@@ -1,0 +1,41 @@
+mu ByteReader : Type 0 :=
+| byteReaderValue (bytes : Bytes) : ByteReader
+def byteReaderOfString : Bytes -> ByteReader := fun (bytes : Bytes) => byteReaderValue bytes
+def byteReaderBytes : ByteReader -> Bytes := fun (reader : ByteReader) =>
+  match reader as self in ByteReader return Bytes with | byteReaderValue bytes => bytes
+def byteReaderLength : ByteReader -> HostInt := fun (reader : ByteReader) => hostIntPositive (bytesLength (byteReaderBytes reader))
+def byteReaderInside : ByteReader -> HostInt -> HostInt -> Bool := fun (reader : ByteReader) (pos : HostInt) (len : HostInt) =>
+  case (hostIntNonnegative pos) with
+  | 0 (unit : prod ()) => inj 0 of 2 (tuple ())
+  | 1 (position : Nat) => case (hostIntNonnegative len) with
+    | 0 (unit : prod ()) => inj 0 of 2 (tuple ())
+    | 1 (length : Nat) =>
+      let bound : Nat := bytesLength (byteReaderBytes reader) in
+      case (natLt bound length) with
+      | 1 (unit : prod ()) => inj 0 of 2 (tuple ())
+      | 0 (unit : prod ()) => case (natLt (natSub bound length) position) with
+        | 0 (unit : prod ()) => inj 1 of 2 (tuple ())
+        | 1 (unit : prod ()) => inj 0 of 2 (tuple ())
+def byteReaderSub : ByteReader -> HostInt -> HostInt -> ValueOption Bytes := fun (reader : ByteReader) (pos : HostInt) (len : HostInt) =>
+  case (byteReaderInside reader pos len) with
+  | 0 (unit : prod ()) => valueNone Bytes
+  | 1 (unit : prod ()) => valueSome Bytes (take (hostIntClampZero len) (drop (byteReaderBytes reader) (hostIntClampZero pos)))
+def nativeOrBits : Nat -> Nat -> Nat := fun (left : Nat) (right : Nat) =>
+  quotient64 (natAdd (natAdd left right) (wordXor64 left right)) 2
+def rec byteReaderLeAcc : Bytes -> Nat -> Nat -> Nat -> HostInt :=
+  fun (bytes : Bytes) (index : Nat) (factor : Nat) (acc : Nat) =>
+    match bytes as self in Bytes return HostInt with
+    | bytesNil => hostIntFromBits acc
+    | bytesCons byte tail =>
+      let bits : Nat := remainder64 (natMul byte factor) hostIntModulus in
+      let next : Nat := nativeOrBits acc bits in
+      case (natEq index 7) with
+      | 1 (unit : prod ()) => byteReaderLeAcc tail 0 1 next
+      | 0 (unit : prod ()) => byteReaderLeAcc tail (natAdd index 1) (natMul factor 256) next
+def byteReaderLeOfString : Bytes -> HostInt := fun (bytes : Bytes) => byteReaderLeAcc bytes 0 1 0
+def byteReaderLe : ByteReader -> HostInt -> HostInt -> ValueOption HostInt := fun (reader : ByteReader) (pos : HostInt) (len : HostInt) =>
+  case (byteReaderSub reader pos len) with
+  | 0 (unit : prod ()) => valueNone HostInt
+  | 1 (bytes : Bytes) => valueSome HostInt (byteReaderLeOfString bytes)
+def byteReaderByte : ByteReader -> HostInt -> ValueOption HostInt := fun (reader : ByteReader) (pos : HostInt) =>
+  byteReaderLe reader pos (hostIntPositive 1)

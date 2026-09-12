@@ -1,0 +1,5 @@
+def snappyTestCompress : Bytes -> Bytes := fun (source : Bytes) => bytesHex (snappyFrameCompress source)
+def snappyTestDecompress : Bytes -> Bytes -> Bytes := fun (maximum : Bytes) (source : Bytes) =>
+  case (snappyFrameDecompress (snappyPrimitiveInt maximum) source) with
+  | 0 (error : SnappyFrameError) => append b"error:" (snappyFrameErrorText error)
+  | 1 (bytes : Bytes) => append b"ok:" (bytesHex bytes)

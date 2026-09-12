@@ -121,15 +121,15 @@ safety or liveness for every possible schedule.
 | lib/driver/batch_store.ml | Ported: digest-keyed body storage and lookup, src/batch_store.kan; 15 OCaml differential rows |
 | lib/driver/chain_spec.ml | Implemented: genesis allocation precedence, system predeploys, fork schedule and saturating boundaries, src/chain_spec.kan; typechecked, runtime validation pending |
 | lib/driver/checkpoint.ml | Implemented: persisted engine and executed consensus tip with derived watermark, accumulator and phase, src/checkpoint.kan; typechecked, runtime validation pending |
-| lib/driver/driver.ml | Implemented: admission, atomic execution, sealing, handoff and guarded replay from checkpoints, src/driver.kan; runtime validation pending |
+| lib/driver/driver.ml | Partial: handoff passes 36 OCaml rows and complete output folds pass 22 rows, including header bytes and failure atomicity; real registry-driven sealing and checkpoint replay integration pending |
 | lib/driver/outcome.ml | Implemented: generic advance/sealed/halted outcomes and typed errors, src/driver_types.kan and src/driver_outcome.kan; runtime validation pending |
 | lib/driver/subscriber.ml | Ported: shared mint operation and atomic payload attachment, src/subscriber.kan; 36 OCaml differential rows |
-| lib/durable/append_log.ml | Pending |
+| lib/durable/append_log.ml | Partial: header validation, ordered identity comparisons and errors pass 657 shared OCaml rows, src/append_log_codec.kan; filesystem append, locking and healing pending |
 | lib/durable/atomic_file.ml | Partial: container encoding and decoding pass 194 OCaml rows, src/atomic_file_codec.kan; save/load filesystem effects pending |
 | lib/durable/frame.ml | Ported: BLAKE2b tags, exact framing, decode precedence, sequence checks and recovery scan, src/durable_frame*.kan; 268 frame/digest OCaml rows plus OpenSSL checks |
 | lib/durable/io.ml | Partial: operation and error types/renderers defined in src/durable_io_types.kan; guarded syscalls and counters pending |
 | lib/durable/io_ops.ml | Pending |
-| lib/durable/store_lock.ml | Pending |
+| lib/durable/store_lock.ml | Partial: typed errors and exact rendering, src/store_lock_types.kan; process register and POSIX locking pending |
 | lib/durable_checkpoint/checkpoint_codec.ml | Pending |
 | lib/durable_checkpoint/checkpoint_file.ml | Pending |
 | lib/durable_store/consensus_store_disk.ml | Pending |
@@ -147,7 +147,7 @@ safety or liveness for every possible schedule.
 | lib/evm/batch_position.ml | Ported: packed worker/index fields, checked host-int admission and first-batch classification, src/evm_spec.kan; OCaml comparisons |
 | lib/evm/blake2.ml | Ported: BLAKE2b compression, counters, final flags and variable rounds, src/blake2b*.kan; OCaml comparisons and independent BLAKE2b digest |
 | lib/evm/block_context.ml | Ported: ordered narrowing, genesis root validation and context values, src/block_context.kan; OCaml comparisons |
-| lib/evm/block_execution.ml | Partial: strict/skipping folds, gas metering, receipts, bloom and finished-world tokens pass ten integrated OCaml rows; pre-block system gates still under validation |
+| lib/evm/block_execution.ml | Ported: strict/skipping folds, gas metering, receipts, bloom and finished-world tokens pass ten integrated OCaml rows; system calls and pre-block gates pass 46 additional rows |
 | lib/evm/block_gas.ml | Ported: source-compatible receipt gas accounting, src/receipt_roots.kan; OCaml boundary comparisons |
 | lib/evm/block_hashes.ml | Ported: 256-ancestor window and full U256 lookup, src/block_hashes.kan; OCaml comparisons |
 | lib/evm/block_header.ml | Partial: finished-world assembly, root gates, persistence constructor, 21-field RLP, hash and equality, src/block_header.kan; ten integrated OCaml rows pass, full engine integration pending |
@@ -195,7 +195,7 @@ safety or liveness for every possible schedule.
 | lib/evm/spec.ml | Ported: fork ordering and activation checks, src/evm_spec.kan; OCaml comparisons |
 | lib/evm/sstore_state.ml | Ported: original, present and updated storage classification, src/evm_types.kan; all transition classes compared with OCaml |
 | lib/evm/stack.ml | Ported: bounded immutable stack, atomic pops, DUP and SWAP, src/evm_stack.kan; boundary comparisons against OCaml |
-| lib/evm/system_call.ml | Implemented: system environment and both retained-world rules, src/system_call.kan; integration validation pending |
+| lib/evm/system_call.ml | Ported: system environment and both retained-world rules, src/system_call.kan; 46 shared system/pre-block OCaml rows |
 | lib/evm/system_contracts.ml | Ported: system constants and predeployment, src/system_contracts.kan; OCaml comparisons in the executor validation suite |
 | lib/evm/topic_count.ml | Ported: five topic-count constructors, signed admission and enumeration, src/evm_types.kan and src/evm_enums.kan |
 | lib/evm/transaction.ml | Ported: fee variants, type-4 call target and saturated effective prices, src/transaction.kan; OCaml comparisons |
@@ -242,10 +242,10 @@ safety or liveness for every possible schedule.
 | lib/rand/std_rng.ml | Ported: leader seeds and inclusive u32/u64 sampling with exact draw advancement, src/chacha12.kan; OCaml differential tests |
 | lib/rlp/rlp.ml | Ported: canonical encoding, recursive-item views and iterative validating decode with exact errors, src/rlp.kan; 393 OCaml comparisons |
 | lib/sim/sim.ml | Ported for nonnegative limits: event ordering, loss, crashes, batch injection, agreement and execution, src/sim.kan; 19 seeded OCaml transcripts |
-| lib/snappy/byte_reader.ml | Pending |
-| lib/snappy/crc32c.ml | Pending |
-| lib/snappy/snappy_frame.ml | Pending |
-| lib/snappy/snappy_raw.ml | Pending |
+| lib/snappy/byte_reader.ml | Ported: total windows and native little-endian reads, src/byte_reader.kan; 348 OCaml rows |
+| lib/snappy/crc32c.ml | Ported: CRC-32C, incremental updates, masking and exact bounds errors, src/crc32c.kan; 212 OCaml rows |
+| lib/snappy/snappy_frame.ml | Ported: exact chunk emission and capped decompression with checksum and dispatch ordering, src/snappy_frame.kan; 1125 OCaml rows plus independent chunk/CRC checks |
+| lib/snappy/snappy_raw.ml | Ported: literal encoding and complete raw decoding, overlapping copies, nonminimal preambles and exact error precedence, src/snappy_raw.kan; 1639 OCaml rows |
 | lib/state/account.ml | Ported: canonical account state and transitions, src/state_types.kan and src/state.kan; 42 OCaml differential rows |
 | lib/state/address_word.ml | Ported: canonical account state and transitions, src/state_types.kan and src/state.kan; 42 OCaml differential rows |
 | lib/state/bytecode.ml | Ported: canonical account state and transitions, src/state_types.kan and src/state.kan; 42 OCaml differential rows |

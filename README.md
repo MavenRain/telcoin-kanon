@@ -23,8 +23,10 @@ All four signed transaction formats, sender recovery, EIP-7702 authorization and
 transaction execution now pass focused OCaml comparisons. Batch validation,
 payload attachment/filtering, block planning, registry ABI, shuffle and engine
 state transitions also pass differential tests. Block execution, header assembly,
-epoch closing and the driver are implemented and undergoing integration checks.
-Production consensus crypto, durability and networking remain. The source has 178 implementation modules
+system calls, driver output folds and epoch handoff pass focused integration checks.
+Raw and framed Snappy, CRC-32C, durable frames and log-header validation are ported.
+Real registry-driven sealing, checkpoint replay, filesystem durability, production
+consensus crypto and networking still need work. The source has 178 implementation modules
 across 25 libraries. [PORTING.md](PORTING.md) records module coverage and the
 next acceptance target. [VALIDATION.md](VALIDATION.md) records tested behavior.
 

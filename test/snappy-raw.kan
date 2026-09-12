@@ -1,0 +1,11 @@
+def snappyTestEncode : Bytes -> Bytes := fun (bytes : Bytes) => bytesHex (snappyRawEncode bytes)
+def snappyTestDecode : Bytes -> Bytes -> Bytes := fun (maximum : Bytes) (bytes : Bytes) =>
+  case (snappyRawDecode (snappyPrimitiveInt maximum) bytes) with
+  | 0 (error : SnappyRawError) => append b"error:" (snappyRawErrorText error)
+  | 1 (value : Bytes) => append b"ok:" (bytesHex value)
+def snappyTestPreamble : Bytes -> Bytes := fun (bytes : Bytes) =>
+  case (snappyRawPreamble (byteReaderOfString bytes)) with
+  | 0 (error : SnappyRawError) => append b"error:" (snappyRawErrorText error)
+  | 1 (head : prod (Nat, Nat)) => append (decimal64 head.0) (append b":" (decimal64 head.1))
+def snappyTestLiteralTag : Bytes -> Bytes := fun (length : Bytes) =>
+  bytesHex (snappyRawLiteralTag (hostIntClampZero (snappyPrimitiveInt length)))

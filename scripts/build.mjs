@@ -35,7 +35,8 @@ export const sources = ['core', 'nat64', 'scalars', 'bcs', 'codec', 'fixed', 'sc
   'driver_collections', 'address_book', 'batch_store', 'chain_spec', 'checkpoint',
   'subscriber', 'driver_types', 'driver_outcome_collections', 'driver_outcome', 'driver',
   'blake2b_digest', 'durable_frame_types', 'durable_frame_collections', 'durable_frame',
-  'durable_io_types', 'atomic_file_codec',
+  'durable_io_types', 'atomic_file_codec', 'bytes_rendering', 'store_lock_types', 'append_log_codec',
+  'byte_reader', 'crc32c_table', 'crc32c', 'snappy_raw', 'snappy_frame',
   'api', 'service'].map(name => resolve(project, `src/${name}.kan`));
 export function build(output, exports, extraSources = [], { scope = false } = {}) {
   const hash = createHash('sha256').update(readFileSync(compiler)).digest('hex');

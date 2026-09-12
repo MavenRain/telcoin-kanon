@@ -1,0 +1,25 @@
+def ocamlEscapedByte : Nat -> Bytes := fun (byte : Nat) =>
+  case (natEq byte 34) with
+  | 1 (unit : prod ()) => bytesCons 92 (bytesCons 34 bytesNil)
+  | 0 (unit : prod ()) => case (natEq byte 92) with
+    | 1 (unit : prod ()) => bytesCons 92 (bytesCons 92 bytesNil)
+    | 0 (unit : prod ()) => case (natEq byte 10) with
+      | 1 (unit : prod ()) => bytesCons 92 (bytesCons 110 bytesNil)
+      | 0 (unit : prod ()) => case (natEq byte 13) with
+        | 1 (unit : prod ()) => bytesCons 92 (bytesCons 114 bytesNil)
+        | 0 (unit : prod ()) => case (natEq byte 9) with
+          | 1 (unit : prod ()) => bytesCons 92 (bytesCons 116 bytesNil)
+          | 0 (unit : prod ()) => case (natEq byte 8) with
+            | 1 (unit : prod ()) => bytesCons 92 (bytesCons 98 bytesNil)
+            | 0 (unit : prod ()) => case (natLt byte 32) with
+              | 1 (unit : prod ()) => bytesCons 92 (bytesCons 48
+                  (bytesCons (natAdd 48 (quotient64 byte 10)) (bytesCons (natAdd 48 (remainder64 byte 10)) bytesNil)))
+              | 0 (unit : prod ()) => case (natLt byte 127) with
+                | 1 (unit : prod ()) => bytesCons byte bytesNil
+                | 0 (unit : prod ()) => bytesCons 92 (decimal64 byte)
+def rec ocamlEscapedBytes : Bytes -> Bytes := fun (bytes : Bytes) =>
+  match bytes as self in Bytes return Bytes with
+  | bytesNil => bytesNil
+  | bytesCons byte tail => append (ocamlEscapedByte byte) (ocamlEscapedBytes tail)
+def ocamlQuotedBytes : Bytes -> Bytes := fun (bytes : Bytes) =>
+  bytesCons 34 (append (ocamlEscapedBytes bytes) (bytesCons 34 bytesNil))

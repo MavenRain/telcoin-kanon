@@ -1,0 +1,127 @@
+mu SnappyFrameError : Type 0 :=
+| snappyFrameMissingIdentifier : SnappyFrameError
+| snappyFrameBadIdentifier : SnappyFrameError
+| snappyFrameTruncated : SnappyFrameError
+| snappyFrameReserved (kind : Nat) : SnappyFrameError
+| snappyFrameCrcMismatch (expected : Nat) (actual : Nat) : SnappyFrameError
+| snappyFrameBlockTooLarge (length : Nat) : SnappyFrameError
+| snappyFrameDeclaredTooLarge (length : Nat) : SnappyFrameError
+| snappyFrameMissingChecksum (length : Nat) : SnappyFrameError
+| snappyFrameRaw (error : SnappyRawError) : SnappyFrameError
+def snappyFrameErrorText : SnappyFrameError -> Bytes := fun (error : SnappyFrameError) =>
+  match error as self in SnappyFrameError return Bytes with
+  | snappyFrameMissingIdentifier => b"snappy frame: no stream identifier chunk"
+  | snappyFrameBadIdentifier => b"snappy frame: malformed stream identifier chunk"
+  | snappyFrameTruncated => b"snappy frame: input ends inside a chunk"
+  | snappyFrameReserved kind => append b"snappy frame: reserved chunk type 0x"
+      (append (bytesHex (bytesCons kind bytesNil)) b" must be rejected")
+  | snappyFrameCrcMismatch expected actual => append b"snappy frame: checksum 0x"
+      (append (bytesHex (reverse (bcsEncodeU32 expected))) (append b", computed 0x" (bytesHex (reverse (bcsEncodeU32 actual)))))
+  | snappyFrameBlockTooLarge length => append b"snappy frame: chunk holds " (append (decimal64 length) b" uncompressed bytes, cap 65536")
+  | snappyFrameDeclaredTooLarge length => append b"snappy frame: declared chunk length " (append (decimal64 length) b", cap 76490")
+  | snappyFrameMissingChecksum length => append b"snappy frame: data chunk length " (append (decimal64 length) b" cannot hold a checksum")
+  | snappyFrameRaw failure => append b"snappy frame: " (snappyRawErrorText failure)
+def snappyFrameStreamBody : Bytes := b"sNaPpY"
+def snappyFrameStreamChunk : Bytes := bytesCons 255 (bytesCons 6 (bytesCons 0 (bytesCons 0 snappyFrameStreamBody)))
+def snappyFrameUncompressedChunk : Bytes -> Bytes := fun (slice : Bytes) =>
+  bytesCons 1 (append (take 3 (bcsEncodeU32 (natAdd (bytesLength slice) 4)))
+    (append (bcsEncodeU32 (hostIntBits (crc32cMask (crc32cDigest slice)))) slice))
+def rec snappyFrameCompressAcc : Bytes -> Nat -> Bytes -> Bytes -> Bytes :=
+  fun (source : Bytes) (count : Nat) (reversed : Bytes) (out : Bytes) =>
+    match source as self in Bytes return Bytes with
+    | bytesNil => (case (natEq count 0) with
+      | 1 (unit : prod ()) => reverse out
+      | 0 (unit : prod ()) => reverse (append (reverse (snappyFrameUncompressedChunk (reverse reversed))) out))
+    | bytesCons byte tail => case (natEq count 65535) with
+      | 1 (unit : prod ()) => snappyFrameCompressAcc tail 0 bytesNil
+          (append (reverse (snappyFrameUncompressedChunk (reverse (bytesCons byte reversed)))) out)
+      | 0 (unit : prod ()) => snappyFrameCompressAcc tail (natAdd count 1) (bytesCons byte reversed) out
+def snappyFrameCompress : Bytes -> Bytes := fun (source : Bytes) =>
+  snappyFrameCompressAcc source 0 bytesNil (reverse snappyFrameStreamChunk)
+def snappyFrameRead : ByteReader -> Nat -> Nat -> sum (SnappyFrameError, Bytes) := fun (reader : ByteReader) (pos : Nat) (length : Nat) =>
+  case (byteReaderSub reader (hostIntPositive pos) (hostIntPositive length)) with
+  | 0 (unit : prod ()) => inj 0 of 2 snappyFrameTruncated
+  | 1 (bytes : Bytes) => inj 1 of 2 bytes
+def snappyFrameReadLe : ByteReader -> Nat -> Nat -> sum (SnappyFrameError, Nat) := fun (reader : ByteReader) (pos : Nat) (width : Nat) =>
+  case (byteReaderLe reader (hostIntPositive pos) (hostIntPositive width)) with
+  | 0 (unit : prod ()) => inj 0 of 2 snappyFrameTruncated
+  | 1 (value : HostInt) => inj 1 of 2 (hostIntClampZero value)
+def snappyFrameRawError : SnappyRawError -> SnappyFrameError := fun (error : SnappyRawError) =>
+  match error as self in SnappyRawError return SnappyFrameError with
+  | snappyRawExceedsMax declared maximum => snappyFrameBlockTooLarge (hostIntClampZero declared)
+  | snappyRawTruncated => snappyFrameRaw error
+  | snappyRawPreambleOverflow => snappyFrameRaw error
+  | snappyRawCopyOffset offset produced => snappyFrameRaw error
+  | snappyRawLengthMismatch declared produced => snappyFrameRaw error
+def snappyFrameCheckCrc : Nat -> Bytes -> sum (SnappyFrameError, Bytes) := fun (expected : Nat) (data : Bytes) =>
+  let actual : Nat := hostIntBits (crc32cMask (crc32cDigest data)) in
+  case (natEq actual expected) with
+  | 0 (unit : prod ()) => inj 0 of 2 (snappyFrameCrcMismatch expected actual)
+  | 1 (unit : prod ()) => inj 1 of 2 data
+def snappyFrameData : ByteReader -> Nat -> Nat -> Bool -> sum (SnappyFrameError, Bytes) :=
+  fun (reader : ByteReader) (body : Nat) (declared : Nat) (compressed : Bool) =>
+    case (natLt declared 4) with
+    | 1 (unit : prod ()) => inj 0 of 2 (snappyFrameMissingChecksum declared)
+    | 0 (unit : prod ()) => case (snappyFrameReadLe reader body 4) with
+      | 0 (error : SnappyFrameError) => inj 0 of 2 error
+      | 1 (expected : Nat) =>
+        let length : Nat := natSub declared 4 in
+        case (boolAnd (boolNot compressed) (natLt 65536 length)) with
+        | 1 (unit : prod ()) => inj 0 of 2 (snappyFrameBlockTooLarge length)
+        | 0 (unit : prod ()) => case (snappyFrameRead reader (natAdd body 4) length) with
+          | 0 (error : SnappyFrameError) => inj 0 of 2 error
+          | 1 (bytes : Bytes) => case compressed with
+            | 0 (unit : prod ()) => snappyFrameCheckCrc expected bytes
+            | 1 (unit : prod ()) => case (snappyRawDecode (hostIntPositive 65536) bytes) with
+              | 0 (error : SnappyRawError) => inj 0 of 2 (snappyFrameRawError error)
+              | 1 (data : Bytes) => snappyFrameCheckCrc expected data
+def snappyFrameBody : ByteReader -> Nat -> Nat -> Nat -> Bool -> sum (SnappyFrameError, prod (Bytes, Bool)) :=
+  fun (reader : ByteReader) (body : Nat) (declared : Nat) (kind : Nat) (seen : Bool) =>
+    case (natEq kind 255) with
+    | 1 (unit : prod ()) => (case (natEq declared 6) with
+      | 0 (unit : prod ()) => inj 0 of 2 snappyFrameBadIdentifier
+      | 1 (unit : prod ()) => case (snappyFrameRead reader body declared) with
+        | 0 (error : SnappyFrameError) => inj 0 of 2 error
+        | 1 (bytes : Bytes) => case (bytesEqual bytes snappyFrameStreamBody) with
+          | 0 (unit : prod ()) => inj 0 of 2 snappyFrameBadIdentifier
+          | 1 (unit : prod ()) => inj 1 of 2 (tuple (bytesNil, inj 1 of 2 (tuple ()))))
+    | 0 (unit : prod ()) => case (natLt kind 2) with
+      | 1 (unit : prod ()) => (case (snappyFrameData reader body declared (natEq kind 0)) with
+        | 0 (error : SnappyFrameError) => inj 0 of 2 error
+        | 1 (data : Bytes) => inj 1 of 2 (tuple (data, seen)))
+      | 0 (unit : prod ()) => case (natLt kind 128) with
+        | 1 (unit : prod ()) => inj 0 of 2 (snappyFrameReserved kind)
+        | 0 (unit : prod ()) => case (snappyFrameRead reader body declared) with
+          | 0 (error : SnappyFrameError) => inj 0 of 2 error
+          | 1 (ignored : Bytes) => inj 1 of 2 (tuple (bytesNil, seen))
+def snappyFrameStep : ByteReader -> Nat -> Bool -> sum (SnappyFrameError, prod (Nat, Bytes, Bool)) :=
+  fun (reader : ByteReader) (pos : Nat) (seen : Bool) =>
+    case (snappyFrameReadLe reader pos 1) with
+    | 0 (error : SnappyFrameError) => inj 0 of 2 error
+    | 1 (kind : Nat) => case (snappyFrameReadLe reader (natAdd pos 1) 3) with
+      | 0 (error : SnappyFrameError) => inj 0 of 2 error
+      | 1 (declared : Nat) => case (boolAnd (boolNot seen) (boolNot (natEq kind 255))) with
+        | 1 (unit : prod ()) => inj 0 of 2 snappyFrameMissingIdentifier
+        | 0 (unit : prod ()) => case (natLt 76490 declared) with
+          | 1 (unit : prod ()) => inj 0 of 2 (snappyFrameDeclaredTooLarge declared)
+          | 0 (unit : prod ()) =>
+            let body : Nat := natAdd pos 4 in
+            case (snappyFrameBody reader body declared kind seen) with
+            | 0 (error : SnappyFrameError) => inj 0 of 2 error
+            | 1 (decoded : prod (Bytes, Bool)) => inj 1 of 2 (tuple (natAdd body declared, decoded.0, decoded.1))
+def snappyFrameFinished : ByteReader -> Nat -> Nat -> Nat -> Bool := fun (reader : ByteReader) (pos : Nat) (produced : Nat) (maximum : Nat) =>
+  boolOr (boolNot (natLt produced maximum)) (boolNot (natLt pos (bytesLength (byteReaderBytes reader))))
+def rec snappyFrameChunks : Bytes -> ByteReader -> Nat -> Bytes -> Nat -> Nat -> Bool -> sum (SnappyFrameError, Bytes) :=
+  fun (fuel : Bytes) (reader : ByteReader) (pos : Nat) (reversed : Bytes) (produced : Nat) (maximum : Nat) (seen : Bool) =>
+    match fuel as self in Bytes return sum (SnappyFrameError, Bytes) with
+    | bytesNil => (case (snappyFrameFinished reader pos produced maximum) with
+      | 1 (unit : prod ()) => inj 1 of 2 (take maximum (reverse reversed))
+      | 0 (unit : prod ()) => inj 0 of 2 snappyFrameTruncated)
+    | bytesCons ignored tail => case (snappyFrameFinished reader pos produced maximum) with
+      | 1 (unit : prod ()) => inj 1 of 2 (take maximum (reverse reversed))
+      | 0 (unit : prod ()) => case (snappyFrameStep reader pos seen) with
+        | 0 (error : SnappyFrameError) => inj 0 of 2 error
+        | 1 (next : prod (Nat, Bytes, Bool)) => snappyFrameChunks tail reader next.0
+            (append (reverse next.1) reversed) (natAdd produced (bytesLength next.1)) maximum next.2
+def snappyFrameDecompress : HostInt -> Bytes -> sum (SnappyFrameError, Bytes) := fun (maximum : HostInt) (frame : Bytes) =>
+  snappyFrameChunks frame (byteReaderOfString frame) 0 bytesNil 0 (hostIntClampZero maximum) (inj 0 of 2 (tuple ()))

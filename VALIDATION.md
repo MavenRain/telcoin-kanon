@@ -1,5 +1,57 @@
 # Validation
 
+## Driver handoff and log headers
+
+Snappy's byte reader and CRC-32C primitives pass 560 OCaml differential rows
+in three groups, covering signed bounds, wide native little-endian reads,
+masking, arbitrary prior registers and incremental updates.
+Capture: `.kanon-exec/run-PVEe6O`, exit 0, 53.7 seconds. Subsequent raw and
+framed Snappy results are recorded below.
+
+Driver handoff passes 36 OCaml differential rows in two groups, including
+running and sealed phases, stale committees, maximal epochs, preserved leader
+counts on refusal, overshoot-based boundaries and timestamp saturation.
+Capture: `.kanon-exec/run-eFThwP`, exit 0, 195.1 seconds. The fixture transports
+epochs as BCS bytes so maximal u32 values do not cross the host's immediate-Nat
+interface. An earlier direct-Nat fixture trapped at that interface
+(`.kanon-exec/run-lFOsnC`); its timestamp group passed 12 rows.
+
+Append-log header validation, ordered identity comparisons, binary quoting and
+I/O, lock and corruption error rendering pass 657 OCaml differential rows in
+three groups. Capture: `.kanon-exec/run-i1ljwT`, exit 0, 3.5 seconds.
+This does not validate filesystem locking, append, healing or durability.
+The separate open-header and payload-length guards are implemented but are not
+selected by this suite yet.
+
+Full driver pipeline compilation initially exceeded the unchanged 600-second
+limit (`.kanon-exec/run-NVu7BM` and `.kanon-exec/run-F3dHKR`). A check-only
+diagnostic also timed out on 2,261 declarations in `.kanon-exec/run-cfTsyS`,
+which located the delay before WebAssembly generation. A missing `evmBatchPositionOfWord` conversion found
+by an earlier compiler run is now defined as the source's identity wrapper.
+Declaration timing with the existing compiler libraries reached BLAKE2b
+encoding before the diagnostic timed out (`.kanon-exec/run-4NoeFe`). Its
+word writer spent 29.4 seconds checking a 256-bit conversion followed by an
+eight-byte slice. It now uses the existing eight-byte little-endian encoder.
+The rerun passes all 10 groups in `.kanon-exec/run-cHuoZo`, exit 0, 612.6
+seconds total: 22 driver pipeline rows, 268 durable-frame rows and 97 BLAKE2F
+rows. Pipeline cases cover successful folds, header bytes, failure atomicity,
+admission ordering and the remaining suffix after a synthetic sealed phase.
+Real registry-driven sealing and checkpoint replay still need integration.
+
+Raw Snappy passes 1,639 OCaml comparisons in three groups, including literal
+length boundaries, nonminimal and overflowing preambles, all tag classes,
+overlapping copies and error precedence. Capture: `.kanon-exec/run-e7HqH7`,
+exit 0, 6.1 seconds. The CRC byte recurrence now uses a generated total
+decision tree, avoiding repeated bit-by-bit work. The unchanged 560-row
+primitive suite passes in 2.3 seconds (`.kanon-exec/run-mZMovL`).
+
+Framed Snappy passes 1,125 OCaml comparisons in three groups, including exact
+64 KiB chunking through 131,073 input bytes, raw compressed chunks, checksums,
+reserved types, declared-length ceilings, truncation and output-cap behavior.
+Capture: `.kanon-exec/run-IJLZc8`, exit 0, 98.8 seconds. Independent JavaScript
+CRC and chunk assembly also match the encoded output. All four source Snappy
+modules now have their public operations ported and covered.
+
 ## Batch, registry and engine continuation
 
 The active worktree now passes 1,157 OCaml differential rows for the wider
@@ -102,7 +154,11 @@ The complete driver-fold fixtures and their OCaml oracle are written.
 The oracle compiles and runs an empty-fold control in `.kanon-exec/run-ZbElwP`;
 Kanon pipeline execution is under validation. Fixed beacon/history bytecode
 is now represented directly as bytes, avoiding closed hex-parser evaluation.
-The system-call suite is being rerun with those equivalent constants.
+The system-call and pre-block suites now pass two groups and 46 OCaml rows
+with those equivalent constants in `.kanon-exec/run-fcARtq`. Its companion
+driver-pipeline build found a missing `evmBatchPositionOfWord` definition in
+the closing-block path, so the captured command exited 1. The missing public
+conversion is now defined; driver runtime comparisons are being rerun.
 
 Source/compiler pins pass in `.kanon-exec/run-4zc2Gr`; all 198 registered
 source files have unique declarations (`.kanon-exec/run-hFpNpF`). Collection,

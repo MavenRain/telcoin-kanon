@@ -1,0 +1,41 @@
+def driverHandoffTimestamp : ValueOption Timestamp -> Bytes := fun (value : ValueOption Timestamp) =>
+  case value with | 0 (unit : prod ()) => b"none" | 1 (timestamp : Timestamp) => decimal64 (timestampNat timestamp)
+def driverHandoffState : Driver -> Bytes := fun (driver : Driver) =>
+  engineTestField (decimal64 (epochNat (committeeEpoch (executionEngineCommittee driver.2)))) (driverPipelineState driver)
+def driverHandoffApply : Driver -> Committee -> Bytes := fun (driver : Driver) (next : Committee) =>
+  let after : Bytes := case (driverBeginEpoch driver next) with
+    | 0 (error : DriverHandoffError) => append b"error:" (driverHandoffErrorText error)
+    | 1 (advanced : Driver) => driverHandoffState advanced in
+  append (driverHandoffState driver) (append b"~" (append after (append b"~"
+    (append (driverHandoffTimestamp (driverClosedAt driver)) (append b"~" (driverHandoffTimestamp (driverNextBoundary driver)))))))
+def driverHandoffPrepare : ChainSpec -> Committee -> Committee -> Timestamp -> Nat -> ByteStrings -> Bytes :=
+  fun (spec : ChainSpec) (committee : Committee) (next : Committee) (frontier : Timestamp) (sealed : Nat) (leaders : ByteStrings) =>
+    let initial : Driver := driverCreate spec committee in
+    let engine : ExecutionEngine := initial.2 in
+    let phase : ExecutionPhase := case (natEq sealed 1) with
+      | 0 (unit : prod ()) => executionRunning frontier committee
+      | 1 (unit : prod ()) => executionSealed frontier committee in
+    let prepared : ExecutionEngine := tuple (engine.0, engine.1, engine.2, engine.3, engine.4,
+      engineTestLeaders leaders engine.5, phase) in
+    driverHandoffApply (tuple (initial.0, initial.1, prepared, initial.3)) next
+def driverTestHandoff : ByteStrings -> Nat -> ByteStrings -> Nat -> Bytes -> Bytes -> Nat -> ByteStrings -> Bytes -> Bytes :=
+  fun (members : ByteStrings) (epoch : Nat) (nextMembers : ByteStrings) (nextEpoch : Nat)
+    (frontierRaw : Bytes) (durationRaw : Bytes) (sealed : Nat) (leaders : ByteStrings) (registryCode : Bytes) =>
+    match (driverPipelineCommittee members epoch) as first in CommitteeResult return Bytes with
+    | committeeError error => append b"error:" (committeeErrorText error)
+    | committeeOk committee => match (driverPipelineCommittee nextMembers nextEpoch) as second in CommitteeResult return Bytes with
+      | committeeError error => append b"error:" (committeeErrorText error)
+      | committeeOk next => executionWith Timestamp timestampCodec frontierRaw (fun (frontier : Timestamp) =>
+        case (hostIntParse durationRaw) with | 0 (unit : prod ()) => b"error:bad duration"
+        | 1 (seconds : HostInt) => case (epochDurationOfSecs seconds) with
+          | 0 (unit : prod ()) => b"error:bad duration"
+          | 1 (duration : EpochDuration) => case (driverPipelineSpec (timestampValue 0) (epochDurationNat duration) (hostIntPositive 30000000) registryCode) with
+            | 0 (error : ChainSpecError) => append b"error:" (chainSpecErrorText error)
+            | 1 (spec : ChainSpec) => driverHandoffPrepare spec committee next frontier sealed leaders)
+def driverTestHandoffWire : ByteStrings -> Bytes -> ByteStrings -> Bytes -> Bytes -> Bytes -> Nat -> ByteStrings -> Bytes -> Bytes :=
+  fun (members : ByteStrings) (epochRaw : Bytes) (nextMembers : ByteStrings) (nextEpochRaw : Bytes)
+    (frontierRaw : Bytes) (durationRaw : Bytes) (sealed : Nat) (leaders : ByteStrings) (registryCode : Bytes) =>
+    executionWith Epoch epochCodec epochRaw (fun (epoch : Epoch) =>
+      executionWith Epoch epochCodec nextEpochRaw (fun (nextEpoch : Epoch) =>
+        driverTestHandoff members (epochNat epoch) nextMembers (epochNat nextEpoch)
+          frontierRaw durationRaw sealed leaders registryCode))
