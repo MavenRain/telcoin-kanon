@@ -63,8 +63,6 @@ The adapter uses POSIX `fsync`, matching the source. On macOS it does not issue
 `F_FULLFSYNC`, so power-loss durability is outside this contract.
 `TELCOIN_KANON_ROOT` or `KANON_BIN` can locate the same compiler elsewhere.
 A different executable is refused until its pin is reviewed and updated.
-The project uses its own root variable because capture tools reserve
-`KANON_ROOT` for their runtimes.
 
 ```sh
 npm run build
@@ -140,13 +138,7 @@ with Kanon. They do not build or modify the source checkout or fetch packages.
 The crypto oracles link C stubs into their executables to avoid depending on
 runtime shared-library search paths.
 
-With the installed compact tools:
-
-```sh
-kanon-wait run -- kanon-exec run --budget 4000 -- npm test
-```
-
-The ordinary `npm test` runs all listed suites sequentially.
+`npm test` runs all listed suites sequentially.
 The local validation switch is
 `/Users/oobi/Documents/gpt13/telcoin-kanon-ocaml`; select it with `OCAML_SWITCH`
 for both tests and generated-source checks. The default switch name is `tn-ocaml`.
