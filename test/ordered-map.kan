@@ -1,0 +1,68 @@
+def orderedMapTestMerge : ValueOption Nat -> ValueOption Nat -> ValueOption Nat := fun (a : ValueOption Nat) (b : ValueOption Nat) => case a with
+  | 0 (unit : prod ()) => (case b with | 0 (unit : prod ()) => valueNone Nat | 1 (b : Nat) => valueSome Nat (natAdd b 20))
+  | 1 (a : Nat) => case b with
+    | 0 (unit : prod ()) => valueSome Nat (natAdd a 10)
+    | 1 (b : Nat) => case (natEq a b) with | 1 (unit : prod ()) => valueNone Nat | 0 (unit : prod ()) => valueSome Nat (natAdd (natMul a 100) b)
+def orderedMapTestReport : (0 K : Type 0) -> (0 L : Type 0) -> Codec K -> K -> OrderedMap K Nat L -> OrderedMap K Nat L -> Bytes :=
+  fun (0 K : Type 0) (0 L : Type 0) (codec : Codec K) (key : K) (left : OrderedMap K Nat L) (right : OrderedMap K Nat L) =>
+    let pairCodec : Codec (prod (K, Nat)) := codecPair K Nat codec codecU32 in
+    let renderList : L -> Bytes := fun (entries : L) => bytesHex (codecWrite L (codecList (prod (K, Nat)) L left.0 pairCodec) entries) in
+    let render : OrderedMap K Nat L -> Bytes := fun (map : OrderedMap K Nat L) => renderList map.2 in
+    let option : ValueOption Nat -> Bytes := fun (value : ValueOption Nat) => case value with
+      | 0 (unit : prod ()) => b"none" | 1 (value : Nat) => decimal64 value in
+    let binding : ValueOption (prod (K, Nat)) -> Bytes := fun (value : ValueOption (prod (K, Nat))) => case value with
+      | 0 (unit : prod ()) => b"none" | 1 (entry : prod (K, Nat)) => bytesHex (codecWrite (prod (K, Nat)) pairCodec entry) in
+    let below : K -> Bool := fun (value : K) => match (left.1 value key) as self in Ordering return Bool with
+      | orderLess => natEq 0 0 | orderEqual => natEq 0 1 | orderGreater => natEq 0 1 in
+    let atLeast : K -> Bool := fun (value : K) => natEq (boolNat (below value)) 0 in
+    let atMost : K -> Bool := fun (value : K) => match (left.1 value key) as self in Ordering return Bool with
+      | orderLess => natEq 0 0 | orderEqual => natEq 0 0 | orderGreater => natEq 0 1 in
+    let parts : prod (OrderedMap K Nat L, OrderedMap K Nat L) := orderedMapPartition K Nat L (fun (key : K) (value : Nat) => below key) left in
+    let split : prod (OrderedMap K Nat L, ValueOption Nat, OrderedMap K Nat L) := orderedMapSplit K Nat L key left in
+    let out0 : Bytes := orderedSetTestJoin (render left) (orderedSetTestJoin (decimal64 (orderedMapCardinal K Nat L left))
+      (orderedSetTestBool (orderedMapIsEmpty K Nat L left))) in
+    let out1 : Bytes := orderedSetTestJoin out0 (orderedSetTestJoin (render (orderedMapAdd K Nat L key 99 left))
+      (orderedSetTestJoin (render (orderedMapRemove K Nat L key left)) (option (orderedMapFindOpt K Nat L key left)))) in
+    let out2 : Bytes := orderedSetTestJoin out1 (orderedSetTestJoin (orderedSetTestBool (orderedMapMem K Nat L key left))
+      (orderedSetTestJoin (orderedSetTestOrder (orderedMapCompare K Nat L natOrdering left right))
+        (orderedSetTestBool (orderedMapEqual K Nat L natEq left right)))) in
+    let out3 : Bytes := orderedSetTestJoin out2 (orderedSetTestJoin (binding (orderedMapMinOpt K Nat L left))
+      (orderedSetTestJoin (binding (orderedMapMaxOpt K Nat L left)) (binding (orderedMapChooseOpt K Nat L left)))) in
+    let out4 : Bytes := orderedSetTestJoin out3 (orderedSetTestJoin (binding (orderedMapFindFirstOpt K Nat L atLeast left))
+      (binding (orderedMapFindLastOpt K Nat L atMost left))) in
+    let out5 : Bytes := orderedSetTestJoin out4 (orderedSetTestJoin (render parts.0) (orderedSetTestJoin (render parts.1)
+      (orderedSetTestJoin (render split.0) (orderedSetTestJoin (option split.1) (render split.2))))) in
+    let out6 : Bytes := orderedSetTestJoin out5 (orderedSetTestJoin
+      (render (orderedMapUpdate K Nat L key (fun (previous : ValueOption Nat) => valueSome Nat (case previous with
+        | 0 (unit : prod ()) => 100 | 1 (value : Nat) => natAdd value 1)) left))
+      (render (orderedMapUpdate K Nat L key (fun (previous : ValueOption Nat) => valueNone Nat) left))) in
+    let out7 : Bytes := orderedSetTestJoin out6 (orderedSetTestJoin
+      (render (orderedMapMap K Nat L Nat L left.0 (fun (value : Nat) => natAdd value 1) left))
+      (render (orderedMapMapi K Nat L Nat L left.0 (fun (key : K) (value : Nat) => natAdd value (choose (below key) 1 2)) left))) in
+    let out8 : Bytes := orderedSetTestJoin out7 (orderedSetTestJoin
+      (render (orderedMapFilterMap K Nat L Nat L left.0 (fun (key : K) (value : Nat) => case (natEq (remainder64 value 2) 0) with
+        | 0 (unit : prod ()) => valueNone Nat | 1 (unit : prod ()) => valueSome Nat (natAdd value 3)) left))
+      (render (orderedMapMerge K Nat L Nat L Nat L left.0 (fun (key : K) (a : ValueOption Nat) (b : ValueOption Nat) => orderedMapTestMerge a b) left right))) in
+    let out9 : Bytes := orderedSetTestJoin out8 (orderedSetTestJoin
+      (render (orderedMapUnion K Nat L (fun (key : K) (a : Nat) (b : Nat) => case (natEq a b) with
+        | 1 (unit : prod ()) => valueNone Nat | 0 (unit : prod ()) => valueSome Nat (natAdd a (natMul 2 b))) left right))
+      (renderList (orderedMapToSeqFrom K Nat L key left))) in
+    let out10 : Bytes := orderedSetTestJoin out9 (orderedSetTestJoin
+      (orderedSetTestBool (orderedMapForAll K Nat L (fun (key : K) (value : Nat) => atMost key) left))
+      (orderedSetTestBool (orderedMapExists K Nat L (fun (key : K) (value : Nat) => below key) left))) in
+    orderedSetTestJoin out10 (render (orderedMapAddSeq K Nat L right.2 left))
+def orderedMapTestLists : (0 K : Type 0) -> (0 L : Type 0) -> (0 M : Type 0) -> Codec K -> ListOps (prod (K, Nats)) M -> K -> OrderedMap K Nat L -> Bytes :=
+  fun (0 K : Type 0) (0 L : Type 0) (0 M : Type 0) (codec : Codec K) (ops : ListOps (prod (K, Nats)) M) (key : K) (map : OrderedMap K Nat L) =>
+    let mapped : OrderedMap K Nats M := orderedMapMap K Nat L Nats M ops (fun (value : Nat) => seqNatCons value seqNatEmpty) map in
+    let added : OrderedMap K Nats M := orderedMapAddToList K Nat Nats M seqNatOps key 8 (orderedMapAddToList K Nat Nats M seqNatOps key 7 mapped) in
+    bytesHex (codecWrite M (codecList (prod (K, Nats)) M ops (codecPair K Nats codec (codecList Nat Nats seqNatOps codecU32))) added.2)
+def orderedMapTestRun : (0 K : Type 0) -> (0 L : Type 0) -> (0 M : Type 0) -> ListOps (prod (K, Nat)) L -> ListOps (prod (K, Nats)) M -> Codec K ->
+  (L -> OrderedMap K Nat L) -> Bytes -> Bytes -> Bytes -> Bytes :=
+  fun (0 K : Type 0) (0 L : Type 0) (0 M : Type 0) (ops : ListOps (prod (K, Nat)) L) (listOps : ListOps (prod (K, Nats)) M)
+    (codec : Codec K) (make : L -> OrderedMap K Nat L) (left : Bytes) (right : Bytes) (key : Bytes) =>
+      let listCodec : Codec L := codecList (prod (K, Nat)) L ops (codecPair K Nat codec codecU32) in
+      executionWith L listCodec left (fun (left : L) => executionWith L listCodec right (fun (right : L) => executionWith K codec key (fun (key : K) =>
+        let left : OrderedMap K Nat L := make left in
+        orderedSetTestJoin (orderedMapTestReport K L codec key left (make right)) (orderedMapTestLists K L M codec listOps key left))))
+def orderedMapTestRound : Bytes -> Bytes -> Bytes -> Bytes := orderedMapTestRun Round RoundNatEntries RoundNatLists seqRoundNatEntryOps seqRoundNatListOps roundCodec (roundMapOfList Nat RoundNatEntries seqRoundNatEntryOps)
+def orderedMapTestAuthority : Bytes -> Bytes -> Bytes -> Bytes := orderedMapTestRun AuthorityId AuthorityScores AuthorityNatLists seqAuthorityScoreOps seqAuthorityNatListOps authorityIdRawCodec (authorityMapOfList Nat AuthorityScores seqAuthorityScoreOps)

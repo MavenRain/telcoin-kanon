@@ -11,7 +11,7 @@ not a claim of complete module parity.
 | Milestone | Scope and acceptance evidence | Status |
 | --- | --- | --- |
 | 0 | Pin the chunk-44 source and compiler, compile reusable Wasm, port scalar/primitive-codec core, compare exact outputs and failures with OCaml, provide a working CLI. | Implemented; see VALIDATION.md. |
-| 1 | Complete tn_std, tn_codec and tn_types. Add general codecs, scalars, SplitMix64, digests, authorities, committees, batches and anchors. Match vectors and constructor rejections. | Value and codec behavior tested. General Round/Authority Map/Set APIs remain. |
+| 1 | Complete tn_std, tn_codec and tn_types. Add general codecs, scalars, SplitMix64, digests, authorities, committees, batches and anchors. Match vectors and constructor rejections. | Value and codec behavior and general Round/Authority Map/Set APIs tested. |
 | 2 | Port tn_vertex and tn_consensus pure state machines, plus deterministic tn_sim and the CLI. Compare complete seeded output transcripts. | Consensus, node composition, seeded simulator and public simulator CLI tested within the configuration bounds recorded below. |
 | 3 | Timing, consensus recovery and tn_execution. Compare durable-before-action transitions, restart transcripts and consensus-chain hashes. | Pure execution, replay, reference and disk stores, and consensus recovery tested. |
 | 4 | tn_state and EVM ALU/interpreter, then environment, access/refund, storage, calls, creation and transaction execution. Preserve full U256 arithmetic, gas, rollback and fork-specific outcomes. | Account state, EVM primitives, environments, instruction execution, calls, creation, rollback, fork schedules, all nine precompiles and transaction execution tested. |
@@ -263,13 +263,13 @@ safety or liveness for every possible schedule.
 | lib/trie/node.ml | Ported: node RLP and exact inline/hash child rule, src/trie_node.kan; OCaml comparisons at the 32-byte boundary |
 | lib/trie/trie.ml | Ported: sorted construction, duplicate rejection, raw/secure/ordered roots and account RLP, src/trie.kan; OCaml roots and index-boundary comparisons |
 | lib/types/authority.ml | Ported: identity, keys, addresses and unit voting power, src/crypto_stub.kan |
-| lib/types/authority_id.ml | Partial: checked identifiers, hash derivation, equality/order and internal signer sets; general Map/Set API pending |
+| lib/types/authority_id.ml | Ported: checked identifiers, profile hash derivation, equality/order and general ordered Map/Set APIs; shares 320 OCaml collection rows with Round; adaptations in COLLECTIONS.md |
 | lib/types/batch.ml | Ported: batch/sealed values, codec, simulation digest, receipt metadata and limits, src/batch.kan; golden and OCaml differential tests |
 | lib/types/block_num_hash.ml | Ported: anchor values, codec and signed comparison, src/block_num_hash.kan; OCaml differential tests |
 | lib/types/committee.ml | Ported: canonical roster, thresholds, indexing, stake and equality, src/committee.kan; OCaml differential tests |
 | lib/types/digests.ml | Ported: distinct nominal digest kinds and zero values, src/fixed.kan |
 | lib/types/leader_round.ml | Ported with explicit exhaustion correction, src/scalars.kan and src/scalar_ops.kan |
-| lib/types/round.ml | Partial: scalar operations; Map/Set pending, src/scalars.kan |
+| lib/types/round.ml | Ported: checked scalars and general ordered Map/Set APIs; shares 320 OCaml collection rows with AuthorityId, src/scalars.kan and src/ordered_*.kan; total/eager adaptations in COLLECTIONS.md |
 | lib/types/units.ml | Ported value operations with explicit overflow corrections, unsigned decimal transport and checked Address, src/scalars.kan, src/scalar_ops.kan, src/fixed.kan |
 | lib/vertex/certificate.ml | Ported: assembly, claims, genesis membership and aggregate verification, src/certificate.kan; OCaml differential tests |
 | lib/vertex/header.ml | Ported: canonical fields, codec, digest and validation, src/header.kan; golden and OCaml differential tests |

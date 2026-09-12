@@ -91,6 +91,10 @@ def ${p}Ops : ListOps (${A}) ${L} :=
 return output;
 }
 const cryptoFamilies = [
+  ['RoundValues', 'seqRoundValue', 'Round', 'roundValuesNil', 'roundValuesCons', true],
+  ['RoundNatEntries', 'seqRoundNatEntry', 'prod (Round, Nat)', 'roundNatEntriesNil', 'roundNatEntriesCons', true],
+  ['RoundNatLists', 'seqRoundNatList', 'prod (Round, Nats)', 'roundNatListsNil', 'roundNatListsCons', true],
+  ['AuthorityNatLists', 'seqAuthorityNatList', 'prod (AuthorityId, Nats)', 'authorityNatListsNil', 'authorityNatListsCons', true],
   ['Signatures', 'seqSignature', 'Signature', 'signaturesNil', 'signaturesCons', true],
   ['PublicKeys', 'seqPublicKey', 'PublicKey', 'publicKeysNil', 'publicKeysCons', true],
   ['Authorities', 'seqAuthority', 'Authority', 'authoritiesNil', 'authoritiesCons', true],

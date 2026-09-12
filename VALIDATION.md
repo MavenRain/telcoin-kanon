@@ -1,5 +1,27 @@
 # Validation
 
+## General Round and Authority collections
+
+Ordered sets pass 160 OCaml rows, comparing canonical elements, cardinality,
+updates, unions/intersections/differences, subset and disjoint checks, comparisons,
+optional boundary searches, partition/split, and duplicate-producing transforms.
+Ordered maps pass another 160 rows, including repeated-key replacement, update,
+merge and union callbacks, polymorphic list-valued transforms, `add_to_list`,
+boundaries, optional searches and ordered bindings. Each row compares a full
+operation report against the actual Round or Authority Map/Set module.
+Captures: `.kanon-exec/run-WpllNd`, exit 0, two groups, 4.3 seconds, and
+`.kanon-exec/run-szu6H1`, exit 0, two groups, 34.6 seconds.
+The final run through the public Round/Authority constructors passes all 320
+rows in `.kanon-exec/run-1XHi9O`, exit 0, four groups, 150.3 seconds. An earlier
+single oracle batch timed out in `.kanon-exec/run-bgxoT4`; map comparisons now
+use batches of 20 while retaining the 30-second oracle limit and every case.
+Generated-source checks pass in `.kanon-exec/run-JS077v`.
+
+The shared typed dictionary retains key ordering and a concrete sequence carrier.
+Exception-raising aliases use optional queries. Sequence adapters preserve finite
+element order with eager construction; lazy/infinite OCaml sequences and physical
+sharing are not modeled. COLLECTIONS.md records these interface adaptations.
+
 ## Typed transaction and receipt roots
 
 The typed wrappers pass 182 OCaml rows covering all four signed transaction

@@ -45,8 +45,9 @@ Explicit fork schedules, transaction skips and the Prague calldata floor now mat
 through live engine execution and checkpoint replay. Append-log recovery, checkpoint files and the disk store
 also pass differential and real-filesystem checks, including interrupted writes, restart,
 duplicate retries and checkpoint guards. Typed transaction and receipt root wrappers
-also match the source. General collection APIs,
-production consensus crypto and the complete public runtime interface still need work. The source has 178 implementation modules
+also match the source. General Round and Authority map/set APIs pass 320 further
+comparisons; [COLLECTIONS.md](COLLECTIONS.md) describes their typed interface.
+Production consensus crypto and the complete public runtime interface still need work. The source has 178 implementation modules
 across 25 libraries. [PORTING.md](PORTING.md) records module coverage and the
 next acceptance target. [VALIDATION.md](VALIDATION.md) records tested behavior.
 

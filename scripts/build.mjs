@@ -12,7 +12,7 @@ export const sources = ['core', 'nat64', 'scalars', 'bcs', 'codec', 'fixed', 'sc
   'collections', 'crypto_collections', 'nonempty', 'prng', 'blake2s', 'blake3', 'chacha12', 'rand_seq',
   'keccak_words', 'keccak_permutation', 'keccak', 'crypto_stub', 'committee',
   'protocol_codec', 'batch', 'block_num_hash', 'header', 'vote', 'certificate_types', 'vertex_collections', 'certificate',
-  'ordered', 'dag', 'aggregators', 'voter', 'reputation_scores', 'leader_schedule', 'sub_dag', 'consensus_collections', 'committed_log',
+  'ordered', 'ordered_set', 'ordered_map', 'ordered_map_transform', 'dag', 'aggregators', 'voter', 'reputation_scores', 'leader_schedule', 'sub_dag', 'consensus_collections', 'committed_log',
   'bullshark', 'proposer_types', 'machine_collections', 'proposer', 'node_types', 'node_collections', 'node',
   'consensus_block', 'consensus_chain', 'consensus_record', 'execution_collections', 'engine', 'replay', 'consensus_store',
   'sim_collections', 'sim_types', 'sim', 'sim_service', 'u256', 'storage_collections', 'state_types', 'state_collections', 'state',

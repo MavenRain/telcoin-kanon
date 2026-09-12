@@ -1,0 +1,44 @@
+def orderedSetTestBool : Bool -> Bytes := fun (value : Bool) => case value with
+  | 0 (unit : prod ()) => b"false" | 1 (unit : prod ()) => b"true"
+def orderedSetTestOrder : Ordering -> Bytes := fun (value : Ordering) => match value as self in Ordering return Bytes with
+  | orderLess => b"-1" | orderEqual => b"0" | orderGreater => b"1"
+def orderedSetTestJoin : Bytes -> Bytes -> Bytes := fun (left : Bytes) (right : Bytes) => append left (append b"|" right)
+def orderedSetTestReport : (0 A : Type 0) -> (0 L : Type 0) -> Codec A -> A -> OrderedSet A L -> OrderedSet A L -> Bytes :=
+  fun (0 A : Type 0) (0 L : Type 0) (codec : Codec A) (key : A) (left : OrderedSet A L) (right : OrderedSet A L) =>
+    let render : OrderedSet A L -> Bytes := fun (set : OrderedSet A L) => bytesHex (codecWrite L (codecList A L set.0 codec) set.2) in
+    let option : ValueOption A -> Bytes := fun (value : ValueOption A) => case value with
+      | 0 (unit : prod ()) => b"none" | 1 (key : A) => bytesHex (codecWrite A codec key) in
+    let below : A -> Bool := fun (value : A) => match (left.1 value key) as self in Ordering return Bool with
+      | orderLess => natEq 0 0 | orderEqual => natEq 0 1 | orderGreater => natEq 0 1 in
+    let atLeast : A -> Bool := fun (value : A) => natEq (boolNat (below value)) 0 in
+    let atMost : A -> Bool := fun (value : A) => match (left.1 value key) as self in Ordering return Bool with
+      | orderLess => natEq 0 0 | orderEqual => natEq 0 0 | orderGreater => natEq 0 1 in
+    let partition : prod (OrderedSet A L, OrderedSet A L) := orderedSetPartition A L below left in
+    let split : prod (OrderedSet A L, Bool, OrderedSet A L) := orderedSetSplit A L key left in
+    let fields : ByteStrings := seqBytesCons (render left) (seqBytesCons (decimal64 (orderedSetCardinal A L left))
+      (seqBytesCons (orderedSetTestBool (orderedSetIsEmpty A L left))
+      (seqBytesCons (render (orderedSetAdd A L key left)) (seqBytesCons (render (orderedSetRemove A L key left))
+      (seqBytesCons (render (orderedSetUnion A L left right)) (seqBytesCons (render (orderedSetInter A L left right))
+      (seqBytesCons (render (orderedSetDiff A L left right)) (seqBytesCons (orderedSetTestBool (orderedSetSubset A L left right))
+      (seqBytesCons (orderedSetTestBool (orderedSetDisjoint A L left right)) (seqBytesCons (orderedSetTestOrder (orderedSetCompare A L left right))
+      (seqBytesCons (orderedSetTestBool (orderedSetEqual A L left right)) (seqBytesCons (option (orderedSetMinOpt A L left))
+      (seqBytesCons (option (orderedSetMaxOpt A L left)) (seqBytesCons (option (orderedSetChooseOpt A L left))
+      (seqBytesCons (option (orderedSetFindOpt A L key left)) (seqBytesCons (option (orderedSetFindFirstOpt A L atLeast left))
+      (seqBytesCons (option (orderedSetFindLastOpt A L atMost left)) (seqBytesCons (orderedSetTestBool (orderedSetForAll A L atMost left))
+      (seqBytesCons (orderedSetTestBool (orderedSetExists A L below left)) (seqBytesCons (render partition.0) (seqBytesCons (render partition.1)
+      (seqBytesCons (render split.0) (seqBytesCons (orderedSetTestBool split.1) (seqBytesCons (render split.2)
+      (seqBytesCons (render (orderedSetMap A L (fun (value : A) => key) left))
+      (seqBytesCons (render (orderedSetFilterMap A L (fun (value : A) => case (below value) with
+        | 0 (unit : prod ()) => valueNone A | 1 (unit : prod ()) => valueSome A key) left))
+      (seqBytesCons (bytesHex (codecWrite L (codecList A L left.0 codec) (orderedSetToSeqFrom A L key left)))
+        seqBytesEmpty))))))))))))))))))))))))))) in
+    case (seqBytesHead fields) with
+    | 0 (unit : prod ()) => b"fixture:fields"
+    | 1 (first : Bytes) => listFoldLeft Bytes ByteStrings Bytes seqBytesOps orderedSetTestJoin first (seqBytesTail fields)
+def orderedSetTestRun : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> Codec A -> (L -> OrderedSet A L) -> Bytes -> Bytes -> Bytes -> Bytes :=
+  fun (0 A : Type 0) (0 L : Type 0) (ops : ListOps A L) (codec : Codec A) (make : L -> OrderedSet A L)
+    (left : Bytes) (right : Bytes) (key : Bytes) => executionWith L (codecList A L ops codec) left (fun (left : L) =>
+      executionWith L (codecList A L ops codec) right (fun (right : L) => executionWith A codec key (fun (key : A) =>
+        orderedSetTestReport A L codec key (make left) (make right))))
+def orderedSetTestRound : Bytes -> Bytes -> Bytes -> Bytes := orderedSetTestRun Round RoundValues seqRoundValueOps roundCodec (roundSetOfList RoundValues seqRoundValueOps)
+def orderedSetTestAuthority : Bytes -> Bytes -> Bytes -> Bytes := orderedSetTestRun AuthorityId AuthorityIds seqAuthorityIdOps authorityIdRawCodec (authoritySetOfList AuthorityIds seqAuthorityIdOps)

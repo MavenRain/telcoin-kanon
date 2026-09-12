@@ -1,0 +1,76 @@
+-- Finite ordered maps retain their concrete carrier and key ordering.
+-- Optional queries replace the source's exception-raising query aliases.
+def OrderedMap : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> Type 0 :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) => prod (ListOps (prod (K, V)) L, (K -> K -> Ordering), L)
+def orderedMapEmpty : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> ListOps (prod (K, V)) L -> (K -> K -> Ordering) -> OrderedMap K V L :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (ops : ListOps (prod (K, V)) L) (compare : K -> K -> Ordering) => tuple (ops, compare, ops.0)
+def orderedMapBindings : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> OrderedMap K V L -> L :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (map : OrderedMap K V L) => map.2
+def orderedMapCardinal : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> OrderedMap K V L -> Nat :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (map : OrderedMap K V L) => map.0.3 map.2
+def orderedMapIsEmpty : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> OrderedMap K V L -> Bool :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (map : OrderedMap K V L) => natEq (orderedMapCardinal K V L map) 0
+def orderedMapFindOpt : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> K -> OrderedMap K V L -> ValueOption V :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (key : K) (map : OrderedMap K V L) =>
+    mapLookup K V L map.0 (fun (a : K) (b : K) => orderingEqual (map.1 a b)) key map.2
+def orderedMapMem : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> K -> OrderedMap K V L -> Bool :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (key : K) (map : OrderedMap K V L) => optionIsSome V (orderedMapFindOpt K V L key map)
+def orderedMapAdd : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> K -> V -> OrderedMap K V L -> OrderedMap K V L :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (key : K) (value : V) (map : OrderedMap K V L) => tuple (map.0, map.1, mapAdd K V L map.0 map.1 key value map.2)
+def orderedMapRemove : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> K -> OrderedMap K V L -> OrderedMap K V L :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (key : K) (map : OrderedMap K V L) => tuple (map.0, map.1, mapRemove K V L map.0 map.1 key map.2)
+def orderedMapUpdate : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> K -> (ValueOption V -> ValueOption V) -> OrderedMap K V L -> OrderedMap K V L :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (key : K) (update : ValueOption V -> ValueOption V) (map : OrderedMap K V L) =>
+    case (update (orderedMapFindOpt K V L key map)) with
+    | 0 (unit : prod ()) => orderedMapRemove K V L key map
+    | 1 (value : V) => orderedMapAdd K V L key value map
+def orderedMapFold : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> (0 S : Type 0) -> (K -> V -> S -> S) -> OrderedMap K V L -> S -> S :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (0 S : Type 0) (step : K -> V -> S -> S) (map : OrderedMap K V L) (initial : S) =>
+    listFoldLeft (prod (K, V)) L S map.0 (fun (state : S) (entry : prod (K, V)) => step entry.0 entry.1 state) initial map.2
+def orderedMapAddSeq : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> L -> OrderedMap K V L -> OrderedMap K V L :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (entries : L) (map : OrderedMap K V L) =>
+    listFoldLeft (prod (K, V)) L (OrderedMap K V L) map.0 (fun (acc : OrderedMap K V L) (entry : prod (K, V)) => orderedMapAdd K V L entry.0 entry.1 acc) map entries
+def orderedMapOfList : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> ListOps (prod (K, V)) L -> (K -> K -> Ordering) -> L -> OrderedMap K V L :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (ops : ListOps (prod (K, V)) L) (compare : K -> K -> Ordering) (entries : L) =>
+    orderedMapAddSeq K V L entries (orderedMapEmpty K V L ops compare)
+def orderedMapSingleton : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> ListOps (prod (K, V)) L -> (K -> K -> Ordering) -> K -> V -> OrderedMap K V L :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (ops : ListOps (prod (K, V)) L) (compare : K -> K -> Ordering) (key : K) (value : V) => tuple (ops, compare, ops.1 (tuple (key, value)) ops.0)
+def orderedMapFilter : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> (K -> V -> Bool) -> OrderedMap K V L -> OrderedMap K V L :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (keep : K -> V -> Bool) (map : OrderedMap K V L) =>
+    tuple (map.0, map.1, listFilter (prod (K, V)) L map.0 (fun (entry : prod (K, V)) => keep entry.0 entry.1) map.2)
+def orderedMapForAll : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> (K -> V -> Bool) -> OrderedMap K V L -> Bool :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (keep : K -> V -> Bool) (map : OrderedMap K V L) => listAll (prod (K, V)) L map.0 (fun (entry : prod (K, V)) => keep entry.0 entry.1) map.2
+def orderedMapExists : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> (K -> V -> Bool) -> OrderedMap K V L -> Bool :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (accept : K -> V -> Bool) (map : OrderedMap K V L) =>
+    optionIsSome (prod (K, V)) (listFind (prod (K, V)) L map.0 (fun (entry : prod (K, V)) => accept entry.0 entry.1) map.2)
+def orderedMapCompare : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> (V -> V -> Ordering) -> OrderedMap K V L -> OrderedMap K V L -> Ordering :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (compare : V -> V -> Ordering) (left : OrderedMap K V L) (right : OrderedMap K V L) =>
+    listCompare (prod (K, V)) L left.0 (fun (a : prod (K, V)) (b : prod (K, V)) =>
+      match (left.1 a.0 b.0) as self in Ordering return Ordering with
+      | orderLess => orderLess | orderEqual => compare a.1 b.1 | orderGreater => orderGreater) left.2 right.2
+def orderedMapEqual : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> (V -> V -> Bool) -> OrderedMap K V L -> OrderedMap K V L -> Bool :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (equal : V -> V -> Bool) (left : OrderedMap K V L) (right : OrderedMap K V L) =>
+    orderingEqual (orderedMapCompare K V L (fun (a : V) (b : V) => case (equal a b) with
+      | 0 (unit : prod ()) => orderLess | 1 (unit : prod ()) => orderEqual) left right)
+def orderedMapMinOpt : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> OrderedMap K V L -> ValueOption (prod (K, V)) :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (map : OrderedMap K V L) => map.0.4 map.2
+def orderedMapMaxOpt : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> OrderedMap K V L -> ValueOption (prod (K, V)) :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (map : OrderedMap K V L) => map.0.4 (map.0.2 map.2)
+def orderedMapFindFirstOpt : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> (K -> Bool) -> OrderedMap K V L -> ValueOption (prod (K, V)) :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (accept : K -> Bool) (map : OrderedMap K V L) => listFind (prod (K, V)) L map.0 (fun (entry : prod (K, V)) => accept entry.0) map.2
+def orderedMapFindLastOpt : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> (K -> Bool) -> OrderedMap K V L -> ValueOption (prod (K, V)) :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (accept : K -> Bool) (map : OrderedMap K V L) => listFind (prod (K, V)) L map.0 (fun (entry : prod (K, V)) => accept entry.0) (map.0.2 map.2)
+def orderedMapPartition : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> (K -> V -> Bool) -> OrderedMap K V L -> prod (OrderedMap K V L, OrderedMap K V L) :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (accept : K -> V -> Bool) (map : OrderedMap K V L) => tuple (orderedMapFilter K V L accept map,
+    orderedMapFilter K V L (fun (key : K) (value : V) => natEq (boolNat (accept key value)) 0) map)
+def orderedMapSplit : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> K -> OrderedMap K V L -> prod (OrderedMap K V L, ValueOption V, OrderedMap K V L) :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (key : K) (map : OrderedMap K V L) => tuple (
+    orderedMapFilter K V L (fun (other : K) (value : V) => match (map.1 other key) as self in Ordering return Bool with
+      | orderLess => natEq 0 0 | orderEqual => natEq 0 1 | orderGreater => natEq 0 1) map,
+    orderedMapFindOpt K V L key map,
+    orderedMapFilter K V L (fun (other : K) (value : V) => match (map.1 other key) as self in Ordering return Bool with
+      | orderLess => natEq 0 1 | orderEqual => natEq 0 1 | orderGreater => natEq 0 0) map)
+def roundMapOfList : (0 V : Type 0) -> (0 L : Type 0) -> ListOps (prod (Round, V)) L -> L -> OrderedMap Round V L :=
+  fun (0 V : Type 0) (0 L : Type 0) (ops : ListOps (prod (Round, V)) L) (entries : L) => orderedMapOfList Round V L ops roundCompare entries
+def authorityMapOfList : (0 V : Type 0) -> (0 L : Type 0) -> ListOps (prod (AuthorityId, V)) L -> L -> OrderedMap AuthorityId V L :=
+  fun (0 V : Type 0) (0 L : Type 0) (ops : ListOps (prod (AuthorityId, V)) L) (entries : L) => orderedMapOfList AuthorityId V L ops authorityIdCompare entries

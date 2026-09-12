@@ -1,0 +1,97 @@
+-- Persistent finite sets carry their element ordering and concrete sequence dictionary.
+-- Checked constructors normalize input; operations preserve ascending unique elements.
+def OrderedSet : (0 A : Type 0) -> (0 L : Type 0) -> Type 0 :=
+  fun (0 A : Type 0) (0 L : Type 0) => prod (ListOps A L, (A -> A -> Ordering), L)
+def orderedSetOfList : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> (A -> A -> Ordering) -> L -> OrderedSet A L :=
+  fun (0 A : Type 0) (0 L : Type 0) (ops : ListOps A L) (compare : A -> A -> Ordering) (values : L) =>
+    tuple (ops, compare, ops.8 compare (ops.7 compare values))
+def orderedSetEmpty : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> (A -> A -> Ordering) -> OrderedSet A L :=
+  fun (0 A : Type 0) (0 L : Type 0) (ops : ListOps A L) (compare : A -> A -> Ordering) => tuple (ops, compare, ops.0)
+def orderedSetElements : (0 A : Type 0) -> (0 L : Type 0) -> OrderedSet A L -> L :=
+  fun (0 A : Type 0) (0 L : Type 0) (set : OrderedSet A L) => set.2
+def orderedSetCardinal : (0 A : Type 0) -> (0 L : Type 0) -> OrderedSet A L -> Nat :=
+  fun (0 A : Type 0) (0 L : Type 0) (set : OrderedSet A L) => set.0.3 set.2
+def orderedSetIsEmpty : (0 A : Type 0) -> (0 L : Type 0) -> OrderedSet A L -> Bool :=
+  fun (0 A : Type 0) (0 L : Type 0) (set : OrderedSet A L) => natEq (orderedSetCardinal A L set) 0
+def orderedSetFindOpt : (0 A : Type 0) -> (0 L : Type 0) -> A -> OrderedSet A L -> ValueOption A :=
+  fun (0 A : Type 0) (0 L : Type 0) (key : A) (set : OrderedSet A L) =>
+    listFind A L set.0 (fun (value : A) => orderingEqual (set.1 key value)) set.2
+def orderedSetMem : (0 A : Type 0) -> (0 L : Type 0) -> A -> OrderedSet A L -> Bool :=
+  fun (0 A : Type 0) (0 L : Type 0) (key : A) (set : OrderedSet A L) => optionIsSome A (orderedSetFindOpt A L key set)
+def orderedSetAdd : (0 A : Type 0) -> (0 L : Type 0) -> A -> OrderedSet A L -> OrderedSet A L :=
+  fun (0 A : Type 0) (0 L : Type 0) (key : A) (set : OrderedSet A L) => case (orderedSetMem A L key set) with
+  | 1 (unit : prod ()) => set
+  | 0 (unit : prod ()) => tuple (set.0, set.1, set.0.7 set.1 (set.0.1 key set.2))
+def orderedSetFilter : (0 A : Type 0) -> (0 L : Type 0) -> (A -> Bool) -> OrderedSet A L -> OrderedSet A L :=
+  fun (0 A : Type 0) (0 L : Type 0) (keep : A -> Bool) (set : OrderedSet A L) => tuple (set.0, set.1, listFilter A L set.0 keep set.2)
+def orderedSetRemove : (0 A : Type 0) -> (0 L : Type 0) -> A -> OrderedSet A L -> OrderedSet A L :=
+  fun (0 A : Type 0) (0 L : Type 0) (key : A) (set : OrderedSet A L) =>
+    orderedSetFilter A L (fun (value : A) => natEq (boolNat (orderingEqual (set.1 key value))) 0) set
+def orderedSetUnion : (0 A : Type 0) -> (0 L : Type 0) -> OrderedSet A L -> OrderedSet A L -> OrderedSet A L :=
+  fun (0 A : Type 0) (0 L : Type 0) (left : OrderedSet A L) (right : OrderedSet A L) =>
+    listFoldLeft A L (OrderedSet A L) right.0 (fun (acc : OrderedSet A L) (key : A) => orderedSetAdd A L key acc) left right.2
+def orderedSetInter : (0 A : Type 0) -> (0 L : Type 0) -> OrderedSet A L -> OrderedSet A L -> OrderedSet A L :=
+  fun (0 A : Type 0) (0 L : Type 0) (left : OrderedSet A L) (right : OrderedSet A L) => orderedSetFilter A L (fun (key : A) => orderedSetMem A L key right) left
+def orderedSetDiff : (0 A : Type 0) -> (0 L : Type 0) -> OrderedSet A L -> OrderedSet A L -> OrderedSet A L :=
+  fun (0 A : Type 0) (0 L : Type 0) (left : OrderedSet A L) (right : OrderedSet A L) =>
+    orderedSetFilter A L (fun (key : A) => natEq (boolNat (orderedSetMem A L key right)) 0) left
+def orderedSetSubset : (0 A : Type 0) -> (0 L : Type 0) -> OrderedSet A L -> OrderedSet A L -> Bool :=
+  fun (0 A : Type 0) (0 L : Type 0) (left : OrderedSet A L) (right : OrderedSet A L) => listAll A L left.0 (fun (key : A) => orderedSetMem A L key right) left.2
+def orderedSetDisjoint : (0 A : Type 0) -> (0 L : Type 0) -> OrderedSet A L -> OrderedSet A L -> Bool :=
+  fun (0 A : Type 0) (0 L : Type 0) (left : OrderedSet A L) (right : OrderedSet A L) => orderedSetIsEmpty A L (orderedSetInter A L left right)
+def orderedSetCompare : (0 A : Type 0) -> (0 L : Type 0) -> OrderedSet A L -> OrderedSet A L -> Ordering :=
+  fun (0 A : Type 0) (0 L : Type 0) (left : OrderedSet A L) (right : OrderedSet A L) => listCompare A L left.0 left.1 left.2 right.2
+def orderedSetEqual : (0 A : Type 0) -> (0 L : Type 0) -> OrderedSet A L -> OrderedSet A L -> Bool :=
+  fun (0 A : Type 0) (0 L : Type 0) (left : OrderedSet A L) (right : OrderedSet A L) => orderingEqual (orderedSetCompare A L left right)
+def orderedSetMinOpt : (0 A : Type 0) -> (0 L : Type 0) -> OrderedSet A L -> ValueOption A :=
+  fun (0 A : Type 0) (0 L : Type 0) (set : OrderedSet A L) => set.0.4 set.2
+def orderedSetMaxOpt : (0 A : Type 0) -> (0 L : Type 0) -> OrderedSet A L -> ValueOption A :=
+  fun (0 A : Type 0) (0 L : Type 0) (set : OrderedSet A L) => set.0.4 (set.0.2 set.2)
+def orderedSetFindFirstOpt : (0 A : Type 0) -> (0 L : Type 0) -> (A -> Bool) -> OrderedSet A L -> ValueOption A :=
+  fun (0 A : Type 0) (0 L : Type 0) (accept : A -> Bool) (set : OrderedSet A L) => listFind A L set.0 accept set.2
+def orderedSetFindLastOpt : (0 A : Type 0) -> (0 L : Type 0) -> (A -> Bool) -> OrderedSet A L -> ValueOption A :=
+  fun (0 A : Type 0) (0 L : Type 0) (accept : A -> Bool) (set : OrderedSet A L) => listFind A L set.0 accept (set.0.2 set.2)
+def orderedSetForAll : (0 A : Type 0) -> (0 L : Type 0) -> (A -> Bool) -> OrderedSet A L -> Bool :=
+  fun (0 A : Type 0) (0 L : Type 0) (accept : A -> Bool) (set : OrderedSet A L) => listAll A L set.0 accept set.2
+def orderedSetExists : (0 A : Type 0) -> (0 L : Type 0) -> (A -> Bool) -> OrderedSet A L -> Bool :=
+  fun (0 A : Type 0) (0 L : Type 0) (accept : A -> Bool) (set : OrderedSet A L) => optionIsSome A (orderedSetFindFirstOpt A L accept set)
+def orderedSetFold : (0 A : Type 0) -> (0 L : Type 0) -> (0 S : Type 0) -> (A -> S -> S) -> OrderedSet A L -> S -> S :=
+  fun (0 A : Type 0) (0 L : Type 0) (0 S : Type 0) (step : A -> S -> S) (set : OrderedSet A L) (initial : S) =>
+    listFoldLeft A L S set.0 (fun (state : S) (key : A) => step key state) initial set.2
+def orderedSetFilterMap : (0 A : Type 0) -> (0 L : Type 0) -> (A -> ValueOption A) -> OrderedSet A L -> OrderedSet A L :=
+  fun (0 A : Type 0) (0 L : Type 0) (convert : A -> ValueOption A) (set : OrderedSet A L) =>
+    orderedSetFold A L (OrderedSet A L) (fun (key : A) (acc : OrderedSet A L) => case (convert key) with
+      | 0 (unit : prod ()) => acc | 1 (value : A) => orderedSetAdd A L value acc) set (orderedSetEmpty A L set.0 set.1)
+def orderedSetMap : (0 A : Type 0) -> (0 L : Type 0) -> (A -> A) -> OrderedSet A L -> OrderedSet A L :=
+  fun (0 A : Type 0) (0 L : Type 0) (convert : A -> A) (set : OrderedSet A L) => orderedSetFilterMap A L (fun (key : A) => valueSome A (convert key)) set
+def orderedSetPartition : (0 A : Type 0) -> (0 L : Type 0) -> (A -> Bool) -> OrderedSet A L -> prod (OrderedSet A L, OrderedSet A L) :=
+  fun (0 A : Type 0) (0 L : Type 0) (accept : A -> Bool) (set : OrderedSet A L) => tuple (orderedSetFilter A L accept set,
+    orderedSetFilter A L (fun (key : A) => natEq (boolNat (accept key)) 0) set)
+def orderedSetSplit : (0 A : Type 0) -> (0 L : Type 0) -> A -> OrderedSet A L -> prod (OrderedSet A L, Bool, OrderedSet A L) :=
+  fun (0 A : Type 0) (0 L : Type 0) (key : A) (set : OrderedSet A L) => tuple (
+    orderedSetFilter A L (fun (value : A) => match (set.1 value key) as self in Ordering return Bool with
+      | orderLess => natEq 0 0 | orderEqual => natEq 0 1 | orderGreater => natEq 0 1) set,
+    orderedSetMem A L key set,
+    orderedSetFilter A L (fun (value : A) => match (set.1 value key) as self in Ordering return Bool with
+      | orderLess => natEq 0 1 | orderEqual => natEq 0 1 | orderGreater => natEq 0 0) set)
+def orderedSetToSeqFrom : (0 A : Type 0) -> (0 L : Type 0) -> A -> OrderedSet A L -> L :=
+  fun (0 A : Type 0) (0 L : Type 0) (key : A) (set : OrderedSet A L) =>
+    listFilter A L set.0 (fun (value : A) => match (set.1 value key) as self in Ordering return Bool with
+      | orderLess => natEq 0 1 | orderEqual => natEq 0 0 | orderGreater => natEq 0 0) set.2
+def roundSetOfList : (0 L : Type 0) -> ListOps Round L -> L -> OrderedSet Round L :=
+  fun (0 L : Type 0) (ops : ListOps Round L) (values : L) => orderedSetOfList Round L ops roundCompare values
+def authoritySetOfList : (0 L : Type 0) -> ListOps AuthorityId L -> L -> OrderedSet AuthorityId L :=
+  fun (0 L : Type 0) (ops : ListOps AuthorityId L) (values : L) => orderedSetOfList AuthorityId L ops authorityIdCompare values
+def orderedSetSingleton : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> (A -> A -> Ordering) -> A -> OrderedSet A L :=
+  fun (0 A : Type 0) (0 L : Type 0) (ops : ListOps A L) (compare : A -> A -> Ordering) (key : A) => tuple (ops, compare, ops.1 key ops.0)
+def orderedSetChooseOpt : (0 A : Type 0) -> (0 L : Type 0) -> OrderedSet A L -> ValueOption A := orderedSetMinOpt
+def orderedSetToList : (0 A : Type 0) -> (0 L : Type 0) -> OrderedSet A L -> L := orderedSetElements
+def orderedSetToSeq : (0 A : Type 0) -> (0 L : Type 0) -> OrderedSet A L -> L := orderedSetElements
+def orderedSetToRevSeq : (0 A : Type 0) -> (0 L : Type 0) -> OrderedSet A L -> L :=
+  fun (0 A : Type 0) (0 L : Type 0) (set : OrderedSet A L) => set.0.2 set.2
+def orderedSetOfSeq : (0 A : Type 0) -> (0 L : Type 0) -> ListOps A L -> (A -> A -> Ordering) -> L -> OrderedSet A L := orderedSetOfList
+def orderedSetAddSeq : (0 A : Type 0) -> (0 L : Type 0) -> L -> OrderedSet A L -> OrderedSet A L :=
+  fun (0 A : Type 0) (0 L : Type 0) (values : L) (set : OrderedSet A L) => orderedSetUnion A L set (orderedSetOfList A L set.0 set.1 values)
+def orderedSetIter : (0 A : Type 0) -> (0 L : Type 0) -> (A -> CodecUnit) -> OrderedSet A L -> CodecUnit :=
+  fun (0 A : Type 0) (0 L : Type 0) (action : A -> CodecUnit) (set : OrderedSet A L) =>
+    orderedSetFold A L CodecUnit (fun (key : A) (unit : CodecUnit) => action key) set codecUnitValue

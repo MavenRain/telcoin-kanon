@@ -1,0 +1,52 @@
+def orderedMapFilterMap : (0 K : Type 0) -> (0 A : Type 0) -> (0 L : Type 0) -> (0 B : Type 0) -> (0 M : Type 0) ->
+  ListOps (prod (K, B)) M -> (K -> A -> ValueOption B) -> OrderedMap K A L -> OrderedMap K B M :=
+  fun (0 K : Type 0) (0 A : Type 0) (0 L : Type 0) (0 B : Type 0) (0 M : Type 0)
+    (ops : ListOps (prod (K, B)) M) (convert : K -> A -> ValueOption B) (map : OrderedMap K A L) =>
+    let reversed : M := orderedMapFold K A L M (fun (key : K) (value : A) (acc : M) => case (convert key value) with
+      | 0 (unit : prod ()) => acc | 1 (value : B) => ops.1 (tuple (key, value)) acc) map ops.0 in
+    tuple (ops, map.1, ops.2 reversed)
+def orderedMapMapi : (0 K : Type 0) -> (0 A : Type 0) -> (0 L : Type 0) -> (0 B : Type 0) -> (0 M : Type 0) ->
+  ListOps (prod (K, B)) M -> (K -> A -> B) -> OrderedMap K A L -> OrderedMap K B M :=
+  fun (0 K : Type 0) (0 A : Type 0) (0 L : Type 0) (0 B : Type 0) (0 M : Type 0)
+    (ops : ListOps (prod (K, B)) M) (convert : K -> A -> B) (map : OrderedMap K A L) =>
+    orderedMapFilterMap K A L B M ops (fun (key : K) (value : A) => valueSome B (convert key value)) map
+def orderedMapMap : (0 K : Type 0) -> (0 A : Type 0) -> (0 L : Type 0) -> (0 B : Type 0) -> (0 M : Type 0) ->
+  ListOps (prod (K, B)) M -> (A -> B) -> OrderedMap K A L -> OrderedMap K B M :=
+  fun (0 K : Type 0) (0 A : Type 0) (0 L : Type 0) (0 B : Type 0) (0 M : Type 0)
+    (ops : ListOps (prod (K, B)) M) (convert : A -> B) (map : OrderedMap K A L) =>
+    orderedMapMapi K A L B M ops (fun (key : K) (value : A) => convert value) map
+def orderedMapMerge : (0 K : Type 0) -> (0 A : Type 0) -> (0 L : Type 0) -> (0 B : Type 0) -> (0 M : Type 0) -> (0 C : Type 0) -> (0 N : Type 0) ->
+  ListOps (prod (K, C)) N -> (K -> ValueOption A -> ValueOption B -> ValueOption C) -> OrderedMap K A L -> OrderedMap K B M -> OrderedMap K C N :=
+  fun (0 K : Type 0) (0 A : Type 0) (0 L : Type 0) (0 B : Type 0) (0 M : Type 0) (0 C : Type 0) (0 N : Type 0)
+    (ops : ListOps (prod (K, C)) N) (merge : K -> ValueOption A -> ValueOption B -> ValueOption C)
+    (left : OrderedMap K A L) (right : OrderedMap K B M) =>
+    let first : OrderedMap K C N := orderedMapFold K A L (OrderedMap K C N)
+      (fun (key : K) (value : A) (acc : OrderedMap K C N) => case (merge key (valueSome A value) (orderedMapFindOpt K B M key right)) with
+        | 0 (unit : prod ()) => acc | 1 (value : C) => orderedMapAdd K C N key value acc) left (orderedMapEmpty K C N ops left.1) in
+    orderedMapFold K B M (OrderedMap K C N) (fun (key : K) (value : B) (acc : OrderedMap K C N) =>
+      case (orderedMapMem K A L key left) with
+      | 1 (unit : prod ()) => acc
+      | 0 (unit : prod ()) => case (merge key (valueNone A) (valueSome B value)) with
+        | 0 (unit : prod ()) => acc | 1 (value : C) => orderedMapAdd K C N key value acc) right first
+def orderedMapUnion : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> (K -> V -> V -> ValueOption V) -> OrderedMap K V L -> OrderedMap K V L -> OrderedMap K V L :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (combine : K -> V -> V -> ValueOption V) (left : OrderedMap K V L) (right : OrderedMap K V L) =>
+    orderedMapMerge K V L V L V L left.0 (fun (key : K) (a : ValueOption V) (b : ValueOption V) => case a with
+      | 0 (unit : prod ()) => b
+      | 1 (a : V) => case b with | 0 (unit : prod ()) => valueSome V a | 1 (b : V) => combine key a b) left right
+def orderedMapAddToList : (0 K : Type 0) -> (0 V : Type 0) -> (0 M : Type 0) -> (0 L : Type 0) -> ListOps V M -> K -> V -> OrderedMap K M L -> OrderedMap K M L :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 M : Type 0) (0 L : Type 0) (ops : ListOps V M) (key : K) (value : V) (map : OrderedMap K M L) =>
+    orderedMapUpdate K M L key (fun (previous : ValueOption M) => valueSome M (case previous with
+      | 0 (unit : prod ()) => ops.1 value ops.0 | 1 (values : M) => ops.1 value values)) map
+def orderedMapToSeqFrom : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> K -> OrderedMap K V L -> L :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (key : K) (map : OrderedMap K V L) =>
+    listFilter (prod (K, V)) L map.0 (fun (entry : prod (K, V)) => match (map.1 entry.0 key) as self in Ordering return Bool with
+      | orderLess => natEq 0 1 | orderEqual => natEq 0 0 | orderGreater => natEq 0 0) map.2
+def orderedMapToRevSeq : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> OrderedMap K V L -> L :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (map : OrderedMap K V L) => map.0.2 map.2
+def orderedMapChooseOpt : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> OrderedMap K V L -> ValueOption (prod (K, V)) := orderedMapMinOpt
+def orderedMapToList : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> OrderedMap K V L -> L := orderedMapBindings
+def orderedMapToSeq : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> OrderedMap K V L -> L := orderedMapBindings
+def orderedMapOfSeq : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> ListOps (prod (K, V)) L -> (K -> K -> Ordering) -> L -> OrderedMap K V L := orderedMapOfList
+def orderedMapIter : (0 K : Type 0) -> (0 V : Type 0) -> (0 L : Type 0) -> (K -> V -> CodecUnit) -> OrderedMap K V L -> CodecUnit :=
+  fun (0 K : Type 0) (0 V : Type 0) (0 L : Type 0) (action : K -> V -> CodecUnit) (map : OrderedMap K V L) =>
+    orderedMapFold K V L CodecUnit (fun (key : K) (value : V) (unit : CodecUnit) => action key value) map codecUnitValue
