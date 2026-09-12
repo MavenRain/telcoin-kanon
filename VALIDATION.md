@@ -1,9 +1,26 @@
 # Validation
 
-The implementation covers all 178 modules in the pinned OCaml inventory. The
-complete simulation and BLS public Wasm builds pass, as do the BLS CLI and network
-integration suites. The full sequential regression is running in
-`.kanon-exec/run-sh1Hgx`; its final result will be recorded here before completion.
+The implementation covers all 178 modules in the pinned OCaml inventory. All 101
+current test files have passing validation across 427 test groups, including both
+complete public runtime builds. Reported counters total 40,954 OCaml differential
+rows, alongside independent arithmetic/hash checks, CLI comparisons and real
+filesystem tests.
+
+## Final regression
+
+| Run | Result | Capture |
+| --- | --- | --- |
+| Sequential regression, 100 files | 421 groups pass; one BLAKE2s unit-build timeout; exit 1, 9540.1 seconds | `.kanon-exec/run-sh1Hgx` |
+| Corrected BLAKE2s suite | All 3 groups pass; exit 0, 34.9 seconds | `.kanon-exec/run-oil7Fh` |
+| Added BLS network suite | All 3 groups pass; exit 0, 573.1 seconds | `.kanon-exec/run-2mi4Te` |
+
+The sequential invocation started before the BLAKE2s build-scope correction and
+before the BLS network file was added to the command. Its other tests all passed;
+there were no cancelled, skipped or TODO tests. The two focused runs cover the
+corrected and added files without dropping any case. Thus all current suites
+are validated, while the original sequential invocation retains its recorded
+nonzero exit status. Production Kanon code is at `f28fb9f`; subsequent changes
+record validation and documentation.
 
 ## Reproduce
 
@@ -30,8 +47,10 @@ explicit 30-minute compiler budget, as documented in the history.
 
 | Check | Result | Capture |
 | --- | --- | --- |
-| Complete simulation build and public CLI | 9 groups pass; rerun after final callback changes is in the broad regression | `.kanon-exec/run-atT4y1` |
-| Complete BLS build and public CLI | 5 groups pass, 1181.1 seconds including compilation | `.kanon-exec/run-BGTHuz` |
+| Complete simulation build and public CLI | 9 groups pass after the final callback changes | `.kanon-exec/run-sh1Hgx` |
+| Complete BLS build and public CLI | 5 groups pass in both the focused run and the broad regression | `.kanon-exec/run-BGTHuz`, `.kanon-exec/run-sh1Hgx` |
+| Expanded BLS crypto profile | 53 native comparisons, 6 groups pass, including zero-scalar signing | `.kanon-exec/run-sh1Hgx` |
+| BLS genesis and protocol digests | 2 native comparisons, 1 group passes | `.kanon-exec/run-sh1Hgx` |
 | BLS network votes and certificates | 10 native comparisons, 3 groups pass | `.kanon-exec/run-2mi4Te` |
 | Generated-source checks | Pass with the dedicated OCaml switch | `.kanon-exec/run-WzJiM5` |
 | Pinned source inventory | Pass | `.kanon-exec/run-2UdxiW` |
@@ -49,6 +68,15 @@ its separate passing run above covers that addition. Its BLAKE2s suite hit a
 selects its hash-export closure and passes all three original groups in
 `.kanon-exec/run-oil7Fh`. Both CLI suites still compile the complete library.
 No vector, assertion or required public build was removed.
+
+After the broad regression's CLI builds, both public artifacts have exactly the
+72 declared exports and zero Wasm imports. Each profile compiles 278 Kanon source
+files. The artifact check passes in `.kanon-exec/run-g3rJbR`:
+
+| Artifact | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `build/telcoin-foundation.wasm` | 960,771 | `0d1be021fbc6174387eb4cb7dc36ce22002e522e6d17d734921f55a2892b106f` |
+| `build/telcoin-bls.wasm` | 961,157 | `c637f767a74e92d77f07d3ad308b71211c1d1b46a999adc8ab960f8af9887b5d` |
 
 ## Compatibility and limits
 
@@ -84,6 +112,9 @@ duplicate signatures and cancelling public keys.
 
 ## BLOCKERS
 
-The full regression has not finished. No unresolved CI-weakening or code finding
-was identified in the focused review. Merge after the remaining regression
-passes and the known BLAKE2s timeout is reconciled with its passing rerun.
+None identified in the focused review. The BLAKE2s build timeout is resolved and
+its complete suite passes. No CI-weakening or unresolved correctness finding
+remains in the reviewed paths.
+
+Merge verdict: merge. The regression and focused runs cover every current test
+file, and both complete runtime profiles pass their public CLI comparisons.

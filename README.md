@@ -53,7 +53,7 @@ wire adapters. Both source crypto
 profiles have runtime and CLI entry points. The source has 178 implementation
 modules across 25 libraries. [PORTING.md](PORTING.md) records the source map and
 interface adaptations. [VALIDATION.md](VALIDATION.md) records tested behavior
-and the status of final regression checks.
+and final validation results.
 
 ## Run
 
