@@ -1,0 +1,43 @@
+def rec roaringTestIntsAcc : ByteStrings -> HostInts -> ValueOption HostInts := fun (strings : ByteStrings) (out : HostInts) =>
+  match strings as self in ByteStrings return ValueOption HostInts with
+  | byteStringsNil => valueSome HostInts (seqHostIntReverse out)
+  | byteStringsCons head tail => case (hostIntParse head) with
+    | 0 (unit : prod ()) => valueNone HostInts
+    | 1 (value : HostInt) => roaringTestIntsAcc tail (hostIntsCons value out)
+def roaringTestInts : ByteStrings -> ValueOption HostInts := fun (strings : ByteStrings) => roaringTestIntsAcc strings hostIntsNil
+def roaringTestText : NetworkRoaring -> HostInt -> Bytes := fun (bitmap : NetworkRoaring) (member : HostInt) =>
+  let values : HostInts := networkRoaringToList bitmap in
+  let valueCodec : Codec HostInt := codecIso Nat HostInt (fun (n : Nat) => hostIntPositive n) hostIntClampZero codecU32 in
+  let encoded : Bytes := codecWrite HostInts (codecList HostInt HostInts seqHostIntOps valueCodec) values in
+  let recreated : Bytes := case (networkRoaringOfList values) with
+    | 0 (error : NetworkRoaringError) => append b"error:" (networkRoaringErrorText error)
+    | 1 (other : NetworkRoaring) => stateBoolText (networkRoaringEqual bitmap other) in
+  append (bytesHex (networkRoaringToBytes bitmap)) (append b"|" (append (hostIntText (networkRoaringCardinality bitmap))
+    (append b"|" (append (bytesHex (blake2s256 encoded)) (append b"|" (append (stateBoolText (networkRoaringMem member bitmap))
+      (append b"|" recreated)))))))
+def roaringTestList : ByteStrings -> Bytes -> Bytes := fun (strings : ByteStrings) (memberRaw : Bytes) =>
+  case (hostIntParse memberRaw) with | 0 (unit : prod ()) => b"setup:bad member"
+  | 1 (member : HostInt) => case (roaringTestInts strings) with | 0 (unit : prod ()) => b"setup:bad integers"
+    | 1 (values : HostInts) => case (networkRoaringOfList values) with
+      | 0 (error : NetworkRoaringError) => append b"error:" (networkRoaringErrorText error)
+      | 1 (bitmap : NetworkRoaring) => roaringTestText bitmap member
+def roaringTestRead : Nat -> Bytes -> Bytes -> Bytes := fun (mode : Nat) (raw : Bytes) (memberRaw : Bytes) =>
+  case (hostIntParse memberRaw) with | 0 (unit : prod ()) => b"setup:bad member"
+  | 1 (member : HostInt) => case (natEq mode 0) with
+    | 1 (unit : prod ()) =>
+      (case (networkRoaringOfBytes raw) with
+      | 0 (error : NetworkRoaringError) => append b"error:" (networkRoaringErrorText error)
+      | 1 (bitmap : NetworkRoaring) => roaringTestText bitmap member)
+    | 0 (unit : prod ()) => case (codecDecode NetworkRoaring networkRoaringCodec raw) with
+      | 0 (error : BcsError) => append b"error:" (bcsErrorText error)
+      | 1 (bitmap : prod (NetworkRoaring, BcsReader)) => roaringTestText bitmap.0 member
+def roaringTestError : Nat -> Bytes -> Bytes -> Bytes := fun (kind : Nat) (aRaw : Bytes) (bRaw : Bytes) =>
+  case (hostIntParse aRaw) with | 0 (unit : prod ()) => b"bad a"
+  | 1 (a : HostInt) => case (hostIntParse bRaw) with | 0 (unit : prod ()) => b"bad b"
+    | 1 (b : HostInt) => networkRoaringErrorText
+      (case (natEq kind 0) with | 1 (unit : prod ()) => networkRoaringUnknownCookie a
+      | 0 (unit : prod ()) => case (natEq kind 1) with | 1 (unit : prod ()) => networkRoaringTooManyContainers a
+      | 0 (unit : prod ()) => case (natEq kind 2) with | 1 (unit : prod ()) => networkRoaringTruncated a
+      | 0 (unit : prod ()) => case (natEq kind 3) with | 1 (unit : prod ()) => networkRoaringTrailingBytes a b
+      | 0 (unit : prod ()) => case (natEq kind 4) with | 1 (unit : prod ()) => networkRoaringValueOutOfRange a
+      | 0 (unit : prod ()) => networkRoaringRunOutOfRange a b)

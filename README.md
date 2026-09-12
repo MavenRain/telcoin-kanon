@@ -27,7 +27,10 @@ system calls, driver output folds, checkpoint replay and epoch handoff pass focu
 Real registry execution also matches through epoch closing, replay and a second epoch.
 Raw and framed Snappy, CRC-32C, durable frames and log-header validation are ported.
 Network scalar and BLS wire types, Base58, protocol identifiers, frame envelopes,
-epoch records and node record compatibility pass focused comparisons.
+epoch records and node record compatibility pass focused comparisons. Roaring
+bitmaps, vote and certificate adapters, epoch certificates and peer exchange also
+match the OCaml reference. Synchronization requests, frames, chunking and pure
+stream readers pass 927 further comparisons.
 The live persistence protocol, filesystem durability, production consensus crypto
 and the remaining network messages and state machines still need work. The source has 178 implementation modules
 across 25 libraries. [PORTING.md](PORTING.md) records module coverage and the

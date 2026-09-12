@@ -1,0 +1,32 @@
+def rec natMergeAcc : Nats -> Nats -> Nats -> Nats -> Nats :=
+  fun (fuel : Nats) (left : Nats) (right : Nats) (out : Nats) =>
+  match fuel as self in Nats return Nats with
+  | natsNil => seqNatReverse out
+  | natsCons unused tail => match left as lhs in Nats return Nats with
+    | natsNil => listAppend Nat Nats seqNatOps (seqNatReverse out) right
+    | natsCons a aa => match right as rhs in Nats return Nats with
+      | natsNil => listAppend Nat Nats seqNatOps (seqNatReverse out) left
+      | natsCons b bb => case (natLt b a) with
+        | 1 (unit : prod ()) => natMergeAcc tail left bb (natsCons b out)
+        | 0 (unit : prod ()) => natMergeAcc tail aa right (natsCons a out)
+def natMerge : Nats -> Nats -> Nats := fun (left : Nats) (right : Nats) =>
+  natMergeAcc (listAppend Nat Nats seqNatOps left right) left right natsNil
+def rec natMergePairs : NatLists -> NatLists -> NatLists := fun (runs : NatLists) (out : NatLists) =>
+  match runs as self in NatLists return NatLists with
+  | natListsNil => seqNatListReverse out
+  | natListsCons a rest => match rest as tail in NatLists return NatLists with
+    | natListsNil => seqNatListReverse (natListsCons a out)
+    | natListsCons b remaining => natMergePairs remaining (natListsCons (natMerge a b) out)
+def rec natMergeCollapse : Nats -> NatLists -> Nats := fun (fuel : Nats) (runs : NatLists) =>
+  match fuel as self in Nats return Nats with
+  | natsNil => natsNil
+  | natsCons unused tail => match runs as groups in NatLists return Nats with
+    | natListsNil => natsNil
+    | natListsCons head rest => match rest as remaining in NatLists return Nats with
+      | natListsNil => head
+      | natListsCons second others => natMergeCollapse tail (natMergePairs runs natListsNil)
+-- Each pass halves the run count. For n >= 1, n fuel nodes cover the passes
+-- and the final singleton observation, including the n = 1 and n = 2 cases.
+def natMergeSort : Nats -> Nats := fun (values : Nats) =>
+  natMergeCollapse values (listMapInto Nat Nats Nats NatLists seqNatOps seqNatListOps
+    (fun (value : Nat) => natsCons value natsNil) values)

@@ -1,0 +1,148 @@
+def NetworkSyncDenyReason : Type 0 := sum (CodecUnit, CodecUnit)
+def networkSyncAtCapacity : NetworkSyncDenyReason := inj 0 of 2 codecUnitValue
+def networkSyncUnavailable : NetworkSyncDenyReason := inj 1 of 2 codecUnitValue
+def NetworkSyncFrameError : Type 0 := sum (CodecUnit, CodecUnit)
+def networkSyncInternal : NetworkSyncFrameError := inj 0 of 2 codecUnitValue
+def networkSyncMalformed : NetworkSyncFrameError := inj 1 of 2 codecUnitValue
+def networkSyncDenyIndex : NetworkSyncDenyReason -> Nat := fun (reason : NetworkSyncDenyReason) => case reason with
+  | 0 (unit : CodecUnit) => 0 | 1 (unit : CodecUnit) => 1
+def networkSyncFrameErrorIndex : NetworkSyncFrameError -> Nat := fun (error : NetworkSyncFrameError) => case error with
+  | 0 (unit : CodecUnit) => 0 | 1 (unit : CodecUnit) => 1
+def networkSyncDenyEqual : NetworkSyncDenyReason -> NetworkSyncDenyReason -> Bool := fun (a : NetworkSyncDenyReason) (b : NetworkSyncDenyReason) => natEq (networkSyncDenyIndex a) (networkSyncDenyIndex b)
+def networkSyncFrameErrorEqual : NetworkSyncFrameError -> NetworkSyncFrameError -> Bool := fun (a : NetworkSyncFrameError) (b : NetworkSyncFrameError) => natEq (networkSyncFrameErrorIndex a) (networkSyncFrameErrorIndex b)
+def networkSyncDenyCodec : Codec NetworkSyncDenyReason := codecSum NetworkSyncDenyReason
+  (codecCasesPrepend NetworkSyncDenyReason (codecCase NetworkSyncDenyReason (CodecUnit) 0 (codecUnit)
+    (fun (value : CodecUnit) => networkSyncAtCapacity)
+    (fun (value : NetworkSyncDenyReason) => case value with
+    | 0 (payload : CodecUnit) => valueSome (CodecUnit) payload
+    | 1 (payload : CodecUnit) => valueNone (CodecUnit)))
+  (codecCase NetworkSyncDenyReason (CodecUnit) 1 (codecUnit)
+    (fun (value : CodecUnit) => networkSyncUnavailable)
+    (fun (value : NetworkSyncDenyReason) => case value with
+    | 0 (payload : CodecUnit) => valueNone (CodecUnit)
+    | 1 (payload : CodecUnit) => valueSome (CodecUnit) payload)))
+def networkSyncFrameErrorCodec : Codec NetworkSyncFrameError := codecSum NetworkSyncFrameError
+  (codecCasesPrepend NetworkSyncFrameError (codecCase NetworkSyncFrameError (CodecUnit) 0 (codecUnit)
+    (fun (value : CodecUnit) => networkSyncInternal)
+    (fun (value : NetworkSyncFrameError) => case value with
+    | 0 (payload : CodecUnit) => valueSome (CodecUnit) payload
+    | 1 (payload : CodecUnit) => valueNone (CodecUnit)))
+  (codecCase NetworkSyncFrameError (CodecUnit) 1 (codecUnit)
+    (fun (value : CodecUnit) => networkSyncMalformed)
+    (fun (value : NetworkSyncFrameError) => case value with
+    | 0 (payload : CodecUnit) => valueNone (CodecUnit)
+    | 1 (payload : CodecUnit) => valueSome (CodecUnit) payload)))
+def NetworkSyncFrame : (0 R : Type 0) -> Type 0 := fun (0 R : Type 0) => sum (R, CodecUnit, NetworkSyncDenyReason, Bytes, CodecUnit, NetworkSyncFrameError)
+def networkSyncReq : (0 R : Type 0) -> R -> NetworkSyncFrame R := fun (0 R : Type 0) (value : R) => inj 0 of 6 value
+def networkSyncAck : (0 R : Type 0) -> CodecUnit -> NetworkSyncFrame R := fun (0 R : Type 0) (value : CodecUnit) => inj 1 of 6 value
+def networkSyncDeny : (0 R : Type 0) -> NetworkSyncDenyReason -> NetworkSyncFrame R := fun (0 R : Type 0) (value : NetworkSyncDenyReason) => inj 2 of 6 value
+def networkSyncData : (0 R : Type 0) -> Bytes -> NetworkSyncFrame R := fun (0 R : Type 0) (value : Bytes) => inj 3 of 6 value
+def networkSyncEnd : (0 R : Type 0) -> CodecUnit -> NetworkSyncFrame R := fun (0 R : Type 0) (value : CodecUnit) => inj 4 of 6 value
+def networkSyncErr : (0 R : Type 0) -> NetworkSyncFrameError -> NetworkSyncFrame R := fun (0 R : Type 0) (value : NetworkSyncFrameError) => inj 5 of 6 value
+def networkSyncFrameCodec : (0 R : Type 0) -> Codec R -> Codec (NetworkSyncFrame R) := fun (0 R : Type 0) (requestCodec : Codec R) => codecSum (NetworkSyncFrame R)
+  (codecCasesPrepend (NetworkSyncFrame R) (codecCase (NetworkSyncFrame R) (R) 0 (requestCodec)
+    (fun (value : R) => networkSyncReq R value)
+    (fun (value : (NetworkSyncFrame R)) => case value with
+    | 0 (payload : R) => valueSome (R) payload
+    | 1 (payload : CodecUnit) => valueNone (R)
+    | 2 (payload : NetworkSyncDenyReason) => valueNone (R)
+    | 3 (payload : Bytes) => valueNone (R)
+    | 4 (payload : CodecUnit) => valueNone (R)
+    | 5 (payload : NetworkSyncFrameError) => valueNone (R)))
+  (codecCasesPrepend (NetworkSyncFrame R) (codecCase (NetworkSyncFrame R) (CodecUnit) 1 (codecUnit)
+    (fun (value : CodecUnit) => networkSyncAck R value)
+    (fun (value : (NetworkSyncFrame R)) => case value with
+    | 0 (payload : R) => valueNone (CodecUnit)
+    | 1 (payload : CodecUnit) => valueSome (CodecUnit) payload
+    | 2 (payload : NetworkSyncDenyReason) => valueNone (CodecUnit)
+    | 3 (payload : Bytes) => valueNone (CodecUnit)
+    | 4 (payload : CodecUnit) => valueNone (CodecUnit)
+    | 5 (payload : NetworkSyncFrameError) => valueNone (CodecUnit)))
+  (codecCasesPrepend (NetworkSyncFrame R) (codecCase (NetworkSyncFrame R) (NetworkSyncDenyReason) 2 (networkSyncDenyCodec)
+    (fun (value : NetworkSyncDenyReason) => networkSyncDeny R value)
+    (fun (value : (NetworkSyncFrame R)) => case value with
+    | 0 (payload : R) => valueNone (NetworkSyncDenyReason)
+    | 1 (payload : CodecUnit) => valueNone (NetworkSyncDenyReason)
+    | 2 (payload : NetworkSyncDenyReason) => valueSome (NetworkSyncDenyReason) payload
+    | 3 (payload : Bytes) => valueNone (NetworkSyncDenyReason)
+    | 4 (payload : CodecUnit) => valueNone (NetworkSyncDenyReason)
+    | 5 (payload : NetworkSyncFrameError) => valueNone (NetworkSyncDenyReason)))
+  (codecCasesPrepend (NetworkSyncFrame R) (codecCase (NetworkSyncFrame R) (Bytes) 3 (codecBytes)
+    (fun (value : Bytes) => networkSyncData R value)
+    (fun (value : (NetworkSyncFrame R)) => case value with
+    | 0 (payload : R) => valueNone (Bytes)
+    | 1 (payload : CodecUnit) => valueNone (Bytes)
+    | 2 (payload : NetworkSyncDenyReason) => valueNone (Bytes)
+    | 3 (payload : Bytes) => valueSome (Bytes) payload
+    | 4 (payload : CodecUnit) => valueNone (Bytes)
+    | 5 (payload : NetworkSyncFrameError) => valueNone (Bytes)))
+  (codecCasesPrepend (NetworkSyncFrame R) (codecCase (NetworkSyncFrame R) (CodecUnit) 4 (codecUnit)
+    (fun (value : CodecUnit) => networkSyncEnd R value)
+    (fun (value : (NetworkSyncFrame R)) => case value with
+    | 0 (payload : R) => valueNone (CodecUnit)
+    | 1 (payload : CodecUnit) => valueNone (CodecUnit)
+    | 2 (payload : NetworkSyncDenyReason) => valueNone (CodecUnit)
+    | 3 (payload : Bytes) => valueNone (CodecUnit)
+    | 4 (payload : CodecUnit) => valueSome (CodecUnit) payload
+    | 5 (payload : NetworkSyncFrameError) => valueNone (CodecUnit)))
+  (codecCase (NetworkSyncFrame R) (NetworkSyncFrameError) 5 (networkSyncFrameErrorCodec)
+    (fun (value : NetworkSyncFrameError) => networkSyncErr R value)
+    (fun (value : (NetworkSyncFrame R)) => case value with
+    | 0 (payload : R) => valueNone (NetworkSyncFrameError)
+    | 1 (payload : CodecUnit) => valueNone (NetworkSyncFrameError)
+    | 2 (payload : NetworkSyncDenyReason) => valueNone (NetworkSyncFrameError)
+    | 3 (payload : Bytes) => valueNone (NetworkSyncFrameError)
+    | 4 (payload : CodecUnit) => valueNone (NetworkSyncFrameError)
+    | 5 (payload : NetworkSyncFrameError) => valueSome (NetworkSyncFrameError) payload)))))))
+def networkSyncFrameEqual : (0 R : Type 0) -> (R -> R -> Bool) -> NetworkSyncFrame R -> NetworkSyncFrame R -> Bool :=
+  fun (0 R : Type 0) (requestEqual : R -> R -> Bool) (a : NetworkSyncFrame R) (b : NetworkSyncFrame R) => case a with
+  | 0 (left : R) => (case b with
+    | 0 (right : R) => requestEqual left right
+    | 1 (right : CodecUnit) => inj 0 of 2 (tuple ())
+    | 2 (right : NetworkSyncDenyReason) => inj 0 of 2 (tuple ())
+    | 3 (right : Bytes) => inj 0 of 2 (tuple ())
+    | 4 (right : CodecUnit) => inj 0 of 2 (tuple ())
+    | 5 (right : NetworkSyncFrameError) => inj 0 of 2 (tuple ()))
+  | 1 (left : CodecUnit) => (case b with
+    | 0 (right : R) => inj 0 of 2 (tuple ())
+    | 1 (right : CodecUnit) => natEq 0 0
+    | 2 (right : NetworkSyncDenyReason) => inj 0 of 2 (tuple ())
+    | 3 (right : Bytes) => inj 0 of 2 (tuple ())
+    | 4 (right : CodecUnit) => inj 0 of 2 (tuple ())
+    | 5 (right : NetworkSyncFrameError) => inj 0 of 2 (tuple ()))
+  | 2 (left : NetworkSyncDenyReason) => (case b with
+    | 0 (right : R) => inj 0 of 2 (tuple ())
+    | 1 (right : CodecUnit) => inj 0 of 2 (tuple ())
+    | 2 (right : NetworkSyncDenyReason) => networkSyncDenyEqual left right
+    | 3 (right : Bytes) => inj 0 of 2 (tuple ())
+    | 4 (right : CodecUnit) => inj 0 of 2 (tuple ())
+    | 5 (right : NetworkSyncFrameError) => inj 0 of 2 (tuple ()))
+  | 3 (left : Bytes) => (case b with
+    | 0 (right : R) => inj 0 of 2 (tuple ())
+    | 1 (right : CodecUnit) => inj 0 of 2 (tuple ())
+    | 2 (right : NetworkSyncDenyReason) => inj 0 of 2 (tuple ())
+    | 3 (right : Bytes) => bytesEqual left right
+    | 4 (right : CodecUnit) => inj 0 of 2 (tuple ())
+    | 5 (right : NetworkSyncFrameError) => inj 0 of 2 (tuple ()))
+  | 4 (left : CodecUnit) => (case b with
+    | 0 (right : R) => inj 0 of 2 (tuple ())
+    | 1 (right : CodecUnit) => inj 0 of 2 (tuple ())
+    | 2 (right : NetworkSyncDenyReason) => inj 0 of 2 (tuple ())
+    | 3 (right : Bytes) => inj 0 of 2 (tuple ())
+    | 4 (right : CodecUnit) => natEq 0 0
+    | 5 (right : NetworkSyncFrameError) => inj 0 of 2 (tuple ()))
+  | 5 (left : NetworkSyncFrameError) => (case b with
+    | 0 (right : R) => inj 0 of 2 (tuple ())
+    | 1 (right : CodecUnit) => inj 0 of 2 (tuple ())
+    | 2 (right : NetworkSyncDenyReason) => inj 0 of 2 (tuple ())
+    | 3 (right : Bytes) => inj 0 of 2 (tuple ())
+    | 4 (right : CodecUnit) => inj 0 of 2 (tuple ())
+    | 5 (right : NetworkSyncFrameError) => networkSyncFrameErrorEqual left right)
+def networkSyncFrameText : (0 R : Type 0) -> (R -> Bytes) -> NetworkSyncFrame R -> Bytes :=
+  fun (0 R : Type 0) (requestText : R -> Bytes) (frame : NetworkSyncFrame R) => case frame with
+  | 0 (request : R) => append b"Req(" (append (requestText request) b")")
+  | 1 (unit : CodecUnit) => b"Ack"
+  | 2 (reason : NetworkSyncDenyReason) => (case reason with | 0 (unit : CodecUnit) => b"Deny(AtCapacity)" | 1 (unit : CodecUnit) => b"Deny(Unavailable)")
+  | 3 (bytes : Bytes) => append b"Data(" (append (decimal64 (bytesLength bytes)) b" bytes)")
+  | 4 (unit : CodecUnit) => b"End"
+  | 5 (error : NetworkSyncFrameError) => case error with | 0 (unit : CodecUnit) => b"Err(Internal)" | 1 (unit : CodecUnit) => b"Err(Malformed)"

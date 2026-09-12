@@ -1,5 +1,38 @@
 # Validation
 
+## Roaring, certificates and peer exchange
+
+Synchronization passes 927 OCaml differential rows in six groups: worker and
+primary requests, digest-set normalization, opaque skip-round lists, generic
+frames and opening verdicts, pack slicing across 256 KiB, cap-crossing certificate
+batches, 200-item digest groups, native integer overflow, incomplete streams,
+ignored post-End frames, certificate byte caps and ordered batch rejection.
+Capture: `.kanon-exec/run-MPAhyB`, exit 0, 49.2 seconds.
+An initial compiler error in generated-style frame cases was corrected by
+removing immediate applications of untyped lambda expressions. These tests
+exercise the pure stream rules in the pinned source, without a socket runtime.
+
+Roaring passes 442 OCaml differential rows in five groups, including unsigned
+32-bit sets, first invalid sorted values, exact array and bitmap emission,
+the 4096-value switch, full 65,536-value containers, run decoding, ignored offsets,
+duplicates, truncation, refinement offsets and signed public errors.
+Capture: `.kanon-exec/run-0ogF6S`, exit 0, 141.5 seconds.
+The initial bitmap writer exceeded the compiler timeout; parameterizing its
+starting position keeps the fixed loop deferred until runtime. The first runtime
+run found a stack overflow in the fixture's integer parser. A tail-recursive
+parser now exercises the same full-size constructor cases successfully.
+
+Votes, all five certificate signature states, epoch certificates and peer
+exchange pass 1,458 OCaml differential rows in five groups. Checks cover exact
+encoding and field equality, every byte truncation, invalid variants, bitmap
+refinement errors, map ordering, duplicate key rejection and first-occurrence
+address deduplication. Adapter checks cover committee position mapping, genesis
+validation, unknown signers and the simulation crypto profile's incompatible
+65-byte signatures. The BLS wire signature remains 48 bytes.
+Capture: `.kanon-exec/run-7R95Zc`, exit 0, 34.0 seconds.
+Fixture corrections before that pass included OCaml constructor labels and
+Kanon's explicit constructor application and nominal codec unit value.
+
 ## Network wire types and records
 
 The network leaf suite passes 1,392 OCaml differential rows in four groups,

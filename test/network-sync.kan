@@ -1,0 +1,65 @@
+def networkSyncTestRecord : Nat -> Bytes -> Bytes -> Bytes := fun (kind : Nat) (left : Bytes) (right : Bytes) =>
+  case (natEq kind 0) with
+  | 1 (unit : prod ()) => networkRecordTestPair NetworkWorkerSyncRequest networkSyncWorkerCodec (fun (v : NetworkWorkerSyncRequest) => networkSyncBatches v.0 v.1) networkSyncWorkerEqual left right
+  | 0 (unit : prod ()) => case (natEq kind 1) with
+    | 1 (unit : prod ()) => networkRecordTestPair NetworkPrimarySyncRequest networkSyncPrimaryCodec (fun (v : NetworkPrimarySyncRequest) => v) networkSyncPrimaryEqual left right
+    | 0 (unit : prod ()) => case (natEq kind 2) with
+      | 1 (unit : prod ()) => networkRecordTestPair (NetworkSyncFrame NetworkWorkerSyncRequest) (networkSyncFrameCodec NetworkWorkerSyncRequest networkSyncWorkerCodec)
+        (fun (v : NetworkSyncFrame NetworkWorkerSyncRequest) => v) (networkSyncFrameEqual NetworkWorkerSyncRequest networkSyncWorkerEqual) left right
+      | 0 (unit : prod ()) => networkRecordTestPair (NetworkSyncFrame NetworkPrimarySyncRequest) (networkSyncFrameCodec NetworkPrimarySyncRequest networkSyncPrimaryCodec)
+        (fun (v : NetworkSyncFrame NetworkPrimarySyncRequest) => v) (networkSyncFrameEqual NetworkPrimarySyncRequest networkSyncPrimaryEqual) left right
+def networkSyncUnitFramesCodec : Codec NetworkUnitFrames := codecList (NetworkSyncFrame CodecUnit) NetworkUnitFrames seqNetworkUnitFrameOps (networkSyncFrameCodec CodecUnit codecUnit)
+def networkSyncTestFrameText : Bytes -> Bytes := fun (raw : Bytes) => case (codecDecode (NetworkSyncFrame CodecUnit) (networkSyncFrameCodec CodecUnit codecUnit) raw) with
+  | 0 (error : BcsError) => append b"error:" (bcsErrorText error)
+  | 1 (read : prod (NetworkSyncFrame CodecUnit, BcsReader)) =>
+    let opening : Bytes := case (networkSyncOpening CodecUnit read.0) with
+      | 0 (error : NetworkSyncViolation) => networkSyncViolationText error
+      | 1 (value : NetworkSyncOpening) => case value with
+        | 0 (unit : CodecUnit) => b"proceed"
+        | 1 (reason : NetworkSyncDenyReason) => append b"denied:" (decimal64 (networkSyncDenyIndex reason))
+        | 2 (error : NetworkSyncFrameError) => append b"peer:" (networkSyncFrameErrorName error) in
+    append (networkSyncFrameText CodecUnit (fun (unit : CodecUnit) => b"unit") read.0) (append b"|" opening)
+def networkSyncTestPackText : NetworkUnitFrames -> Bytes := fun (frames : NetworkUnitFrames) =>
+  append (bytesHex (blake2s256 (codecWrite NetworkUnitFrames networkSyncUnitFramesCodec frames))) (append b"|"
+    (seqNetworkUnitFrameWrite (fun (frame : NetworkSyncFrame CodecUnit) => append (networkSyncFrameText CodecUnit (fun (unit : CodecUnit) => b"unit") frame) b";") frames))
+def networkSyncTestPack : Nat -> Bytes -> Bytes -> Bytes := fun (mode : Nat) (sizeRaw : Bytes) (payload : Bytes) =>
+  case (hostIntParse sizeRaw) with | 0 (unit : prod ()) => b"setup:size"
+  | 1 (size : HostInt) => case (natEq mode 1) with
+    | 1 (unit : prod ()) => networkSyncTestPackText (networkSyncPackFrames CodecUnit NetworkUnitFrames seqNetworkUnitFrameOps payload)
+    | 0 (unit : prod ()) => case (networkSyncPackFramesWith CodecUnit NetworkUnitFrames seqNetworkUnitFrameOps size payload) with
+      | 0 (error : NetworkSyncChunkingError) => append b"error:" (networkSyncChunkingErrorText error)
+      | 1 (frames : NetworkUnitFrames) => networkSyncTestPackText frames
+def networkSyncTestGroupText : HostIntLists -> Bytes := fun (groups : HostIntLists) => append b"groups:" (seqHostIntListWrite
+  (fun (group : HostInts) => append b"[" (append (seqHostIntWrite (fun (value : HostInt) => append (hostIntText value) b",") group) b"]")) groups)
+def networkSyncTestGroups : Nat -> ByteStrings -> Bytes -> Bytes -> Bytes :=
+  fun (mode : Nat) (input : ByteStrings) (targetRaw : Bytes) (capRaw : Bytes) => case (roaringTestInts input) with
+  | 0 (unit : prod ()) => b"setup:items"
+  | 1 (items : HostInts) => case (hostIntParse targetRaw) with | 0 (unit : prod ()) => b"setup:target"
+    | 1 (target : HostInt) => case (hostIntParse capRaw) with | 0 (unit : prod ()) => b"setup:cap"
+      | 1 (cap : HostInt) => case (natEq mode 0) with
+        | 1 (unit : prod ()) => networkSyncTestGroupText (networkSyncCertBatchesBounded HostInt HostInts HostIntLists seqHostIntOps seqHostIntListOps (fun (size : HostInt) => size) target cap items)
+        | 0 (unit : prod ()) => case (natEq mode 1) with
+          | 1 (unit : prod ()) => networkSyncTestGroupText (networkSyncCertBatches HostInt HostInts HostIntLists seqHostIntOps seqHostIntListOps (fun (size : HostInt) => size) items)
+          | 0 (unit : prod ()) => case (natEq mode 2) with
+            | 1 (unit : prod ()) => networkSyncTestGroupText (networkSyncDigestChunks HostInt HostInts HostIntLists seqHostIntOps seqHostIntListOps items)
+            | 0 (unit : prod ()) => hostIntText (networkMaxSyncFrameSize cap)
+def networkSyncTestReaderResult : (0 O : Type 0) -> Codec O -> sum (NetworkSyncViolation, prod (O, Bool)) -> Bytes :=
+  fun (0 O : Type 0) (codec : Codec O) (result : sum (NetworkSyncViolation, prod (O, Bool))) => case result with
+  | 0 (error : NetworkSyncViolation) => append b"error:" (networkSyncViolationText error)
+  | 1 (value : prod (O, Bool)) => append (bytesHex (codecWrite O codec value.0)) (append b"|" (stateBoolText value.1))
+def networkSyncTestReader : Nat -> Bytes -> Bytes -> Bytes -> Bytes := fun (mode : Nat) (raw : Bytes) (capRaw : Bytes) (requestedRaw : Bytes) =>
+  case (codecDecode NetworkUnitFrames networkSyncUnitFramesCodec raw) with
+  | 0 (error : BcsError) => append b"setup:" (bcsErrorText error)
+  | 1 (read : prod (NetworkUnitFrames, BcsReader)) => case (hostIntParse capRaw) with
+    | 0 (unit : prod ()) => b"setup:cap"
+    | 1 (cap : HostInt) => case (natEq mode 0) with
+      | 1 (unit : prod ()) => networkSyncTestReaderResult Bytes codecBytes (networkPackReaderRun CodecUnit NetworkUnitFrames seqNetworkUnitFrameOps read.0)
+      | 0 (unit : prod ()) => case (natEq mode 1) with
+        | 1 (unit : prod ()) => networkSyncTestReaderResult NetworkCertificates networkCertReaderBatchCodec
+          (networkCertReaderRun CodecUnit NetworkUnitFrames seqNetworkUnitFrameOps cap read.0)
+        | 0 (unit : prod ()) => case (codecDecode Batches (codecList Batch Batches seqBatchOps batchCodec) requestedRaw) with
+          | 0 (error : BcsError) => append b"setup:" (bcsErrorText error)
+          | 1 (requested : prod (Batches, BcsReader)) =>
+            let digests : BatchDigests := listMapInto Batch Batches BatchDigest BatchDigests seqBatchOps seqBatchDigestOps batchDigest requested.0 in
+            networkSyncTestReaderResult Batches (codecList Batch Batches seqBatchOps batchCodec)
+              (networkBatchReaderRun CodecUnit NetworkUnitFrames seqNetworkUnitFrameOps digests read.0)

@@ -1,0 +1,8 @@
+def NetworkEpochCertificate : Type 0 := prod (Digest, NetworkBlsSignature, NetworkRoaring)
+def networkEpochCertificateMake : Digest -> NetworkBlsSignature -> NetworkRoaring -> NetworkEpochCertificate :=
+  fun (hash : Digest) (signature : NetworkBlsSignature) (signers : NetworkRoaring) => tuple (hash, signature, signers)
+def networkEpochCertificateCodec : Codec NetworkEpochCertificate :=
+  codecTriple Digest NetworkBlsSignature NetworkRoaring networkWireDigestCodec networkBlsSignatureCodec networkRoaringCodec
+def networkEpochCertificateEqual : NetworkEpochCertificate -> NetworkEpochCertificate -> Bool :=
+  fun (a : NetworkEpochCertificate) (b : NetworkEpochCertificate) =>
+    boolAnd (digestEqual a.0 b.0) (boolAnd (networkBlsSignatureEqual a.1 b.1) (networkRoaringEqual a.2 b.2))

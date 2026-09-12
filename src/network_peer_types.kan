@@ -1,0 +1,6 @@
+def NetworkPeerEntry : Type 0 := prod (NetworkBlsPublicKey, prod (NetworkVarBytes, NetworkVarBytesList))
+mu NetworkPeerExchangeError : Type 0 :=
+| networkPeerDuplicateKey : NetworkPeerExchangeError
+def networkPeerExchangeErrorText : NetworkPeerExchangeError -> Bytes := fun (error : NetworkPeerExchangeError) =>
+  match error as self in NetworkPeerExchangeError return Bytes with
+  | networkPeerDuplicateKey => b"peer exchange: duplicate map key"

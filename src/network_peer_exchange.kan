@@ -1,0 +1,53 @@
+def rec networkPeerAddrContains : NetworkVarBytesList -> NetworkVarBytes -> Bool := fun (values : NetworkVarBytesList) (value : NetworkVarBytes) =>
+  match values as self in NetworkVarBytesList return Bool with
+  | networkVarBytesListNil => inj 0 of 2 (tuple ())
+  | networkVarBytesListCons head tail => case (networkVarBytesEqual value head) with
+    | 1 (unit : prod ()) => inj 1 of 2 (tuple ())
+    | 0 (unit : prod ()) => networkPeerAddrContains tail value
+def rec networkPeerDedupAcc : NetworkVarBytesList -> NetworkVarBytesList -> NetworkVarBytesList :=
+  fun (values : NetworkVarBytesList) (out : NetworkVarBytesList) =>
+  match values as self in NetworkVarBytesList return NetworkVarBytesList with
+  | networkVarBytesListNil => seqNetworkVarBytesReverse out
+  | networkVarBytesListCons head tail => case (networkPeerAddrContains out head) with
+    | 1 (unit : prod ()) => networkPeerDedupAcc tail out
+    | 0 (unit : prod ()) => networkPeerDedupAcc tail (networkVarBytesListCons head out)
+def networkPeerMakeEntry : NetworkBlsPublicKey -> NetworkVarBytes -> NetworkVarBytesList -> NetworkPeerEntry :=
+  fun (key : NetworkBlsPublicKey) (networkKey : NetworkVarBytes) (addresses : NetworkVarBytesList) =>
+    tuple (key, tuple (networkKey, networkPeerDedupAcc addresses networkVarBytesListNil))
+def NetworkPeerExchange : Type 0 := NetworkPeerEntries
+def networkPeerExchangeEmpty : NetworkPeerExchange := networkPeerEntriesNil
+def networkPeerKeyCompare : NetworkBlsPublicKey -> NetworkBlsPublicKey -> Ordering := codecEncodedCompare NetworkBlsPublicKey networkBlsPublicKeyCodec
+def rec networkPeerCheckKeys : NetworkPeerEntries -> ValueOption NetworkBlsPublicKey -> Bool :=
+  fun (entries : NetworkPeerEntries) (previous : ValueOption NetworkBlsPublicKey) =>
+  match entries as self in NetworkPeerEntries return Bool with
+  | networkPeerEntriesNil => inj 1 of 2 (tuple ())
+  | networkPeerEntriesCons head tail =>
+    let duplicate : Bool := case previous with | 0 (unit : prod ()) => inj 0 of 2 (tuple ())
+      | 1 (key : NetworkBlsPublicKey) => networkBlsPublicKeyEqual key head.0 in
+    case duplicate with | 1 (unit : prod ()) => inj 0 of 2 (tuple ())
+    | 0 (unit : prod ()) => networkPeerCheckKeys tail (valueSome NetworkBlsPublicKey head.0)
+def networkPeerExchangeOfEntries : NetworkPeerEntries -> sum (NetworkPeerExchangeError, NetworkPeerExchange) := fun (entries : NetworkPeerEntries) =>
+  let sorted : NetworkPeerEntries := seqNetworkPeerEntrySort (fun (a : NetworkPeerEntry) (b : NetworkPeerEntry) => networkPeerKeyCompare a.0 b.0) entries in
+  case (networkPeerCheckKeys sorted (valueNone NetworkBlsPublicKey)) with
+  | 0 (unit : prod ()) => inj 0 of 2 networkPeerDuplicateKey
+  | 1 (unit : prod ()) => inj 1 of 2 sorted
+def networkPeerExchangeEntries : NetworkPeerExchange -> NetworkPeerEntries := fun (entries : NetworkPeerExchange) => entries
+def networkPeerValueCodec : Codec (prod (NetworkVarBytes, NetworkVarBytesList)) :=
+  codecPair NetworkVarBytes NetworkVarBytesList networkVarBytesCodec (codecUnorderedList NetworkVarBytes NetworkVarBytesList seqNetworkVarBytesOps networkVarBytesCodec)
+def networkPeerExchangeCodec : Codec NetworkPeerExchange := codecIso NetworkPeerEntries NetworkPeerEntries
+  (listMapInto NetworkPeerEntry NetworkPeerEntries NetworkPeerEntry NetworkPeerEntries seqNetworkPeerEntryOps seqNetworkPeerEntryOps
+    (fun (entry : NetworkPeerEntry) => networkPeerMakeEntry entry.0 entry.1.0 entry.1.1))
+  (fun (entries : NetworkPeerEntries) => entries)
+  (codecSortedMap NetworkBlsPublicKey (prod (NetworkVarBytes, NetworkVarBytesList)) NetworkPeerEntries seqNetworkPeerEntryOps
+    networkBlsPublicKeyCodec networkPeerValueCodec networkPeerKeyCompare)
+def networkPeerEntryEqual : NetworkPeerEntry -> NetworkPeerEntry -> Bool := fun (a : NetworkPeerEntry) (b : NetworkPeerEntry) =>
+  boolAnd (networkBlsPublicKeyEqual a.0 b.0) (boolAnd (networkVarBytesEqual a.1.0 b.1.0)
+    (orderingEqual (listCompare NetworkVarBytes NetworkVarBytesList seqNetworkVarBytesOps networkVarBytesCompare a.1.1 b.1.1)))
+def rec networkPeerExchangeEqual : NetworkPeerExchange -> NetworkPeerExchange -> Bool := fun (a : NetworkPeerExchange) (b : NetworkPeerExchange) =>
+  match a as self in NetworkPeerEntries return Bool with
+  | networkPeerEntriesNil => (match b as other in NetworkPeerEntries return Bool with
+    | networkPeerEntriesNil => inj 1 of 2 (tuple ())
+    | networkPeerEntriesCons head tail => inj 0 of 2 (tuple ()))
+  | networkPeerEntriesCons head tail => match b as other in NetworkPeerEntries return Bool with
+    | networkPeerEntriesNil => inj 0 of 2 (tuple ())
+    | networkPeerEntriesCons other rest => boolAnd (networkPeerEntryEqual head other) (networkPeerExchangeEqual tail rest)

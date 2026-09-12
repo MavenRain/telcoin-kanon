@@ -17,8 +17,8 @@ not a claim of complete module parity.
 | 4 | tn_state and EVM ALU/interpreter, then environment, access/refund, storage, calls, creation and transaction execution. Preserve full U256 arithmetic, gas, rollback and fork-specific outcomes. | Account state, EVM primitives, environments, instruction execution, calls, creation, rollback, fork schedules, all nine precompiles and transaction execution tested. |
 | 5 | RLP, Keccak, trie/state roots, transaction envelopes, signatures and source-supported precompiles. Reuse existing golden fixtures; compare acceptance, output, gas and errors separately. | RLP, Keccak, tries, account/state roots, withdrawals, blooms, receipt encoding/roots, secp256k1 recovery, source-supported precompiles and all four signed envelope types tested. Typed block transaction wrappers remain. |
 | 6 | Batch validation, executed blocks, engine, driver, registry and epoch transitions. Compare complete committed/executed output and checkpoint consistency. | Batch validation, attachment, planning, payload filtering, registry ABI, shuffle and engine state tested. Block, complete engine execution and driver integration validation remain. |
-| 7 | Durable file framing, logs, locks and checkpoints. Audit the host's fsync, atomic replacement, locking and recovery guarantees before porting the IO shell. Test interrupted writes and restart behavior. | Planned |
-| 8 | tn_network and Snappy pure codecs through chunk 44, then integrate source-supported crypto implementations and shells. Compare wire vectors, canonicality, corruption and size-limit cases. | Planned |
+| 7 | Durable file framing, logs, locks and checkpoints. Audit the host's fsync, atomic replacement, locking and recovery guarantees before porting the IO shell. Test interrupted writes and restart behavior. | File codecs, durable frames and log headers tested; filesystem IO, locks and recovery remain. |
+| 8 | tn_network and Snappy pure codecs through chunk 44, then integrate source-supported crypto implementations and shells. Compare wire vectors, canonicality, corruption and size-limit cases. | Snappy and 20 network modules tested; primary/worker messages, gossip, node routing and production crypto remain. |
 
 Milestones 4 and 5 overlap at hash/state/transaction dependencies and should be
 split into dependency-ordered increments before implementation. The goal is
@@ -216,23 +216,23 @@ safety or liveness for every possible schedule.
 | lib/network/base58.ml | Ported: Bitcoin-alphabet encoding with leading zeros; OCaml and independent integer comparisons in shared 1392-row leaf suite |
 | lib/network/bls_public_key.ml | Ported: nominal 96-byte wire key, sized codec and comparisons; shared 1392-row network leaf suite |
 | lib/network/bls_signature.ml | Ported: nominal 48-byte wire signature, sized codec and comparisons; shared 1392-row network leaf suite |
-| lib/network/certificate_wire.ml | Pending |
+| lib/network/certificate_wire.ml | Ported: five signature states, codec, committee bitmap mapping, genesis checks and crypto adapters; shared 1458-row certificate suite |
 | lib/network/consensus_result.ml | Ported: constructors, complete wire codec, full u64 number and equality; shared 1800-row network record suite |
-| lib/network/epoch_certificate.ml | Pending |
+| lib/network/epoch_certificate.ml | Ported: constructor, complete codec, signer bitmap and field equality; shared 1458-row certificate suite |
 | lib/network/epoch_record.ml | Ported: both constructors, committee lists, boundary anchors, codec and equality; shared 1800-row network record suite |
 | lib/network/epoch_vote.ml | Ported: constructors, complete wire codec and field equality; shared 1800-row network record suite |
 | lib/network/gossip.ml | Pending |
 | lib/network/node_record.ml | Ported: constructors, current and legacy layouts, compatibility errors, UTF-8, equality and legacy RPC omission; 1800 shared rows plus 12 omission rows |
-| lib/network/peer_exchange.ml | Pending |
+| lib/network/peer_exchange.ml | Ported: stable key ordering, duplicate rejection, first-occurrence address deduplication, codec and equality; shared 1458-row certificate suite |
 | lib/network/primary_msg.ml | Pending |
 | lib/network/protocols.ml | Ported: all protocol identifiers, signed native IDs and owned-name errors; shared 1392-row network leaf suite |
-| lib/network/roaring.ml | Pending |
-| lib/network/sync_chunking.ml | Pending |
-| lib/network/sync_frame.ml | Pending |
-| lib/network/sync_reader.ml | Pending |
-| lib/network/sync_request.ml | Pending |
+| lib/network/roaring.ml | Ported: canonical u32 sets, portable array/bitmap encoding, array/bitmap/run decoding, corruption and exact errors; 442 OCaml rows |
+| lib/network/sync_chunking.ml | Ported: pack slices, generic bounded certificate groups, digest chunks, constants and native overflow; shared 927-row sync suite |
+| lib/network/sync_frame.ml | Ported: generic request frames, all tags, equality, display and opening verdicts; shared 927-row sync suite |
+| lib/network/sync_reader.ml | Ported: opening, generic drive, pack/certificate/batch readers and exact rejection order; shared 927-row sync suite |
+| lib/network/sync_request.ml | Ported: worker and primary variants, canonical digest sets, opaque skip rounds, full u64 values and equality; shared 927-row sync suite |
 | lib/network/var_bytes.ml | Ported: opaque variable bytes, codec, equality and ordering; shared 1392-row network leaf suite |
-| lib/network/vote_wire.ml | Pending |
+| lib/network/vote_wire.ml | Ported: full codec, accessors, equality and crypto adapters with simulation signature refusal; shared 1458-row certificate suite |
 | lib/network/wire.ml | Pending |
 | lib/network/wire_frame.ml | Ported: exact framing, size gates, error order, take cap, consumed bytes and typed BCS messages; 546 OCaml rows |
 | lib/network/wire_scalar.ml | Ported: all six scalar codecs, including bare authority IDs versus sized digests; shared 1392-row network leaf suite |

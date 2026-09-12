@@ -1,0 +1,65 @@
+def networkSyncDigestSetCodec : Codec BatchDigests := codecBtreeSet BatchDigest BatchDigests seqBatchDigestOps networkWireBatchDigestCodec (codecEncodedCompare BatchDigest networkWireBatchDigestCodec)
+def networkSyncSkipRoundsCodec : Codec NetworkSkipRounds := codecList (prod (AuthorityId, Bytes)) NetworkSkipRounds seqNetworkSkipRoundOps (codecPair AuthorityId Bytes networkWireAuthorityIdCodec codecBytes)
+def networkSyncWorkerCodec : Codec NetworkWorkerSyncRequest := codecSum NetworkWorkerSyncRequest
+  (codecCase NetworkWorkerSyncRequest NetworkWorkerSyncRequest 0 (codecPair BatchDigests Epoch networkSyncDigestSetCodec networkWireEpochCodec)
+    (fun (value : NetworkWorkerSyncRequest) => networkSyncBatches value.0 value.1) (fun (value : NetworkWorkerSyncRequest) => valueSome NetworkWorkerSyncRequest value))
+def networkSyncWorkerEqual : NetworkWorkerSyncRequest -> NetworkWorkerSyncRequest -> Bool := fun (a : NetworkWorkerSyncRequest) (b : NetworkWorkerSyncRequest) =>
+  boolAnd (epochEqual a.1 b.1) (orderingEqual (listCompare BatchDigest BatchDigests seqBatchDigestOps batchDigestCompare a.0 b.0))
+def NetworkPrimarySyncRequest : Type 0 := sum (Epoch, prod (Round, NetworkSkipRounds), prod (Epoch, Nat), Nat)
+def networkSyncEpochPack : Epoch -> NetworkPrimarySyncRequest := fun (value : Epoch) => inj 0 of 4 value
+def networkSyncMissingCertificates : prod (Round, NetworkSkipRounds) -> NetworkPrimarySyncRequest := fun (value : prod (Round, NetworkSkipRounds)) => inj 1 of 4 value
+def networkSyncEpochPackPartial : prod (Epoch, Nat) -> NetworkPrimarySyncRequest := fun (value : prod (Epoch, Nat)) => inj 2 of 4 value
+def networkSyncConsensusOutput : Nat -> NetworkPrimarySyncRequest := fun (value : Nat) => inj 3 of 4 value
+def networkSyncPrimaryCodec : Codec NetworkPrimarySyncRequest := codecSum NetworkPrimarySyncRequest
+  (codecCasesPrepend NetworkPrimarySyncRequest (codecCase NetworkPrimarySyncRequest (Epoch) 0 (networkWireEpochCodec) networkSyncEpochPack
+  (fun (request : NetworkPrimarySyncRequest) => case request with
+  | 0 (value : Epoch) => valueSome (Epoch) value
+  | 1 (value : prod (Round, NetworkSkipRounds)) => valueNone (Epoch)
+  | 2 (value : prod (Epoch, Nat)) => valueNone (Epoch)
+  | 3 (value : Nat) => valueNone (Epoch)))
+    (codecCasesPrepend NetworkPrimarySyncRequest (codecCase NetworkPrimarySyncRequest (prod (Round, NetworkSkipRounds)) 1 (codecPair Round NetworkSkipRounds networkWireRoundCodec networkSyncSkipRoundsCodec) networkSyncMissingCertificates
+  (fun (request : NetworkPrimarySyncRequest) => case request with
+  | 0 (value : Epoch) => valueNone (prod (Round, NetworkSkipRounds))
+  | 1 (value : prod (Round, NetworkSkipRounds)) => valueSome (prod (Round, NetworkSkipRounds)) value
+  | 2 (value : prod (Epoch, Nat)) => valueNone (prod (Round, NetworkSkipRounds))
+  | 3 (value : Nat) => valueNone (prod (Round, NetworkSkipRounds))))
+    (codecCasesPrepend NetworkPrimarySyncRequest (codecCase NetworkPrimarySyncRequest (prod (Epoch, Nat)) 2 (codecPair Epoch Nat networkWireEpochCodec codecU64) networkSyncEpochPackPartial
+  (fun (request : NetworkPrimarySyncRequest) => case request with
+  | 0 (value : Epoch) => valueNone (prod (Epoch, Nat))
+  | 1 (value : prod (Round, NetworkSkipRounds)) => valueNone (prod (Epoch, Nat))
+  | 2 (value : prod (Epoch, Nat)) => valueSome (prod (Epoch, Nat)) value
+  | 3 (value : Nat) => valueNone (prod (Epoch, Nat))))
+    (codecCase NetworkPrimarySyncRequest (Nat) 3 (codecU64) networkSyncConsensusOutput
+  (fun (request : NetworkPrimarySyncRequest) => case request with
+  | 0 (value : Epoch) => valueNone (Nat)
+  | 1 (value : prod (Round, NetworkSkipRounds)) => valueNone (Nat)
+  | 2 (value : prod (Epoch, Nat)) => valueNone (Nat)
+  | 3 (value : Nat) => valueSome (Nat) value)))))
+def networkSyncSkipCompare : prod (AuthorityId, Bytes) -> prod (AuthorityId, Bytes) -> Ordering :=
+  fun (a : prod (AuthorityId, Bytes)) (b : prod (AuthorityId, Bytes)) => match (authorityIdCompare a.0 b.0) as compared in Ordering return Ordering with
+  | orderLess => orderLess | orderGreater => orderGreater | orderEqual => bytesOrdering a.1 b.1
+def networkSyncMissingEqual : prod (Round, NetworkSkipRounds) -> prod (Round, NetworkSkipRounds) -> Bool :=
+  fun (a : prod (Round, NetworkSkipRounds)) (b : prod (Round, NetworkSkipRounds)) => boolAnd (roundEqual a.0 b.0)
+    (orderingEqual (listCompare (prod (AuthorityId, Bytes)) NetworkSkipRounds seqNetworkSkipRoundOps networkSyncSkipCompare a.1 b.1))
+def networkSyncPartialEqual : prod (Epoch, Nat) -> prod (Epoch, Nat) -> Bool := fun (a : prod (Epoch, Nat)) (b : prod (Epoch, Nat)) => boolAnd (epochEqual a.0 b.0) (natEq a.1 b.1)
+def networkSyncPrimaryEqual : NetworkPrimarySyncRequest -> NetworkPrimarySyncRequest -> Bool := fun (a : NetworkPrimarySyncRequest) (b : NetworkPrimarySyncRequest) => case a with
+  | 0 (left : Epoch) => (case b with
+    | 0 (right : Epoch) => epochEqual left right
+    | 1 (right : prod (Round, NetworkSkipRounds)) => inj 0 of 2 (tuple ())
+    | 2 (right : prod (Epoch, Nat)) => inj 0 of 2 (tuple ())
+    | 3 (right : Nat) => inj 0 of 2 (tuple ()))
+  | 1 (left : prod (Round, NetworkSkipRounds)) => (case b with
+    | 0 (right : Epoch) => inj 0 of 2 (tuple ())
+    | 1 (right : prod (Round, NetworkSkipRounds)) => networkSyncMissingEqual left right
+    | 2 (right : prod (Epoch, Nat)) => inj 0 of 2 (tuple ())
+    | 3 (right : Nat) => inj 0 of 2 (tuple ()))
+  | 2 (left : prod (Epoch, Nat)) => (case b with
+    | 0 (right : Epoch) => inj 0 of 2 (tuple ())
+    | 1 (right : prod (Round, NetworkSkipRounds)) => inj 0 of 2 (tuple ())
+    | 2 (right : prod (Epoch, Nat)) => networkSyncPartialEqual left right
+    | 3 (right : Nat) => inj 0 of 2 (tuple ()))
+  | 3 (left : Nat) => (case b with
+    | 0 (right : Epoch) => inj 0 of 2 (tuple ())
+    | 1 (right : prod (Round, NetworkSkipRounds)) => inj 0 of 2 (tuple ())
+    | 2 (right : prod (Epoch, Nat)) => inj 0 of 2 (tuple ())
+    | 3 (right : Nat) => natEq left right)

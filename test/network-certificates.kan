@@ -1,0 +1,85 @@
+def networkWireTestRebuildVote : NetworkVoteWire -> NetworkVoteWire := fun (v : NetworkVoteWire) =>
+  networkVoteWireMake (networkVoteWireHeaderDigest v) (networkVoteWireRound v) (networkVoteWireEpoch v)
+    (networkVoteWireOrigin v) (networkVoteWireAuthor v) (networkVoteWireSignature v)
+def networkWireTestRebuildCertificate : NetworkCertificateWire -> NetworkCertificateWire := fun (v : NetworkCertificateWire) =>
+  networkCertificateWireMake (networkCertificateWireHeader v) (networkCertificateWireState v) (networkCertificateWireSignedAuthorities v)
+def networkWireRecordTest : Nat -> Bytes -> Bytes -> Bytes := fun (kind : Nat) (left : Bytes) (right : Bytes) =>
+  case (natEq kind 0) with
+  | 1 (unit : prod ()) => networkRecordTestPair NetworkVoteWire networkVoteWireCodec networkWireTestRebuildVote networkVoteWireEqual left right
+  | 0 (unit : prod ()) => case (natEq kind 1) with
+    | 1 (unit : prod ()) => networkRecordTestPair NetworkCertificateState networkCertificateStateCodec (fun (state : NetworkCertificateState) => state) networkCertificateStateEqual left right
+    | 0 (unit : prod ()) => case (natEq kind 2) with
+      | 1 (unit : prod ()) => networkRecordTestPair NetworkCertificateWire networkCertificateWireCodec networkWireTestRebuildCertificate networkCertificateWireEqual left right
+      | 0 (unit : prod ()) => case (natEq kind 3) with
+        | 1 (unit : prod ()) => networkRecordTestPair NetworkEpochCertificate networkEpochCertificateCodec
+          (fun (v : NetworkEpochCertificate) => networkEpochCertificateMake v.0 v.1 v.2) networkEpochCertificateEqual left right
+        | 0 (unit : prod ()) => networkRecordTestPair NetworkPeerExchange networkPeerExchangeCodec networkPeerExchangeEntries networkPeerExchangeEqual left right
+def networkPeerTestConstruct : Bytes -> Bytes := fun (raw : Bytes) =>
+  case (codecDecode NetworkPeerEntries (codecList NetworkPeerEntry NetworkPeerEntries seqNetworkPeerEntryOps
+    (codecPair NetworkBlsPublicKey (prod (NetworkVarBytes, NetworkVarBytesList)) networkBlsPublicKeyCodec networkPeerValueCodec)) raw) with
+  | 0 (error : BcsError) => append b"error:" (bcsErrorText error)
+  | 1 (read : prod (NetworkPeerEntries, BcsReader)) =>
+    let entries : NetworkPeerEntries := listMapInto NetworkPeerEntry NetworkPeerEntries NetworkPeerEntry NetworkPeerEntries seqNetworkPeerEntryOps seqNetworkPeerEntryOps
+      (fun (entry : NetworkPeerEntry) => networkPeerMakeEntry entry.0 entry.1.0 entry.1.1) read.0 in
+    case (networkPeerExchangeOfEntries entries) with
+    | 0 (error : NetworkPeerExchangeError) => append b"error:" (networkPeerExchangeErrorText error)
+    | 1 (peers : NetworkPeerExchange) => append (bytesHex (codecWrite NetworkPeerExchange networkPeerExchangeCodec peers))
+      (append b":" (append (decimal64 (seqNetworkPeerEntryLength (networkPeerExchangeEntries peers)))
+        (append b":" (stateBoolText (networkPeerExchangeEqual peers networkPeerExchangeEmpty)))))
+def networkWireTestCertResult : sum (NetworkCertificateWireError, Certificate) -> Bytes := fun (result : sum (NetworkCertificateWireError, Certificate)) =>
+  case result with | 0 (error : NetworkCertificateWireError) => append b"error:" (networkCertificateWireErrorText error)
+  | 1 (certificate : Certificate) => append b"ok:" (append (bytesHex (codecWrite Header headerCodec (certificateHeader certificate)))
+      (append b"|" (bytesHex (seqAuthorityIdWrite authorityIdBytes (certificateSigners certificate)))))
+def networkWireTestVoteResult : sum (NetworkVoteWireError, Vote) -> Bytes := fun (result : sum (NetworkVoteWireError, Vote)) =>
+  case result with | 0 (error : NetworkVoteWireError) => append b"error:" (networkVoteWireErrorText error)
+  | 1 (vote : Vote) => append b"ok:" (bytesHex (signatureBytes (voteSignature vote)))
+def networkWireBridgeTest : Nat -> Bytes -> ByteStrings -> ByteStrings -> Bytes -> Bytes :=
+  fun (mode : Nat) (seed : Bytes) (roster : ByteStrings) (signerSeeds : ByteStrings) (bitmapRaw : Bytes) =>
+  case (cryptoKeyParse seed) with | 0 (unit : prod ()) => b"setup:seed"
+  | 1 (key : SecretKey) => match (cryptoCommittee roster) as built in CommitteeResult return Bytes with
+    | committeeError error => append b"setup:" (committeeErrorText error)
+    | committeeOk committee =>
+      let header : Header := headerMake (authorityIdOfPublicKey (secretKeyPublic key))
+        (case (natEq mode 2) with | 1 (unit : prod ()) => roundValue 1 | 0 (unit : prod ()) => roundGenesis)
+        epochZero timestampZero batchWorkersNil headerDigestsNil blockNumHashZero in
+      let signature : NetworkBlsSignature := networkBlsSignatureValue (append (digestBytes digestZero) (take 16 (digestBytes digestZero))) in
+      let wireVote : NetworkVoteWire := networkVoteWireMake (headerDigest header) (headerRound header) (headerEpoch header)
+        (headerAuthor header) (headerAuthor header) signature in
+      case (natEq mode 3) with | 1 (unit : prod ()) => networkWireTestVoteResult (networkVoteWireToVote wireVote)
+      | 0 (unit : prod ()) => case (natEq mode 4) with
+        | 1 (unit : prod ()) => networkWireTestVoteResult (networkVoteWireToVerified (secretKeyPublic key) wireVote)
+        | 0 (unit : prod ()) => case (natEq mode 5) with
+          | 1 (unit : prod ()) => (case (networkVoteWireOfVote (voteSign key (headerAuthor header) header)) with
+            | 0 (error : NetworkVoteWireError) => append b"error:" (networkVoteWireErrorText error)
+            | 1 (wire : NetworkVoteWire) => append b"ok:" (bytesHex (codecWrite NetworkVoteWire networkVoteWireCodec wire)))
+          | 0 (unit : prod ()) => case (natLt mode 3) with
+            | 1 (unit : prod ()) => (case (networkRoaringOfBytes bitmapRaw) with
+              | 0 (error : NetworkRoaringError) => append b"setup:" (networkRoaringErrorText error)
+              | 1 (bitmap : NetworkRoaring) => networkWireTestCertResult (networkCertificateWireToChecked committee
+                (networkCertificateWireMake header (case (natEq mode 1) with
+                  | 1 (unit : prod ()) => networkCertificateUnverified signature
+                  | 0 (unit : prod ()) => networkCertificateGenesis) bitmap)))
+            | 0 (unit : prod ()) => case (cryptoAuthorities signerSeeds) with
+              | 0 (unit : prod ()) => b"setup:signers"
+              | 1 (authorities : Authorities) =>
+                let signers : AuthorityIds := canonicalSigners (listMapInto Authority Authorities AuthorityId AuthorityIds seqAuthorityOps seqAuthorityIdOps authorityId authorities) in
+                case (cryptoSignatures signerSeeds (voteSigningMessage (headerDigest header))) with
+                | 0 (unit : prod ()) => b"setup:signatures"
+                | 1 (signatures : Signatures) =>
+                  let certificate : Certificate := certificateValue header signers (case (natEq mode 6) with
+                    | 1 (unit : prod ()) => certificateGenesisState
+                    | 0 (unit : prod ()) => certificateAggregateState (cryptoAggregate signatures)) in
+                  case (networkCertificateWireOfCertificate committee certificate) with
+                  | 0 (error : NetworkCertificateWireError) => append b"error:" (networkCertificateWireErrorText error)
+                  | 1 (wire : NetworkCertificateWire) => append b"ok:" (bytesHex (codecWrite NetworkCertificateWire networkCertificateWireCodec wire))
+def networkWirePublicErrorTest : Nat -> Bytes -> Bytes := fun (kind : Nat) (raw : Bytes) =>
+  case (hostIntParse raw) with | 0 (unit : prod ()) => b"setup:integer"
+  | 1 (index : HostInt) => case (natEq kind 0) with
+    | 1 (unit : prod ()) => networkVoteWireErrorText networkVoteSignatureRejected
+    | 0 (unit : prod ()) => case (natEq kind 1) with
+      | 1 (unit : prod ()) => networkVoteWireErrorText networkVoteDoesNotVerify
+      | 0 (unit : prod ()) => case (natEq kind 2) with
+        | 1 (unit : prod ()) => networkCertificateWireErrorText (networkCertificateUnknownSignerIndex index)
+        | 0 (unit : prod ()) => case (natEq kind 3) with
+          | 1 (unit : prod ()) => networkCertificateWireErrorText networkCertificateSignerNotInCommittee
+          | 0 (unit : prod ()) => networkCertificateWireErrorText networkCertificateSignatureRejected

@@ -1,0 +1,55 @@
+mu NetworkRoaring : Type 0 := | networkRoaringValue (values : Nats) : NetworkRoaring
+mu NetworkRoaringError : Type 0 :=
+| networkRoaringUnknownCookie (cookie : HostInt) : NetworkRoaringError
+| networkRoaringTooManyContainers (count : HostInt) : NetworkRoaringError
+| networkRoaringTruncated (offset : HostInt) : NetworkRoaringError
+| networkRoaringTrailingBytes (consumed : HostInt) (total : HostInt) : NetworkRoaringError
+| networkRoaringValueOutOfRange (value : HostInt) : NetworkRoaringError
+| networkRoaringRunOutOfRange (start : HostInt) (length : HostInt) : NetworkRoaringError
+def networkRoaringErrorText : NetworkRoaringError -> Bytes := fun (error : NetworkRoaringError) =>
+  match error as self in NetworkRoaringError return Bytes with
+  | networkRoaringUnknownCookie cookie => append b"unknown roaring cookie " (hostIntText cookie)
+  | networkRoaringTooManyContainers count => append b"roaring container count " (append (hostIntText count) b" above 65536")
+  | networkRoaringTruncated offset => append b"roaring bytes end at offset " (hostIntText offset)
+  | networkRoaringTrailingBytes consumed total => append b"roaring left "
+    (append (hostIntText (hostIntSub total consumed)) (append b" of " (append (hostIntText total) b" bytes unread")))
+  | networkRoaringValueOutOfRange value => append b"roaring value " (append (hostIntText value) b" outside [0, 2^32)")
+  | networkRoaringRunOutOfRange start length => append b"roaring run "
+    (append (hostIntText start) (append b" + " (append (hostIntText length) b" leaves the container")))
+def networkRoaringNats : NetworkRoaring -> Nats := fun (bitmap : NetworkRoaring) =>
+  match bitmap as self in NetworkRoaring return Nats with | networkRoaringValue values => values
+def networkRoaringCanonical : Nats -> NetworkRoaring := fun (values : Nats) =>
+  networkRoaringValue (seqNatUniq natOrdering (natMergeSort values))
+def networkRoaringEmpty : NetworkRoaring := networkRoaringValue natsNil
+def networkRoaringToList : NetworkRoaring -> HostInts := fun (bitmap : NetworkRoaring) =>
+  listMapInto Nat Nats HostInt HostInts seqNatOps seqHostIntOps (fun (value : Nat) => hostIntPositive value) (networkRoaringNats bitmap)
+def networkRoaringCardinality : NetworkRoaring -> HostInt := fun (bitmap : NetworkRoaring) => hostIntPositive (seqNatLength (networkRoaringNats bitmap))
+def networkRoaringMem : HostInt -> NetworkRoaring -> Bool := fun (value : HostInt) (bitmap : NetworkRoaring) =>
+  case (hostIntNonnegative value) with | 0 (unit : prod ()) => inj 0 of 2 (tuple ())
+  | 1 (n : Nat) => optionIsSome Nat (listFind Nat Nats seqNatOps (fun (other : Nat) => natEq n other) (networkRoaringNats bitmap))
+def networkRoaringEqual : NetworkRoaring -> NetworkRoaring -> Bool := fun (a : NetworkRoaring) (b : NetworkRoaring) =>
+  orderingEqual (listCompare Nat Nats seqNatOps natOrdering (networkRoaringNats a) (networkRoaringNats b))
+def networkRoaringMinInvalid : ValueOption HostInt -> HostInt -> ValueOption HostInt :=
+  fun (previous : ValueOption HostInt) (value : HostInt) => case previous with
+  | 0 (unit : prod ()) => valueSome HostInt value
+  | 1 (other : HostInt) => case (natEq (hostIntLess value other) 1) with
+    | 1 (unit : prod ()) => valueSome HostInt value | 0 (unit : prod ()) => previous
+def rec networkRoaringOfListAcc : HostInts -> Nats -> ValueOption HostInt -> sum (NetworkRoaringError, NetworkRoaring) :=
+  fun (values : HostInts) (out : Nats) (invalid : ValueOption HostInt) =>
+  match values as self in HostInts return sum (NetworkRoaringError, NetworkRoaring) with
+  | hostIntsNil => (case invalid with
+    | 0 (unit : prod ()) => inj 1 of 2 (networkRoaringCanonical out)
+    | 1 (value : HostInt) => inj 0 of 2 (networkRoaringValueOutOfRange value))
+  | hostIntsCons head tail => case (hostIntNonnegative head) with
+    | 0 (unit : prod ()) => networkRoaringOfListAcc tail out (networkRoaringMinInvalid invalid head)
+    | 1 (n : Nat) => case (natLt n 4294967296) with
+      | 0 (unit : prod ()) => networkRoaringOfListAcc tail out (networkRoaringMinInvalid invalid head)
+      | 1 (unit : prod ()) => networkRoaringOfListAcc tail (natsCons n out) invalid
+def networkRoaringOfList : HostInts -> sum (NetworkRoaringError, NetworkRoaring) := fun (values : HostInts) =>
+  networkRoaringOfListAcc values natsNil (valueNone HostInt)
+mu NetworkRoaringContainers : Type 0 :=
+| networkRoaringContainersNil : NetworkRoaringContainers
+| networkRoaringContainersCons (key : Nat) (lows : Nats) (tail : NetworkRoaringContainers) : NetworkRoaringContainers
+mu NetworkRoaringDescriptions : Type 0 :=
+| networkRoaringDescriptionsNil : NetworkRoaringDescriptions
+| networkRoaringDescriptionsCons (key : Nat) (cardinality : Nat) (run : Bool) (tail : NetworkRoaringDescriptions) : NetworkRoaringDescriptions

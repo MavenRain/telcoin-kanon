@@ -1,0 +1,44 @@
+def NetworkVoteWire : Type 0 := prod (HeaderDigest, Round, Epoch, AuthorityId, AuthorityId, NetworkBlsSignature)
+mu NetworkVoteWireError : Type 0 :=
+| networkVoteSignatureRejected : NetworkVoteWireError
+| networkVoteDoesNotVerify : NetworkVoteWireError
+def networkVoteWireErrorText : NetworkVoteWireError -> Bytes := fun (error : NetworkVoteWireError) =>
+  match error as self in NetworkVoteWireError return Bytes with
+  | networkVoteSignatureRejected => b"vote: the crypto seam refused the signature"
+  | networkVoteDoesNotVerify => b"vote: signature does not verify"
+def networkVoteWireMake : HeaderDigest -> Round -> Epoch -> AuthorityId -> AuthorityId -> NetworkBlsSignature -> NetworkVoteWire :=
+  fun (digest : HeaderDigest) (round : Round) (epoch : Epoch) (origin : AuthorityId) (author : AuthorityId) (signature : NetworkBlsSignature) =>
+    tuple (digest, round, epoch, origin, author, signature)
+def networkVoteWireHeaderDigest : NetworkVoteWire -> HeaderDigest := fun (vote : NetworkVoteWire) => vote.0
+def networkVoteWireRound : NetworkVoteWire -> Round := fun (vote : NetworkVoteWire) => vote.1
+def networkVoteWireEpoch : NetworkVoteWire -> Epoch := fun (vote : NetworkVoteWire) => vote.2
+def networkVoteWireOrigin : NetworkVoteWire -> AuthorityId := fun (vote : NetworkVoteWire) => vote.3
+def networkVoteWireAuthor : NetworkVoteWire -> AuthorityId := fun (vote : NetworkVoteWire) => vote.4
+def networkVoteWireSignature : NetworkVoteWire -> NetworkBlsSignature := fun (vote : NetworkVoteWire) => vote.5
+def NetworkVoteWireFields : Type 0 := prod (HeaderDigest, prod (Round, prod (Epoch, prod (AuthorityId, prod (AuthorityId, NetworkBlsSignature)))))
+def networkVoteWireCodec : Codec NetworkVoteWire := codecIso NetworkVoteWireFields NetworkVoteWire
+  (fun (f : NetworkVoteWireFields) => networkVoteWireMake f.0 f.1.0 f.1.1.0 f.1.1.1.0 f.1.1.1.1.0 f.1.1.1.1.1)
+  (fun (v : NetworkVoteWire) => tuple (v.0, tuple (v.1, tuple (v.2, tuple (v.3, tuple (v.4, v.5))))))
+  (codecPair HeaderDigest (prod (Round, prod (Epoch, prod (AuthorityId, prod (AuthorityId, NetworkBlsSignature))))) networkWireHeaderDigestCodec
+    (codecPair Round (prod (Epoch, prod (AuthorityId, prod (AuthorityId, NetworkBlsSignature)))) networkWireRoundCodec
+      (codecPair Epoch (prod (AuthorityId, prod (AuthorityId, NetworkBlsSignature))) networkWireEpochCodec
+        (codecPair AuthorityId (prod (AuthorityId, NetworkBlsSignature)) networkWireAuthorityIdCodec
+          (codecPair AuthorityId NetworkBlsSignature networkWireAuthorityIdCodec networkBlsSignatureCodec)))))
+def networkVoteWireToVote : NetworkVoteWire -> sum (NetworkVoteWireError, Vote) := fun (wire : NetworkVoteWire) =>
+  case (voteClaim wire.0 wire.1 wire.2 wire.3 wire.4 (networkBlsSignatureToBytes wire.5)) with
+  | 0 (unit : prod ()) => inj 0 of 2 networkVoteSignatureRejected
+  | 1 (vote : Vote) => inj 1 of 2 vote
+def networkVoteWireToVerified : PublicKey -> NetworkVoteWire -> sum (NetworkVoteWireError, Vote) :=
+  fun (key : PublicKey) (wire : NetworkVoteWire) => case (networkVoteWireToVote wire) with
+  | 0 (error : NetworkVoteWireError) => inj 0 of 2 error
+  | 1 (vote : Vote) => case (voteVerify key vote) with
+    | 0 (unit : prod ()) => inj 0 of 2 networkVoteDoesNotVerify
+    | 1 (unit : prod ()) => inj 1 of 2 vote
+def networkVoteWireOfVote : Vote -> sum (NetworkVoteWireError, NetworkVoteWire) := fun (vote : Vote) =>
+  case (networkBlsSignatureOfBytes (signatureBytes (voteSignature vote))) with
+  | 0 (unit : prod ()) => inj 0 of 2 networkVoteSignatureRejected
+  | 1 (signature : NetworkBlsSignature) => inj 1 of 2 (networkVoteWireMake (voteHeaderDigest vote)
+      (voteRound vote) (voteEpoch vote) (voteOrigin vote) (voteAuthor vote) signature)
+def networkVoteWireEqual : NetworkVoteWire -> NetworkVoteWire -> Bool := fun (a : NetworkVoteWire) (b : NetworkVoteWire) =>
+  boolAnd (headerDigestEqual a.0 b.0) (boolAnd (roundEqual a.1 b.1) (boolAnd (epochEqual a.2 b.2)
+    (boolAnd (authorityIdEqual a.3 b.3) (boolAnd (authorityIdEqual a.4 b.4) (networkBlsSignatureEqual a.5 b.5)))))

@@ -1,0 +1,70 @@
+def networkSyncPackChunkSize : Nat := 262144
+def networkSyncPackFrameOverhead : Nat := 1024
+def networkMaxSyncPackFrameSize : Nat := 263168
+def networkSyncCertBatchTargetSize : Nat := 262144
+def networkMaxSyncCertFrameSize : Nat := 524288
+def networkBatchDigestsReadChunkSize : Nat := 200
+def networkMaxSyncMissingCertsResponseBytes : Nat := 67108864
+def networkMaxSyncMissingCertsAcceptBytes : Nat := 67633152
+def networkMaxSyncRequestFrameSize : Nat := 4194304
+def networkSyncFrameOverhead : Nat := 1024
+def networkMaxPendingRequestsPerPeer : Nat := 2
+def networkMaxEpochSyncProbes : Nat := 3
+def networkMaxBatchRequestRetries : Nat := 3
+def networkMaxSyncFrameSize : HostInt -> HostInt := fun (maxBatchSize : HostInt) => hostIntAdd maxBatchSize (hostIntPositive networkSyncFrameOverhead)
+mu NetworkSyncChunkingError : Type 0 :=
+| networkSyncInvalidChunkSize (size : HostInt) : NetworkSyncChunkingError
+def networkSyncChunkingErrorText : NetworkSyncChunkingError -> Bytes := fun (error : NetworkSyncChunkingError) =>
+  match error as self in NetworkSyncChunkingError return Bytes with
+  | networkSyncInvalidChunkSize size => append b"sync chunking: chunk size " (append (hostIntText size) b" is below one")
+def networkSyncSlices : Nat -> Bytes -> ByteStrings := fun (chunkSize : Nat) (input : Bytes) =>
+  let result : prod (Bytes, ByteStrings) := stepsFold (prod (Bytes, ByteStrings)) steps64
+    (fun (state : prod (Bytes, ByteStrings)) => bytesEmpty state.0)
+    (fun (state : prod (Bytes, ByteStrings)) => tuple (drop state.0 chunkSize, byteStringsCons (take chunkSize state.0) state.1))
+    (tuple (input, byteStringsNil)) in seqBytesReverse result.1
+def networkSyncFramesOfSlices : (0 R : Type 0) -> (0 F : Type 0) -> ListOps (NetworkSyncFrame R) F -> ByteStrings -> F :=
+  fun (0 R : Type 0) (0 F : Type 0) (ops : ListOps (NetworkSyncFrame R) F) (parts : ByteStrings) =>
+    listAppend (NetworkSyncFrame R) F ops
+      (listMapInto Bytes ByteStrings (NetworkSyncFrame R) F seqBytesOps ops (networkSyncData R) parts)
+      (ops.1 (networkSyncEnd R codecUnitValue) ops.0)
+def networkSyncPackFramesWith : (0 R : Type 0) -> (0 F : Type 0) -> ListOps (NetworkSyncFrame R) F -> HostInt -> Bytes -> sum (NetworkSyncChunkingError, F) :=
+  fun (0 R : Type 0) (0 F : Type 0) (ops : ListOps (NetworkSyncFrame R) F) (chunkSize : HostInt) (input : Bytes) =>
+    case (hostIntNonnegative chunkSize) with
+    | 0 (unit : prod ()) => inj 0 of 2 (networkSyncInvalidChunkSize chunkSize)
+    | 1 (size : Nat) => case (natEq size 0) with
+      | 1 (unit : prod ()) => inj 0 of 2 (networkSyncInvalidChunkSize chunkSize)
+      | 0 (unit : prod ()) => inj 1 of 2 (networkSyncFramesOfSlices R F ops (networkSyncSlices size input))
+def networkSyncPackFrames : (0 R : Type 0) -> (0 F : Type 0) -> ListOps (NetworkSyncFrame R) F -> Bytes -> F :=
+  fun (0 R : Type 0) (0 F : Type 0) (ops : ListOps (NetworkSyncFrame R) F) (input : Bytes) =>
+    networkSyncFramesOfSlices R F ops (networkSyncSlices networkSyncPackChunkSize input)
+def networkSyncCloseGroup : (0 A : Type 0) -> (0 L : Type 0) -> (0 LL : Type 0) -> ListOps A L -> ListOps L LL -> L -> LL -> LL :=
+  fun (0 A : Type 0) (0 L : Type 0) (0 LL : Type 0) (ops : ListOps A L) (groups : ListOps L LL) (current : L) (out : LL) =>
+    case (ops.4 current) with | 0 (unit : prod ()) => out | 1 (head : A) => groups.1 (ops.2 current) out
+def networkSyncCertBatchesBounded : (0 A : Type 0) -> (0 L : Type 0) -> (0 LL : Type 0) -> ListOps A L -> ListOps L LL ->
+    (A -> HostInt) -> HostInt -> HostInt -> L -> LL :=
+  fun (0 A : Type 0) (0 L : Type 0) (0 LL : Type 0) (ops : ListOps A L) (groups : ListOps L LL)
+    (encodedSize : A -> HostInt) (target : HostInt) (cap : HostInt) (items : L) =>
+    let result : prod (Bool, HostInt, HostInt, L, LL) := listFoldLeft A L (prod (Bool, HostInt, HostInt, L, LL)) ops
+      (fun (state : prod (Bool, HostInt, HostInt, L, LL)) (item : A) => case state.0 with
+      | 1 (unit : prod ()) => state
+      | 0 (unit : prod ()) =>
+        let size : HostInt := encodedSize item in
+        let sent : HostInt := hostIntAdd state.1 size in let currentBytes : HostInt := hostIntAdd state.2 size in
+        let current : L := ops.1 item state.3 in let stop : Bool := natEq (hostIntLess sent cap) 0 in
+        case (boolOr stop (natEq (hostIntLess currentBytes target) 0)) with
+        | 1 (unit : prod ()) => tuple (stop, sent, hostIntPositive 0, ops.0, groups.1 (ops.2 current) state.4)
+        | 0 (unit : prod ()) => tuple (stop, sent, currentBytes, current, state.4))
+      (tuple (inj 0 of 2 (tuple ()), hostIntPositive 0, hostIntPositive 0, ops.0, groups.0)) items in
+    groups.2 (networkSyncCloseGroup A L LL ops groups result.3 result.4)
+def networkSyncCertBatches : (0 A : Type 0) -> (0 L : Type 0) -> (0 LL : Type 0) -> ListOps A L -> ListOps L LL -> (A -> HostInt) -> L -> LL :=
+  fun (0 A : Type 0) (0 L : Type 0) (0 LL : Type 0) (ops : ListOps A L) (groups : ListOps L LL) (encodedSize : A -> HostInt) (items : L) =>
+    networkSyncCertBatchesBounded A L LL ops groups encodedSize (hostIntPositive networkSyncCertBatchTargetSize)
+      (hostIntPositive networkMaxSyncMissingCertsResponseBytes) items
+def networkSyncDigestChunks : (0 A : Type 0) -> (0 L : Type 0) -> (0 LL : Type 0) -> ListOps A L -> ListOps L LL -> L -> LL :=
+  fun (0 A : Type 0) (0 L : Type 0) (0 LL : Type 0) (ops : ListOps A L) (groups : ListOps L LL) (items : L) =>
+    let result : prod (Nat, L, LL) := listFoldLeft A L (prod (Nat, L, LL)) ops
+      (fun (state : prod (Nat, L, LL)) (item : A) => let current : L := ops.1 item state.1 in
+        let count : Nat := natAdd state.0 1 in case (natEq count networkBatchDigestsReadChunkSize) with
+        | 1 (unit : prod ()) => tuple (0, ops.0, groups.1 (ops.2 current) state.2)
+        | 0 (unit : prod ()) => tuple (count, current, state.2)) (tuple (0, ops.0, groups.0)) items in
+    groups.2 (networkSyncCloseGroup A L LL ops groups result.1 result.2)

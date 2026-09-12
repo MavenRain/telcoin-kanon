@@ -1,0 +1,136 @@
+def networkRoaringRead : Nat -> BcsReader -> sum (NetworkRoaringError, prod (Nat, BcsReader)) :=
+  fun (width : Nat) (reader : BcsReader) =>
+    let codec : Codec Nat := case (natEq width 1) with | 1 (unit : prod ()) => codecU8
+      | 0 (unit : prod ()) => case (natEq width 2) with | 1 (unit : prod ()) => codecU16 | 0 (unit : prod ()) => codecU32 in
+    case (codecRead Nat codec reader) with
+    | 0 (error : BcsError) => inj 0 of 2 (networkRoaringTruncated (hostIntPositive (bcsOffset reader)))
+    | 1 (read : prod (Nat, BcsReader)) => inj 1 of 2 read
+def networkRoaringSkip : Nat -> BcsReader -> BcsReader := fun (count : Nat) (reader : BcsReader) =>
+  match reader as self in BcsReader return BcsReader with
+  | bcsReader remaining offset total => bcsReader (drop remaining count) (natAdd offset count) total
+def networkRoaringRunFlag : Bytes -> Nat -> Bool := fun (flags : Bytes) (weight : Nat) =>
+  match flags as self in Bytes return Bool with
+  | bytesNil => inj 0 of 2 (tuple ())
+  | bytesCons head tail => natEq (remainder64 (quotient64 head weight) 2) 1
+def rec networkRoaringReverseDescriptions : NetworkRoaringDescriptions -> NetworkRoaringDescriptions -> NetworkRoaringDescriptions :=
+  fun (descriptions : NetworkRoaringDescriptions) (out : NetworkRoaringDescriptions) =>
+  match descriptions as self in NetworkRoaringDescriptions return NetworkRoaringDescriptions with
+  | networkRoaringDescriptionsNil => out
+  | networkRoaringDescriptionsCons key card run tail => networkRoaringReverseDescriptions tail (networkRoaringDescriptionsCons key card run out)
+def rec networkRoaringReadDescriptions : Bytes -> Nat -> BcsReader -> Bytes -> Nat -> Bool -> NetworkRoaringDescriptions ->
+  sum (NetworkRoaringError, prod (BcsReader, NetworkRoaringDescriptions)) :=
+  fun (fuel : Bytes) (count : Nat) (reader : BcsReader) (flags : Bytes) (weight : Nat) (hasRuns : Bool) (out : NetworkRoaringDescriptions) =>
+  match fuel as self in Bytes return sum (NetworkRoaringError, prod (BcsReader, NetworkRoaringDescriptions)) with
+  | bytesNil =>
+    (case (natEq count 0) with
+    | 0 (unit : prod ()) => inj 0 of 2 (networkRoaringTruncated (hostIntPositive (bcsOffset reader)))
+    | 1 (unit : prod ()) => inj 1 of 2 (tuple (reader, networkRoaringReverseDescriptions out networkRoaringDescriptionsNil)))
+  | bytesCons unused tail => case (natEq count 0) with
+    | 1 (unit : prod ()) => inj 1 of 2 (tuple (reader, networkRoaringReverseDescriptions out networkRoaringDescriptionsNil))
+    | 0 (unit : prod ()) => case (networkRoaringRead 2 reader) with
+      | 0 (error : NetworkRoaringError) => inj 0 of 2 error
+      | 1 (key : prod (Nat, BcsReader)) => case (networkRoaringRead 2 key.1) with
+        | 0 (error : NetworkRoaringError) => inj 0 of 2 error
+        | 1 (card : prod (Nat, BcsReader)) =>
+          let nextFlags : Bytes := case (natEq weight 128) with | 1 (unit : prod ()) => drop flags 1 | 0 (unit : prod ()) => flags in
+          let nextWeight : Nat := case (natEq weight 128) with | 1 (unit : prod ()) => 1 | 0 (unit : prod ()) => natMul weight 2 in
+          networkRoaringReadDescriptions tail (natSub count 1) card.1 nextFlags nextWeight hasRuns
+            (networkRoaringDescriptionsCons key.0 (natAdd card.0 1) (boolAnd hasRuns (networkRoaringRunFlag flags weight)) out)
+def rec networkRoaringReadBits : Bytes -> Nat -> Nat -> Nats -> Nats :=
+  fun (fuel : Bytes) (byte : Nat) (at : Nat) (out : Nats) =>
+  match fuel as self in Bytes return Nats with
+  | bytesNil => out
+  | bytesCons unused tail => networkRoaringReadBits tail (quotient64 byte 2) (natAdd at 1)
+    (case (natEq (remainder64 byte 2) 1) with | 1 (unit : prod ()) => natsCons at out | 0 (unit : prod ()) => out)
+def rec networkRoaringReadLinear : Bytes -> Nat -> BcsReader -> Nat -> Bool -> Nat -> Nats ->
+  sum (NetworkRoaringError, prod (BcsReader, Nats)) :=
+  fun (fuel : Bytes) (count : Nat) (reader : BcsReader) (base : Nat) (bitmap : Bool) (index : Nat) (out : Nats) =>
+  match fuel as self in Bytes return sum (NetworkRoaringError, prod (BcsReader, Nats)) with
+  | bytesNil =>
+    (case (natEq count 0) with | 1 (unit : prod ()) => inj 1 of 2 (tuple (reader, out))
+    | 0 (unit : prod ()) => inj 0 of 2 (networkRoaringTruncated (hostIntPositive (bcsOffset reader))))
+  | bytesCons unused tail => case (natEq count 0) with
+    | 1 (unit : prod ()) => inj 1 of 2 (tuple (reader, out))
+    | 0 (unit : prod ()) =>
+      let width : Nat := case bitmap with | 1 (unit : prod ()) => 1 | 0 (unit : prod ()) => 2 in
+      case (networkRoaringRead width reader) with
+      | 0 (error : NetworkRoaringError) => inj 0 of 2 error
+      | 1 (value : prod (Nat, BcsReader)) =>
+        let values : Nats := case bitmap with
+          | 1 (unit : prod ()) => networkRoaringReadBits fuel8 value.0 (natAdd base (natMul index 8)) out
+          | 0 (unit : prod ()) => natsCons (natAdd base value.0) out in
+        networkRoaringReadLinear tail (natSub count 1) value.1 base bitmap (natAdd index 1) values
+def networkRoaringExpandRun : Nat -> Nat -> Nats -> Nats := fun (start : Nat) (count : Nat) (out : Nats) =>
+  let result : prod (Nat, Nat, Nats) := stepsFold (prod (Nat, Nat, Nats)) steps32
+    (fun (state : prod (Nat, Nat, Nats)) => boolNat (natEq state.1 0))
+    (fun (state : prod (Nat, Nat, Nats)) => tuple (natAdd state.0 1, natSub state.1 1, natsCons state.0 state.2))
+    (tuple (start, count, out)) in result.2
+def rec networkRoaringReadRuns : Bytes -> Nat -> BcsReader -> Nat -> Nats -> sum (NetworkRoaringError, prod (BcsReader, Nats)) :=
+  fun (fuel : Bytes) (count : Nat) (reader : BcsReader) (base : Nat) (out : Nats) =>
+  match fuel as self in Bytes return sum (NetworkRoaringError, prod (BcsReader, Nats)) with
+  | bytesNil =>
+    (case (natEq count 0) with | 1 (unit : prod ()) => inj 1 of 2 (tuple (reader, out))
+    | 0 (unit : prod ()) => inj 0 of 2 (networkRoaringTruncated (hostIntPositive (bcsOffset reader))))
+  | bytesCons unused tail => case (natEq count 0) with
+    | 1 (unit : prod ()) => inj 1 of 2 (tuple (reader, out))
+    | 0 (unit : prod ()) => case (networkRoaringRead 2 reader) with
+      | 0 (error : NetworkRoaringError) => inj 0 of 2 error
+      | 1 (start : prod (Nat, BcsReader)) => case (networkRoaringRead 2 start.1) with
+        | 0 (error : NetworkRoaringError) => inj 0 of 2 error
+        | 1 (length : prod (Nat, BcsReader)) => case (natLt 65535 (natAdd start.0 length.0)) with
+          | 1 (unit : prod ()) => inj 0 of 2 (networkRoaringRunOutOfRange (hostIntPositive start.0) (hostIntPositive length.0))
+          | 0 (unit : prod ()) => networkRoaringReadRuns tail (natSub count 1) length.1 base
+            (networkRoaringExpandRun (natAdd base start.0) (natAdd length.0 1) out)
+def rec networkRoaringReadContainers : NetworkRoaringDescriptions -> BcsReader -> Nats -> sum (NetworkRoaringError, prod (BcsReader, Nats)) :=
+  fun (descriptions : NetworkRoaringDescriptions) (reader : BcsReader) (out : Nats) =>
+  match descriptions as self in NetworkRoaringDescriptions return sum (NetworkRoaringError, prod (BcsReader, Nats)) with
+  | networkRoaringDescriptionsNil => inj 1 of 2 (tuple (reader, out))
+  | networkRoaringDescriptionsCons key card run tail =>
+    let base : Nat := natMul key 65536 in
+    let decoded : sum (NetworkRoaringError, prod (BcsReader, Nats)) := case run with
+      | 1 (unit : prod ()) =>
+        (case (networkRoaringRead 2 reader) with
+        | 0 (error : NetworkRoaringError) => inj 0 of 2 error
+        | 1 (count : prod (Nat, BcsReader)) => networkRoaringReadRuns (bcsRemaining count.1) count.0 count.1 base out)
+      | 0 (unit : prod ()) =>
+        let bitmap : Bool := natLt 4096 card in
+        let count : Nat := case bitmap with | 1 (unit : prod ()) => 8192 | 0 (unit : prod ()) => card in
+        networkRoaringReadLinear (bcsRemaining reader) count reader base bitmap 0 out in
+    case decoded with
+    | 0 (error : NetworkRoaringError) => inj 0 of 2 error
+    | 1 (values : prod (BcsReader, Nats)) => networkRoaringReadContainers tail values.0 values.1
+def networkRoaringReadHeader : Bytes -> sum (NetworkRoaringError, prod (Nat, Bool, BcsReader)) := fun (raw : Bytes) =>
+  case (networkRoaringRead 4 (bcsStart raw)) with
+  | 0 (error : NetworkRoaringError) => inj 0 of 2 error
+  | 1 (cookie : prod (Nat, BcsReader)) => case (natEq cookie.0 12346) with
+    | 1 (unit : prod ()) =>
+      (case (networkRoaringRead 4 cookie.1) with
+      | 0 (error : NetworkRoaringError) => inj 0 of 2 error
+      | 1 (count : prod (Nat, BcsReader)) => inj 1 of 2 (tuple (count.0, inj 0 of 2 (tuple ()), count.1)))
+    | 0 (unit : prod ()) => case (natEq (remainder64 cookie.0 65536) 12347) with
+      | 0 (unit : prod ()) => inj 0 of 2 (networkRoaringUnknownCookie (hostIntPositive cookie.0))
+      | 1 (unit : prod ()) => inj 1 of 2 (tuple (natAdd (quotient64 cookie.0 65536) 1, inj 1 of 2 (tuple ()), cookie.1))
+def networkRoaringOfBytes : Bytes -> sum (NetworkRoaringError, NetworkRoaring) := fun (raw : Bytes) =>
+  case (networkRoaringReadHeader raw) with
+  | 0 (error : NetworkRoaringError) => inj 0 of 2 error
+  | 1 (header : prod (Nat, Bool, BcsReader)) => case (natLt 65536 header.0) with
+    | 1 (unit : prod ()) => inj 0 of 2 (networkRoaringTooManyContainers (hostIntPositive header.0))
+    | 0 (unit : prod ()) =>
+      let bitmapLength : Nat := case header.1 with | 1 (unit : prod ()) => quotient64 (natAdd header.0 7) 8 | 0 (unit : prod ()) => 0 in
+      let flags : Bytes := take bitmapLength (bcsRemaining header.2) in
+      let reader : BcsReader := networkRoaringSkip bitmapLength header.2 in
+      case (networkRoaringReadDescriptions (bcsRemaining reader) header.0 reader flags 1 header.1 networkRoaringDescriptionsNil) with
+      | 0 (error : NetworkRoaringError) => inj 0 of 2 error
+      | 1 (descriptions : prod (BcsReader, NetworkRoaringDescriptions)) =>
+        let skipOffsets : Bool := boolOr (boolNot header.1) (boolNot (natLt header.0 4)) in
+        let payload : BcsReader := case skipOffsets with
+          | 1 (unit : prod ()) => networkRoaringSkip (natMul 4 header.0) descriptions.0 | 0 (unit : prod ()) => descriptions.0 in
+        case (networkRoaringReadContainers descriptions.1 payload natsNil) with
+        | 0 (error : NetworkRoaringError) => inj 0 of 2 error
+        | 1 (values : prod (BcsReader, Nats)) => case (natEq (bcsOffset values.0) (bytesLength raw)) with
+          | 0 (unit : prod ()) => inj 0 of 2 (networkRoaringTrailingBytes (hostIntPositive (bcsOffset values.0)) (hostIntPositive (bytesLength raw)))
+          | 1 (unit : prod ()) => inj 1 of 2 (networkRoaringCanonical values.1)
+def networkRoaringDecodeOption : Bytes -> ValueOption NetworkRoaring := fun (raw : Bytes) =>
+  case (networkRoaringOfBytes raw) with | 0 (error : NetworkRoaringError) => valueNone NetworkRoaring
+  | 1 (bitmap : NetworkRoaring) => valueSome NetworkRoaring bitmap
+def networkRoaringCodec : Codec NetworkRoaring := codecRefine Bytes NetworkRoaring networkRoaringDecodeOption networkRoaringToBytes codecBytes

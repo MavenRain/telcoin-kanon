@@ -1,0 +1,119 @@
+mu NetworkSyncViolation : Type 0 :=
+| networkSyncUnexpectedOpening : NetworkSyncViolation
+| networkSyncControlMidstream : NetworkSyncViolation
+| networkSyncPeerAbort (error : NetworkSyncFrameError) : NetworkSyncViolation
+| networkSyncTooManyItems (got : HostInt) (requested : HostInt) : NetworkSyncViolation
+| networkSyncUnexpectedDigest (digest : BatchDigest) : NetworkSyncViolation
+| networkSyncDuplicateDigest (digest : BatchDigest) : NetworkSyncViolation
+| networkSyncSizeCap (cumulative : HostInt) (cap : HostInt) : NetworkSyncViolation
+| networkSyncDecode (error : BcsError) : NetworkSyncViolation
+def networkSyncFrameErrorName : NetworkSyncFrameError -> Bytes := fun (error : NetworkSyncFrameError) => case error with
+  | 0 (unit : CodecUnit) => b"internal" | 1 (unit : CodecUnit) => b"malformed"
+def networkSyncViolationText : NetworkSyncViolation -> Bytes := fun (error : NetworkSyncViolation) =>
+  match error as self in NetworkSyncViolation return Bytes with
+  | networkSyncUnexpectedOpening => b"sync reader: unexpected opening sync frame"
+  | networkSyncControlMidstream => b"sync reader: unexpected sync frame mid stream"
+  | networkSyncPeerAbort error => append b"sync reader: peer aborted the stream (" (append (networkSyncFrameErrorName error) b")")
+  | networkSyncTooManyItems got requested => append b"sync reader: peer sent " (append (hostIntText got) (append b" items for " (append (hostIntText requested) b" requested")))
+  | networkSyncUnexpectedDigest digest => append b"sync reader: peer sent unrequested batch " (batchDigestHex digest)
+  | networkSyncDuplicateDigest digest => append b"sync reader: peer sent duplicate batch " (batchDigestHex digest)
+  | networkSyncSizeCap cumulative cap => append b"sync reader: response of " (append (hostIntText cumulative) (append b" bytes exceeds the " (append (hostIntText cap) b" cap")))
+  | networkSyncDecode error => append b"sync reader: " (bcsErrorText error)
+def NetworkSyncOpening : Type 0 := sum (CodecUnit, NetworkSyncDenyReason, NetworkSyncFrameError)
+def networkSyncOpening : (0 R : Type 0) -> NetworkSyncFrame R -> sum (NetworkSyncViolation, NetworkSyncOpening) :=
+  fun (0 R : Type 0) (frame : NetworkSyncFrame R) => case frame with
+  | 0 (request : R) => inj 0 of 2 networkSyncUnexpectedOpening
+  | 1 (unit : CodecUnit) => inj 1 of 2 (inj 0 of 3 unit)
+  | 2 (reason : NetworkSyncDenyReason) => inj 1 of 2 (inj 1 of 3 reason)
+  | 3 (bytes : Bytes) => inj 0 of 2 networkSyncUnexpectedOpening
+  | 4 (unit : CodecUnit) => inj 0 of 2 networkSyncUnexpectedOpening
+  | 5 (error : NetworkSyncFrameError) => inj 1 of 2 (inj 2 of 3 error)
+def networkSyncBodyFrame : (0 R : Type 0) -> NetworkSyncFrame R -> sum (NetworkSyncViolation, sum (Bytes, CodecUnit)) :=
+  fun (0 R : Type 0) (frame : NetworkSyncFrame R) => case frame with
+  | 0 (request : R) => inj 0 of 2 networkSyncControlMidstream
+  | 1 (unit : CodecUnit) => inj 0 of 2 networkSyncControlMidstream
+  | 2 (reason : NetworkSyncDenyReason) => inj 0 of 2 networkSyncControlMidstream
+  | 3 (bytes : Bytes) => inj 1 of 2 (inj 0 of 2 bytes)
+  | 4 (unit : CodecUnit) => inj 1 of 2 (inj 1 of 2 unit)
+  | 5 (error : NetworkSyncFrameError) => inj 0 of 2 (networkSyncPeerAbort error)
+def NetworkSyncStep : (0 S : Type 0) -> (0 D : Type 0) -> Type 0 := fun (0 S : Type 0) (0 D : Type 0) => sum (NetworkSyncViolation, prod (S, ValueOption D, Bool))
+def networkSyncDrive : (0 R : Type 0) -> (0 F : Type 0) -> (0 S : Type 0) -> (0 D : Type 0) -> (0 O : Type 0) ->
+    ListOps (NetworkSyncFrame R) F -> (S -> NetworkSyncFrame R -> NetworkSyncStep S D) -> (S -> Bool) -> (S -> O) -> S -> F -> sum (NetworkSyncViolation, prod (O, Bool)) :=
+  fun (0 R : Type 0) (0 F : Type 0) (0 S : Type 0) (0 D : Type 0) (0 O : Type 0) (ops : ListOps (NetworkSyncFrame R) F)
+    (step : S -> NetworkSyncFrame R -> NetworkSyncStep S D) (finished : S -> Bool) (output : S -> O) (start : S) (frames : F) =>
+    let result : sum (NetworkSyncViolation, S) := listFoldLeft (NetworkSyncFrame R) F (sum (NetworkSyncViolation, S)) ops
+      (fun (state : sum (NetworkSyncViolation, S)) (frame : NetworkSyncFrame R) => case state with
+      | 0 (error : NetworkSyncViolation) => inj 0 of 2 error
+      | 1 (current : S) => case (finished current) with
+        | 1 (unit : prod ()) => state
+        | 0 (unit : prod ()) => case (step current frame) with
+          | 0 (error : NetworkSyncViolation) => inj 0 of 2 error
+          | 1 (next : prod (S, ValueOption D, Bool)) => inj 1 of 2 next.0)
+      (inj 1 of 2 start) frames in
+    case result with | 0 (error : NetworkSyncViolation) => inj 0 of 2 error
+    | 1 (state : S) => inj 1 of 2 (tuple (output state, finished state))
+def NetworkPackReader : Type 0 := prod (ByteStrings, Bool)
+def networkPackReaderStart : NetworkPackReader := tuple (byteStringsNil, inj 0 of 2 (tuple ()))
+def networkPackReaderFinished : NetworkPackReader -> Bool := fun (state : NetworkPackReader) => state.1
+def networkPackReaderPayload : NetworkPackReader -> Bytes := fun (state : NetworkPackReader) => seqBytesWrite (fun (bytes : Bytes) => bytes) (seqBytesReverse state.0)
+def networkPackReaderStep : (0 R : Type 0) -> NetworkPackReader -> NetworkSyncFrame R -> NetworkSyncStep NetworkPackReader Bytes :=
+  fun (0 R : Type 0) (state : NetworkPackReader) (frame : NetworkSyncFrame R) => case (networkSyncBodyFrame R frame) with
+  | 0 (error : NetworkSyncViolation) => inj 0 of 2 error
+  | 1 (body : sum (Bytes, CodecUnit)) => case body with
+    | 0 (bytes : Bytes) => inj 1 of 2 (tuple (tuple (byteStringsCons bytes state.0, state.1), valueSome Bytes bytes, inj 0 of 2 (tuple ())))
+    | 1 (unit : CodecUnit) => inj 1 of 2 (tuple (tuple (state.0, inj 1 of 2 (tuple ())), valueNone Bytes, inj 1 of 2 (tuple ())))
+def networkPackReaderRun : (0 R : Type 0) -> (0 F : Type 0) -> ListOps (NetworkSyncFrame R) F -> F -> sum (NetworkSyncViolation, prod (Bytes, Bool)) :=
+  fun (0 R : Type 0) (0 F : Type 0) (ops : ListOps (NetworkSyncFrame R) F) (frames : F) =>
+    networkSyncDrive R F NetworkPackReader Bytes Bytes ops (networkPackReaderStep R) networkPackReaderFinished networkPackReaderPayload networkPackReaderStart frames
+def NetworkCertReader : Type 0 := prod (NetworkCertificates, HostInt, HostInt, Bool)
+def networkCertReaderStart : HostInt -> NetworkCertReader := fun (cap : HostInt) => tuple (networkCertificatesNil, hostIntPositive 0, cap, inj 0 of 2 (tuple ()))
+def networkCertReaderFinished : NetworkCertReader -> Bool := fun (state : NetworkCertReader) => state.3
+def networkCertReaderCertificates : NetworkCertReader -> NetworkCertificates := fun (state : NetworkCertReader) => seqNetworkCertificateReverse state.0
+def networkCertReaderCumulative : NetworkCertReader -> HostInt := fun (state : NetworkCertReader) => state.1
+def networkCertReaderBatchCodec : Codec NetworkCertificates := codecList NetworkCertificateWire NetworkCertificates seqNetworkCertificateOps networkCertificateWireCodec
+def networkCertReaderStep : (0 R : Type 0) -> NetworkCertReader -> NetworkSyncFrame R -> NetworkSyncStep NetworkCertReader NetworkCertificates :=
+  fun (0 R : Type 0) (state : NetworkCertReader) (frame : NetworkSyncFrame R) => case (networkSyncBodyFrame R frame) with
+  | 0 (error : NetworkSyncViolation) => inj 0 of 2 error
+  | 1 (body : sum (Bytes, CodecUnit)) => case body with
+    | 1 (unit : CodecUnit) => inj 1 of 2 (tuple (tuple (state.0, state.1, state.2, inj 1 of 2 (tuple ())), valueNone NetworkCertificates, inj 1 of 2 (tuple ())))
+    | 0 (bytes : Bytes) =>
+      let seen : HostInt := hostIntAdd state.1 (hostIntPositive (bytesLength bytes)) in
+      case (natEq (hostIntLess state.2 seen) 1) with
+      | 1 (unit : prod ()) => inj 0 of 2 (networkSyncSizeCap seen state.2)
+      | 0 (unit : prod ()) => case (codecDecode NetworkCertificates networkCertReaderBatchCodec bytes) with
+        | 0 (error : BcsError) => inj 0 of 2 (networkSyncDecode error)
+        | 1 (read : prod (NetworkCertificates, BcsReader)) => inj 1 of 2
+          (tuple (tuple (seqNetworkCertificateRevAcc read.0 state.0, seen, state.2, state.3), valueSome NetworkCertificates read.0, inj 0 of 2 (tuple ())))
+def networkCertReaderRun : (0 R : Type 0) -> (0 F : Type 0) -> ListOps (NetworkSyncFrame R) F -> HostInt -> F -> sum (NetworkSyncViolation, prod (NetworkCertificates, Bool)) :=
+  fun (0 R : Type 0) (0 F : Type 0) (ops : ListOps (NetworkSyncFrame R) F) (cap : HostInt) (frames : F) =>
+    networkSyncDrive R F NetworkCertReader NetworkCertificates NetworkCertificates ops (networkCertReaderStep R)
+      networkCertReaderFinished networkCertReaderCertificates (networkCertReaderStart cap) frames
+def NetworkBatchReader : Type 0 := prod (BatchDigests, BatchDigests, Batches, Bool)
+def networkBatchReaderStart : BatchDigests -> NetworkBatchReader := fun (requested : BatchDigests) => tuple (requested, batchDigestsNil, batchesNil, inj 0 of 2 (tuple ()))
+def networkBatchReaderFinished : NetworkBatchReader -> Bool := fun (state : NetworkBatchReader) => state.3
+def networkBatchReaderBatches : NetworkBatchReader -> Batches := fun (state : NetworkBatchReader) => seqBatchReverse state.2
+def networkBatchReaderMember : BatchDigest -> BatchDigests -> Bool := fun (digest : BatchDigest) (digests : BatchDigests) =>
+  optionIsSome BatchDigest (listFind BatchDigest BatchDigests seqBatchDigestOps (batchDigestEqual digest) digests)
+def networkBatchReaderAccept : NetworkBatchReader -> Bytes -> NetworkSyncStep NetworkBatchReader Batch := fun (state : NetworkBatchReader) (bytes : Bytes) =>
+  let requested : HostInt := hostIntPositive (seqBatchDigestLength state.0) in
+  let got : HostInt := hostIntAdd (hostIntPositive (seqBatchLength state.2)) (hostIntPositive 1) in
+  case (natEq (hostIntLess requested got) 1) with
+  | 1 (unit : prod ()) => inj 0 of 2 (networkSyncTooManyItems got requested)
+  | 0 (unit : prod ()) => case (codecDecode Batch batchCodec bytes) with
+    | 0 (error : BcsError) => inj 0 of 2 (networkSyncDecode error)
+    | 1 (read : prod (Batch, BcsReader)) => let digest : BatchDigest := batchDigest read.0 in
+      case (networkBatchReaderMember digest state.0) with
+      | 0 (unit : prod ()) => inj 0 of 2 (networkSyncUnexpectedDigest digest)
+      | 1 (unit : prod ()) => case (networkBatchReaderMember digest state.1) with
+        | 1 (unit : prod ()) => inj 0 of 2 (networkSyncDuplicateDigest digest)
+        | 0 (unit : prod ()) => inj 1 of 2 (tuple (tuple (state.0, batchDigestsCons digest state.1, batchesCons read.0 state.2, state.3), valueSome Batch read.0, inj 0 of 2 (tuple ())))
+def networkBatchReaderStep : (0 R : Type 0) -> NetworkBatchReader -> NetworkSyncFrame R -> NetworkSyncStep NetworkBatchReader Batch :=
+  fun (0 R : Type 0) (state : NetworkBatchReader) (frame : NetworkSyncFrame R) => case (networkSyncBodyFrame R frame) with
+  | 0 (error : NetworkSyncViolation) => inj 0 of 2 error
+  | 1 (body : sum (Bytes, CodecUnit)) => case body with
+    | 0 (bytes : Bytes) => networkBatchReaderAccept state bytes
+    | 1 (unit : CodecUnit) => inj 1 of 2 (tuple (tuple (state.0, state.1, state.2, inj 1 of 2 (tuple ())), valueNone Batch, inj 1 of 2 (tuple ())))
+def networkBatchReaderRun : (0 R : Type 0) -> (0 F : Type 0) -> ListOps (NetworkSyncFrame R) F -> BatchDigests -> F -> sum (NetworkSyncViolation, prod (Batches, Bool)) :=
+  fun (0 R : Type 0) (0 F : Type 0) (ops : ListOps (NetworkSyncFrame R) F) (requested : BatchDigests) (frames : F) =>
+    networkSyncDrive R F NetworkBatchReader Batch Batches ops (networkBatchReaderStep R)
+      networkBatchReaderFinished networkBatchReaderBatches (networkBatchReaderStart requested) frames

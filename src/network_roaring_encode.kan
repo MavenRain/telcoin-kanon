@@ -1,0 +1,71 @@
+def rec networkRoaringReverseContainers : NetworkRoaringContainers -> NetworkRoaringContainers -> NetworkRoaringContainers :=
+  fun (groups : NetworkRoaringContainers) (out : NetworkRoaringContainers) =>
+  match groups as self in NetworkRoaringContainers return NetworkRoaringContainers with
+  | networkRoaringContainersNil => out
+  | networkRoaringContainersCons key lows tail =>
+    networkRoaringReverseContainers tail (networkRoaringContainersCons key (seqNatReverse lows) out)
+def rec networkRoaringGroupAcc : Nats -> NetworkRoaringContainers -> NetworkRoaringContainers :=
+  fun (values : Nats) (groups : NetworkRoaringContainers) =>
+  match values as self in Nats return NetworkRoaringContainers with
+  | natsNil => networkRoaringReverseContainers groups networkRoaringContainersNil
+  | natsCons head tail =>
+    let key : Nat := quotient64 head 65536 in let low : Nat := remainder64 head 65536 in
+    let next : NetworkRoaringContainers := match groups as previous in NetworkRoaringContainers return NetworkRoaringContainers with
+      | networkRoaringContainersNil => networkRoaringContainersCons key (natsCons low natsNil) groups
+      | networkRoaringContainersCons previous lows rest => case (natEq key previous) with
+        | 1 (unit : prod ()) => networkRoaringContainersCons key (natsCons low lows) rest
+        | 0 (unit : prod ()) => networkRoaringContainersCons key (natsCons low natsNil) groups in
+    networkRoaringGroupAcc tail next
+def rec networkRoaringContainerCount : NetworkRoaringContainers -> Nat -> Nat :=
+  fun (groups : NetworkRoaringContainers) (count : Nat) =>
+  match groups as self in NetworkRoaringContainers return Nat with
+  | networkRoaringContainersNil => count
+  | networkRoaringContainersCons key lows tail => networkRoaringContainerCount tail (natAdd count 1)
+def rec networkRoaringWriteDescriptions : NetworkRoaringContainers -> Bytes -> Bytes :=
+  fun (groups : NetworkRoaringContainers) (out : Bytes) =>
+  match groups as self in NetworkRoaringContainers return Bytes with
+  | networkRoaringContainersNil => reverse out
+  | networkRoaringContainersCons key lows tail =>
+    networkRoaringWriteDescriptions tail (reverseOnto (append (bcsEncodeU16 key)
+      (bcsEncodeU16 (natSub (seqNatLength lows) 1))) out)
+def rec networkRoaringWriteOffsets : NetworkRoaringContainers -> Nat -> Bytes -> Bytes :=
+  fun (groups : NetworkRoaringContainers) (offset : Nat) (out : Bytes) =>
+  match groups as self in NetworkRoaringContainers return Bytes with
+  | networkRoaringContainersNil => reverse out
+  | networkRoaringContainersCons key lows tail =>
+    let cardinality : Nat := seqNatLength lows in
+    let size : Nat := case (natLt 4096 cardinality) with | 1 (unit : prod ()) => 8192 | 0 (unit : prod ()) => natMul 2 cardinality in
+    networkRoaringWriteOffsets tail (natAdd offset size) (reverseOnto (bcsEncodeU32 offset) out)
+def rec networkRoaringBitmapByte : Bytes -> Nat -> Nat -> Nats -> Nat -> prod (Nats, Nat) :=
+  fun (fuel : Bytes) (at : Nat) (weight : Nat) (lows : Nats) (byte : Nat) =>
+  match fuel as self in Bytes return prod (Nats, Nat) with
+  | bytesNil => tuple (lows, byte)
+  | bytesCons unused tail => match lows as remaining in Nats return prod (Nats, Nat) with
+    | natsNil => tuple (lows, byte)
+    | natsCons head rest => case (natEq head at) with
+      | 1 (unit : prod ()) => networkRoaringBitmapByte tail (natAdd at 1) (natMul weight 2) rest (natAdd byte weight)
+      | 0 (unit : prod ()) => networkRoaringBitmapByte tail (natAdd at 1) (natMul weight 2) lows byte
+def networkRoaringWriteBitmapFrom : Nat -> Nats -> Bytes := fun (start : Nat) (lows : Nats) =>
+  let result : prod (Nat, Nats, Bytes) := stepsFold (prod (Nat, Nats, Bytes)) steps32
+    (fun (state : prod (Nat, Nats, Bytes)) => boolNat (natEq state.0 8192))
+    (fun (state : prod (Nat, Nats, Bytes)) =>
+      let byte : prod (Nats, Nat) := networkRoaringBitmapByte fuel8 (natMul state.0 8) 1 state.1 0 in
+      tuple (natAdd state.0 1, byte.0, bytesCons byte.1 state.2))
+    (tuple (start, lows, bytesNil)) in reverse result.2
+def networkRoaringWriteBitmap : Nats -> Bytes := networkRoaringWriteBitmapFrom 0
+def rec networkRoaringWritePayloads : NetworkRoaringContainers -> Bytes -> Bytes :=
+  fun (groups : NetworkRoaringContainers) (out : Bytes) =>
+  match groups as self in NetworkRoaringContainers return Bytes with
+  | networkRoaringContainersNil => reverse out
+  | networkRoaringContainersCons key lows tail =>
+    let payload : Bytes := case (natLt 4096 (seqNatLength lows)) with
+      | 1 (unit : prod ()) => networkRoaringWriteBitmap lows
+      | 0 (unit : prod ()) => seqNatWrite bcsEncodeU16 lows in
+    networkRoaringWritePayloads tail (reverseOnto payload out)
+def networkRoaringToBytes : NetworkRoaring -> Bytes := fun (bitmap : NetworkRoaring) =>
+  let groups : NetworkRoaringContainers := networkRoaringGroupAcc (networkRoaringNats bitmap) networkRoaringContainersNil in
+  let count : Nat := networkRoaringContainerCount groups 0 in
+  append (bcsEncodeU32 12346) (append (bcsEncodeU32 count)
+    (append (networkRoaringWriteDescriptions groups bytesNil)
+      (append (networkRoaringWriteOffsets groups (natAdd 8 (natMul 8 count)) bytesNil)
+        (networkRoaringWritePayloads groups bytesNil))))

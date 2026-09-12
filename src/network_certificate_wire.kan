@@ -1,0 +1,98 @@
+mu NetworkCertificateState : Type 0 :=
+| networkCertificateUnsigned (signature : NetworkBlsSignature) : NetworkCertificateState
+| networkCertificateUnverified (signature : NetworkBlsSignature) : NetworkCertificateState
+| networkCertificateVerifiedDirectly (signature : NetworkBlsSignature) : NetworkCertificateState
+| networkCertificateVerifiedIndirectly (signature : NetworkBlsSignature) : NetworkCertificateState
+| networkCertificateGenesis : NetworkCertificateState
+def networkCertificateStateSignature : NetworkCertificateState -> ValueOption NetworkBlsSignature := fun (state : NetworkCertificateState) =>
+  match state as self in NetworkCertificateState return ValueOption NetworkBlsSignature with
+  | networkCertificateUnsigned signature => valueSome NetworkBlsSignature signature
+  | networkCertificateUnverified signature => valueSome NetworkBlsSignature signature
+  | networkCertificateVerifiedDirectly signature => valueSome NetworkBlsSignature signature
+  | networkCertificateVerifiedIndirectly signature => valueSome NetworkBlsSignature signature
+  | networkCertificateGenesis => valueNone NetworkBlsSignature
+def networkCertificateStateIndex : NetworkCertificateState -> Nat := fun (state : NetworkCertificateState) =>
+  match state as self in NetworkCertificateState return Nat with
+  | networkCertificateUnsigned signature => 0
+  | networkCertificateUnverified signature => 1
+  | networkCertificateVerifiedDirectly signature => 2
+  | networkCertificateVerifiedIndirectly signature => 3
+  | networkCertificateGenesis => 4
+def networkCertificateSignedCase : Nat -> (NetworkBlsSignature -> NetworkCertificateState) -> CodecCases NetworkCertificateState :=
+  fun (index : Nat) (inject : NetworkBlsSignature -> NetworkCertificateState) =>
+    codecCase NetworkCertificateState NetworkBlsSignature index networkBlsSignatureCodec inject
+      (fun (state : NetworkCertificateState) => case (natEq index (networkCertificateStateIndex state)) with
+      | 0 (unit : prod ()) => valueNone NetworkBlsSignature
+      | 1 (unit : prod ()) => networkCertificateStateSignature state)
+def networkCertificateStateCodec : Codec NetworkCertificateState := codecSum NetworkCertificateState
+  (codecCasesPrepend NetworkCertificateState (networkCertificateSignedCase 0 (fun (signature : NetworkBlsSignature) => networkCertificateUnsigned signature))
+    (codecCasesPrepend NetworkCertificateState (networkCertificateSignedCase 1 (fun (signature : NetworkBlsSignature) => networkCertificateUnverified signature))
+      (codecCasesPrepend NetworkCertificateState (networkCertificateSignedCase 2 (fun (signature : NetworkBlsSignature) => networkCertificateVerifiedDirectly signature))
+        (codecCasesPrepend NetworkCertificateState (networkCertificateSignedCase 3 (fun (signature : NetworkBlsSignature) => networkCertificateVerifiedIndirectly signature))
+          (codecCase NetworkCertificateState CodecUnit 4 codecUnit (fun (unit : CodecUnit) => networkCertificateGenesis)
+            (fun (state : NetworkCertificateState) => case (natEq (networkCertificateStateIndex state) 4) with
+            | 0 (unit : prod ()) => valueNone CodecUnit
+            | 1 (unit : prod ()) => valueSome CodecUnit codecUnitValue))))))
+def NetworkCertificateWire : Type 0 := prod (Header, NetworkCertificateState, NetworkRoaring)
+def networkCertificateWireMake : Header -> NetworkCertificateState -> NetworkRoaring -> NetworkCertificateWire :=
+  fun (header : Header) (state : NetworkCertificateState) (signers : NetworkRoaring) => tuple (header, state, signers)
+def networkCertificateWireHeader : NetworkCertificateWire -> Header := fun (wire : NetworkCertificateWire) => wire.0
+def networkCertificateWireState : NetworkCertificateWire -> NetworkCertificateState := fun (wire : NetworkCertificateWire) => wire.1
+def networkCertificateWireSignedAuthorities : NetworkCertificateWire -> NetworkRoaring := fun (wire : NetworkCertificateWire) => wire.2
+def networkCertificateWireCodec : Codec NetworkCertificateWire :=
+  codecTriple Header NetworkCertificateState NetworkRoaring headerCodec networkCertificateStateCodec networkRoaringCodec
+mu NetworkCertificateWireError : Type 0 :=
+| networkCertificateUnknownSignerIndex (index : HostInt) : NetworkCertificateWireError
+| networkCertificateSignerNotInCommittee : NetworkCertificateWireError
+| networkCertificateSignatureRejected : NetworkCertificateWireError
+| networkCertificateNotChecked (error : CertificateError) : NetworkCertificateWireError
+def networkCertificateWireErrorText : NetworkCertificateWireError -> Bytes := fun (error : NetworkCertificateWireError) =>
+  match error as self in NetworkCertificateWireError return Bytes with
+  | networkCertificateUnknownSignerIndex index => append b"certificate: bitmap names committee position " (hostIntText index)
+  | networkCertificateSignerNotInCommittee => b"certificate: signer outside the committee"
+  | networkCertificateSignatureRejected => b"certificate: the crypto seam refused the aggregate"
+  | networkCertificateNotChecked error => append b"certificate: " (certificateErrorText error)
+def rec networkCertificateSignerSetAcc : HostInts -> Committee -> AuthorityIds -> sum (NetworkCertificateWireError, AuthorityIds) :=
+  fun (indices : HostInts) (committee : Committee) (out : AuthorityIds) =>
+  match indices as self in HostInts return sum (NetworkCertificateWireError, AuthorityIds) with
+  | hostIntsNil => inj 1 of 2 (canonicalSigners out)
+  | hostIntsCons index tail => case (committeeNthSigned committee index) with
+    | 0 (unit : prod ()) => inj 0 of 2 (networkCertificateUnknownSignerIndex index)
+    | 1 (authority : Authority) => networkCertificateSignerSetAcc tail committee (authorityIdsCons (authorityId authority) out)
+def networkCertificateSignerSet : Committee -> NetworkRoaring -> sum (NetworkCertificateWireError, AuthorityIds) :=
+  fun (committee : Committee) (bitmap : NetworkRoaring) => networkCertificateSignerSetAcc (networkRoaringToList bitmap) committee authorityIdsNil
+def networkCertificateWireToChecked : Committee -> NetworkCertificateWire -> sum (NetworkCertificateWireError, Certificate) :=
+  fun (committee : Committee) (wire : NetworkCertificateWire) => case (networkCertificateSignerSet committee wire.2) with
+  | 0 (error : NetworkCertificateWireError) => inj 0 of 2 error
+  | 1 (signers : AuthorityIds) =>
+    let signature : ValueOption Bytes := case (networkCertificateStateSignature wire.1) with
+      | 0 (unit : prod ()) => valueNone Bytes
+      | 1 (signature : NetworkBlsSignature) => valueSome Bytes (networkBlsSignatureToBytes signature) in
+    case (certificateClaim wire.0 signers signature) with
+    | 0 (unit : prod ()) => inj 0 of 2 networkCertificateSignatureRejected
+    | 1 (certificate : Certificate) => match (certificateCheck committee certificate) as checked in CertificateValidation return sum (NetworkCertificateWireError, Certificate) with
+      | certificateRejected error => inj 0 of 2 (networkCertificateNotChecked error)
+      | certificateAccepted => inj 1 of 2 certificate
+def rec networkCertificateIndicesAcc : AuthorityIds -> Committee -> HostInts -> sum (NetworkCertificateWireError, HostInts) :=
+  fun (signers : AuthorityIds) (committee : Committee) (out : HostInts) =>
+  match signers as self in AuthorityIds return sum (NetworkCertificateWireError, HostInts) with
+  | authorityIdsNil => inj 1 of 2 (seqHostIntReverse out)
+  | authorityIdsCons signer tail => match (committeeIndexOf committee signer) as index in NatOption return sum (NetworkCertificateWireError, HostInts) with
+    | natNone => inj 0 of 2 networkCertificateSignerNotInCommittee
+    | natSome index => networkCertificateIndicesAcc tail committee (hostIntsCons (hostIntPositive index) out)
+def networkCertificateWireOfCertificate : Committee -> Certificate -> sum (NetworkCertificateWireError, NetworkCertificateWire) :=
+  fun (committee : Committee) (certificate : Certificate) => case (networkCertificateIndicesAcc (certificateSigners certificate) committee hostIntsNil) with
+  | 0 (error : NetworkCertificateWireError) => inj 0 of 2 error
+  | 1 (indices : HostInts) => case (networkRoaringOfList indices) with
+    | 0 (error : NetworkRoaringError) => inj 0 of 2 networkCertificateSignatureRejected
+    | 1 (bitmap : NetworkRoaring) => case (certificateAggregateSignature certificate) with
+      | 0 (unit : prod ()) => inj 1 of 2 (networkCertificateWireMake (certificateHeader certificate) networkCertificateGenesis bitmap)
+      | 1 (aggregate : Aggregate) => case (networkBlsSignatureOfBytes (aggregateBytes aggregate)) with
+        | 0 (unit : prod ()) => inj 0 of 2 networkCertificateSignatureRejected
+        | 1 (signature : NetworkBlsSignature) => inj 1 of 2 (networkCertificateWireMake (certificateHeader certificate) (networkCertificateVerifiedDirectly signature) bitmap)
+def networkCertificateStateEqual : NetworkCertificateState -> NetworkCertificateState -> Bool :=
+  fun (a : NetworkCertificateState) (b : NetworkCertificateState) => boolAnd (natEq (networkCertificateStateIndex a) (networkCertificateStateIndex b))
+    (networkOptionEqual NetworkBlsSignature networkBlsSignatureEqual (networkCertificateStateSignature a) (networkCertificateStateSignature b))
+def networkCertificateWireEqual : NetworkCertificateWire -> NetworkCertificateWire -> Bool :=
+  fun (a : NetworkCertificateWire) (b : NetworkCertificateWire) => boolAnd (headerEqual a.0 b.0)
+    (boolAnd (networkCertificateStateEqual a.1 b.1) (networkRoaringEqual a.2 b.2))

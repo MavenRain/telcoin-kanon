@@ -1,0 +1,2 @@
+def NetworkWorkerSyncRequest : Type 0 := prod (BatchDigests, Epoch)
+def networkSyncBatches : BatchDigests -> Epoch -> NetworkWorkerSyncRequest := fun (digests : BatchDigests) (epoch : Epoch) => tuple (digests, epoch)
