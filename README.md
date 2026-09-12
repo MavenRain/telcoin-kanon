@@ -24,10 +24,11 @@ transaction execution now pass focused OCaml comparisons. Batch validation,
 payload attachment/filtering, block planning, registry ABI, shuffle and engine
 state transitions also pass differential tests. Block execution, header assembly,
 system calls, driver output folds, checkpoint replay and epoch handoff pass focused integration checks.
+Real registry execution also matches through epoch closing, replay and a second epoch.
 Raw and framed Snappy, CRC-32C, durable frames and log-header validation are ported.
 Network scalar and BLS wire types, Base58, protocol identifiers, frame envelopes,
 epoch records and node record compatibility pass focused comparisons.
-Real registry-driven sealing, filesystem durability, production consensus crypto
+The live persistence protocol, filesystem durability, production consensus crypto
 and the remaining network messages and state machines still need work. The source has 178 implementation modules
 across 25 libraries. [PORTING.md](PORTING.md) records module coverage and the
 next acceptance target. [VALIDATION.md](VALIDATION.md) records tested behavior.

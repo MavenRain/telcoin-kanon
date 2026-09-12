@@ -24,12 +24,18 @@ Capture: `.kanon-exec/run-RV3hyl`, exit 0, 4.1 seconds. A further 12-row group
 confirms that legacy encoding drops RPC metadata while preserving the other
 fields: `.kanon-exec/run-m0bO8g`, exit 0, 2.2 seconds.
 
-Real registry integration remains pending: compilation reached the existing
-timeout (`.kanon-exec/run-qDfEi6`). Declaration profiling completed all 2,415
-groups (`.kanon-exec/run-PjzvUa`) and found that the fixture entry point alone
-took 176.6 seconds. The fixture now supplies its genesis sentinel as input to
-avoid evaluating its constant hash during checking. No compiler pin or timeout
-was changed; the runtime rerun is pending.
+Real registry integration passes three OCaml differential scenarios in two
+groups: first-epoch closing, checkpoint replay of that close, and handoff followed
+by a second-epoch close. The pinned 28,381-byte registry account and storage drive
+the actual interpreter. Compared output includes world state roots, header bytes,
+consensus digests, rewards and sealed phases. Capture: `.kanon-exec/run-ieYoAE`,
+exit 0, 919.8 seconds. The 208-second next boundary preserves the prior overshoot.
+
+Earlier compilation reached the existing timeout (`.kanon-exec/run-qDfEi6`).
+Declaration profiling completed all 2,415 groups (`.kanon-exec/run-PjzvUa`) and
+found that the fixture entry point alone took 176.6 seconds. Supplying the same
+genesis sentinel as fixture input avoided checking its constant hash and allowed
+the build and runtime comparisons to finish. No compiler pin or timeout changed.
 
 ## Driver restart, handoff and log headers
 

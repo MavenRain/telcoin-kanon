@@ -119,10 +119,10 @@ safety or liveness for every possible schedule.
 | lib/crypto_stub/tn_crypto.ml | Ported simulation profile: BLAKE2s, keys, signatures and aggregates, src/crypto_stub.kan; OCaml differential tests |
 | lib/driver/address_book.ml | Ported: committee address maps and newer-preferred union, src/address_book.kan; 36 OCaml differential rows |
 | lib/driver/batch_store.ml | Ported: digest-keyed body storage and lookup, src/batch_store.kan; 15 OCaml differential rows |
-| lib/driver/chain_spec.ml | Implemented: genesis allocation precedence, system predeploys, fork schedule and saturating boundaries, src/chain_spec.kan; typechecked, runtime validation pending |
-| lib/driver/checkpoint.ml | Implemented: persisted engine and executed consensus tip with derived watermark, accumulator and phase, src/checkpoint.kan; typechecked, runtime validation pending |
-| lib/driver/driver.ml | Partial: handoff passes 36 OCaml rows, complete output folds pass 22 rows and checkpoint replay passes 15 rows; real registry-driven sealing and live persistence protocol integration pending |
-| lib/driver/outcome.ml | Implemented: generic advance/sealed/halted outcomes and typed errors, src/driver_types.kan and src/driver_outcome.kan; runtime validation pending |
+| lib/driver/chain_spec.ml | Partial: real registry genesis, system predeploys and saturating boundaries validated through driver integration; explicit fork schedule scenarios remain, src/chain_spec.kan |
+| lib/driver/checkpoint.ml | Ported: persisted engine and executed consensus tip with watermark, accumulator and phase validated by 15 restart rows and real registry closing replay, src/checkpoint.kan |
+| lib/driver/driver.ml | Partial: handoff passes 36 OCaml rows, output folds 22 rows, restart 15 rows and real registry closing/replay/handoff three scenarios; live persistence protocol and explicit fork schedules remain |
+| lib/driver/outcome.ml | Ported: advance/sealed/halted outcomes, typed errors, executed prefixes and unconsumed suffixes validated through driver folds and registry integration, src/driver_types.kan and src/driver_outcome.kan |
 | lib/driver/subscriber.ml | Ported: shared mint operation and atomic payload attachment, src/subscriber.kan; 36 OCaml differential rows |
 | lib/durable/append_log.ml | Partial: header validation, ordered identity comparisons and errors pass 657 shared OCaml rows, src/append_log_codec.kan; filesystem append, locking and healing pending |
 | lib/durable/atomic_file.ml | Partial: container encoding and decoding pass 194 OCaml rows, src/atomic_file_codec.kan; save/load filesystem effects pending |
@@ -134,11 +134,11 @@ safety or liveness for every possible schedule.
 | lib/durable_checkpoint/checkpoint_file.ml | Pending |
 | lib/durable_store/consensus_store_disk.ml | Pending |
 | lib/durable_store/record_codec.ml | Pending |
-| lib/engine/anchor.ml | Partial: genesis anchors validated with engine snapshots; header conversion implemented and pending integration, src/execution_engine_types.kan |
+| lib/engine/anchor.ml | Ported: genesis anchors, header conversion and advancing hashes validated by snapshots, driver folds and real registry integration, src/execution_engine_types.kan |
 | lib/engine/block_number.ml | Ported: native signed block heights and wrapping successor, src/execution_engine_types.kan; seven OCaml boundary comparisons |
 | lib/engine/config.ml | Partial: default configuration and restoration validated with 144 snapshot cases; explicit schedule execution validation pending, src/execution_engine_types.kan |
-| lib/engine/engine.ml | Partial: state creation, epoch transitions and normalized restoration validated in 144 cases; atomic output execution implemented and pending integration, src/execution_engine*.kan |
-| lib/engine/executed_block.ml | Implemented: executed block fields and header hash, src/execution_engine_types.kan; runtime validation pending |
+| lib/engine/engine.ml | Partial: snapshots, atomic output execution, epoch closing, replay and handoff validated, including the real registry contract; explicit fork schedule integration remains, src/execution_engine*.kan |
+| lib/engine/executed_block.ml | Ported: executed block fields, encoded headers and header hashes validated through complete driver folds and real registry epoch closing, src/execution_engine_types.kan |
 | lib/engine/recent_hashes.ml | Ported: nonempty capped hash window and newest/ancestor projections, src/execution_engine_types.kan; 126 OCaml differential rows |
 | lib/evm/access.ml | Ported: canonical account and address/slot warmth, src/access.kan; OCaml transition comparisons |
 | lib/evm/alu.ml | Ported: unsigned and signed arithmetic, wide modular operations, shifts, BYTE and SIGNEXTEND, src/alu.kan; OCaml and BigInt comparisons |

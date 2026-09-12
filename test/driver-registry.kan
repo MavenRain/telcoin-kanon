@@ -1,0 +1,57 @@
+def rec driverRegistryTestAuthorities : ByteStrings -> Bytes -> ValueOption Authorities :=
+  fun (seeds : ByteStrings) (addresses : Bytes) =>
+  match seeds as self in ByteStrings return ValueOption Authorities with
+  | byteStringsNil => valueSome Authorities authoritiesNil
+  | byteStringsCons head tail =>
+    case (cryptoKeyParse head) with
+    | 0 (unit : prod ()) => valueNone Authorities
+    | 1 (key : SecretKey) => case (addressOfBytes (take 20 addresses)) with
+      | 0 (unit : prod ()) => valueNone Authorities
+      | 1 (address : Address) => case (driverRegistryTestAuthorities tail (drop addresses 20)) with
+        | 0 (unit : prod ()) => valueNone Authorities
+        | 1 (rest : Authorities) => valueSome Authorities (authoritiesCons (authorityMake (secretKeyPublic key) address) rest)
+def driverRegistryTestCommittee : ByteStrings -> Bytes -> Nat -> CommitteeResult :=
+  fun (seeds : ByteStrings) (addresses : Bytes) (epoch : Nat) =>
+    case (driverRegistryTestAuthorities seeds addresses) with
+    | 0 (unit : prod ()) => committeeError (committeeTooSmall 0)
+    | 1 (members : Authorities) => committeeCreate (epochValue epoch) members
+def driverRegistryTestHandoff : DriverOutcome Driver -> Committee -> SubDags -> BatchStore -> AddressBook -> Bytes :=
+  fun (closed : DriverOutcome Driver) (next : Committee) (tail : SubDags) (bodies : BatchStore) (book : AddressBook) =>
+  case closed with
+  | 0 (advanced : prod (Driver, DriverAdvances)) => append b"setup:unsealed:" (driverPipelineOutcome closed)
+  | 1 (sealed : prod (Driver, DriverAdvances, SubDags)) =>
+    (case (driverBeginEpoch sealed.0 next) with
+    | 0 (error : DriverHandoffError) => append b"setup:" (driverHandoffErrorText error)
+    | 1 (driver : Driver) => append (driverPipelineOutcome closed) (append b"~"
+      (append (driverPipelineState driver) (append b"~"
+        (driverPipelineOutcome (driverFold driver tail bodies (fun (id : AuthorityId) => addressBookFind book id)))))))
+  | 2 (halted : prod (DriverAdvances, DriverError)) => append b"setup:" (driverPipelineOutcome closed)
+def driverRegistryTestRun : ChainSpec -> Committee -> Committee -> SubDags -> SubDags -> Batches -> Nat -> Bytes :=
+  fun (spec : ChainSpec) (committee : Committee) (next : Committee) (dags : SubDags) (tail : SubDags)
+    (batches : Batches) (mode : Nat) =>
+    case (natEq mode 1) with
+    | 1 (unit : prod ()) => driverResumeTestRun spec committee committee (epochValue 0) dags batches 2 0
+    | 0 (unit : prod ()) =>
+      let bodies : BatchStore := batchStoreOfBodies batches in
+      let book : AddressBook := addressBookUnion (addressBookOfCommittee committee) (addressBookOfCommittee next) in
+      let outcome : DriverOutcome Driver := driverFold (driverCreate spec committee) dags bodies (fun (id : AuthorityId) => addressBookFind book id) in
+      case (natEq mode 2) with
+      | 0 (unit : prod ()) => driverPipelineOutcome outcome
+      | 1 (unit : prod ()) => driverRegistryTestHandoff outcome next tail bodies book
+def driverTestRegistry : ByteStrings -> ByteStrings -> Bytes -> Bytes -> Bytes -> Bytes -> Bytes -> Bytes -> Bytes -> Nat -> Bytes :=
+  fun (members : ByteStrings) (nextMembers : ByteStrings) (addresses : Bytes) (feeAddress : Bytes) (genesisSentinel : Bytes) (registryRaw : Bytes)
+    (dagsRaw : Bytes) (tailRaw : Bytes) (bodiesRaw : Bytes) (mode : Nat) =>
+    match (driverRegistryTestCommittee members addresses 0) as first in CommitteeResult return Bytes with
+    | committeeError error => append b"setup:" (committeeErrorText error)
+    | committeeOk committee => match (driverRegistryTestCommittee nextMembers addresses 1) as second in CommitteeResult return Bytes with
+      | committeeError error => append b"setup:" (committeeErrorText error)
+      | committeeOk next => executionWith GenesisAccount stateGenesisCodec registryRaw (fun (registry : GenesisAccount) =>
+        case (chainSpecCreate (u256Value 2017) (addressValue feeAddress)
+          (keccakDigest genesisSentinel) (u256Value 7) (hostIntPositive 30000000)
+          (timestampValue 1) (epochDurationValue 100) registry genesisEntriesNil) with
+        | 0 (error : ChainSpecError) => append b"setup:" (chainSpecErrorText error)
+        | 1 (spec : ChainSpec) =>
+          executionWith SubDags (codecList SubDag SubDags seqSubDagOps subDagCodec) dagsRaw (fun (dags : SubDags) =>
+          executionWith SubDags (codecList SubDag SubDags seqSubDagOps subDagCodec) tailRaw (fun (tail : SubDags) =>
+          executionWith Batches (codecList Batch Batches seqBatchOps batchCodec) bodiesRaw (fun (batches : Batches) =>
+            driverRegistryTestRun spec committee next dags tail batches mode))))
