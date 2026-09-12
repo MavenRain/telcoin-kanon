@@ -1,0 +1,19 @@
+def blsTowerTestRead2 : Bytes -> BlsF2 := fun (raw : Bytes) => tuple (blsReadBe (take 48 raw), blsReadBe (take 48 (drop raw 48)))
+def blsTowerTestRead6 : Bytes -> BlsF6 := fun (raw : Bytes) => tuple (blsTowerTestRead2 raw, blsTowerTestRead2 (drop raw 96), blsTowerTestRead2 (drop raw 192))
+def blsTowerTestRead12 : Bytes -> BlsF12 := fun (raw : Bytes) => tuple (blsTowerTestRead6 raw, blsTowerTestRead6 (drop raw 288))
+def blsTowerTestRender : BlsF12 -> Bytes := fun (value : BlsF12) => bytesHex (blsF12Encode value)
+def blsTowerTestOption : ValueOption BlsF12 -> Bytes := fun (value : ValueOption BlsF12) => case value with
+  | 0 (unit : prod ()) => b"none" | 1 (value : BlsF12) => blsTowerTestRender value
+def blsTowerTestFieldWith : (BlsF12 -> Bytes) -> (ValueOption BlsF12 -> Bytes) -> Bytes -> Bytes -> Bytes :=
+  fun (render : BlsF12 -> Bytes) (optional : ValueOption BlsF12 -> Bytes) (aRaw : Bytes) (bRaw : Bytes) =>
+  let a : BlsF12 := blsTowerTestRead12 aRaw in let b : BlsF12 := blsTowerTestRead12 bRaw in
+  blsFieldTestJoin (render (blsF12Mul a b)) (blsFieldTestJoin (render (blsF12Square a))
+    (blsFieldTestJoin (optional (blsF12Inverse a)) (blsFieldTestJoin (render (blsF12Frobenius a))
+    (blsFieldTestJoin (render (blsF12Frobenius2 a)) (render (blsF12Frobenius3 a))))))
+def blsTowerTestField : Bytes -> Bytes -> Bytes := blsTowerTestFieldWith blsTowerTestRender blsTowerTestOption
+def blsTowerTestFinal : Bytes -> Bytes := fun (raw : Bytes) => blsTowerTestOption (blsFinalExponentiation (blsTowerTestRead12 raw))
+def blsTowerTestPair : Bytes -> Bytes -> Bytes := fun (pRaw : Bytes) (qRaw : Bytes) => case (blsG1Decode pRaw) with
+  | 0 (unit : prod ()) => b"bad g1"
+  | 1 (p : BlsG1) => case (blsG2Decode qRaw) with
+    | 0 (unit : prod ()) => b"bad g2"
+    | 1 (q : BlsG2) => blsTowerTestOption (blsPairing p q)

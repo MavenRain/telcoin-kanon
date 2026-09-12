@@ -1,0 +1,69 @@
+-- Jacobian arithmetic for y^2 = x^3 + b, shared by G1 and the G2 twist.
+def BlsFieldOps : (0 F : Type 0) -> Type 0 := fun (0 F : Type 0) =>
+  prod (F, F, (F -> F -> F), (F -> F -> F), (F -> F -> F), (F -> F), (F -> ValueOption F), (F -> F -> Bool))
+def blsBaseOps : BlsFieldOps Nat := tuple (0, 1, blsAdd, blsSub, blsMul, blsSquare, blsInverse, natEq)
+def blsExtensionOps : BlsFieldOps BlsF2 := tuple (blsF2Zero, blsF2One, blsF2Add, blsF2Sub, blsF2Mul, blsF2Square, blsF2Inverse, blsF2Equal)
+def blsPointInfinity : (0 F : Type 0) -> BlsFieldOps F -> BlsPoint F := fun (0 F : Type 0) (ops : BlsFieldOps F) => tuple (ops.0, ops.1, ops.0)
+def blsPointIsInfinity : (0 F : Type 0) -> BlsFieldOps F -> BlsPoint F -> Bool :=
+  fun (0 F : Type 0) (ops : BlsFieldOps F) (point : BlsPoint F) => ops.7 point.2 ops.0
+def blsPointFromAffine : (0 F : Type 0) -> BlsFieldOps F -> F -> F -> BlsPoint F :=
+  fun (0 F : Type 0) (ops : BlsFieldOps F) (x : F) (y : F) => tuple (x, y, ops.1)
+def blsPointNeg : (0 F : Type 0) -> BlsFieldOps F -> BlsPoint F -> BlsPoint F :=
+  fun (0 F : Type 0) (ops : BlsFieldOps F) (point : BlsPoint F) => tuple (point.0, ops.3 ops.0 point.1, point.2)
+def blsPointDouble : (0 F : Type 0) -> BlsFieldOps F -> BlsPoint F -> BlsPoint F :=
+  fun (0 F : Type 0) (ops : BlsFieldOps F) (point : BlsPoint F) =>
+    case (boolOr (blsPointIsInfinity F ops point) (ops.7 point.1 ops.0)) with
+    | 1 (unit : prod ()) => blsPointInfinity F ops
+    | 0 (unit : prod ()) =>
+      let a : F := ops.5 point.0 in let b : F := ops.5 point.1 in let c : F := ops.5 b in
+      let d0 : F := ops.3 (ops.3 (ops.5 (ops.2 point.0 b)) a) c in let d : F := ops.2 d0 d0 in
+      let e : F := ops.2 (ops.2 a a) a in let f : F := ops.5 e in
+      let x : F := ops.3 f (ops.2 d d) in
+      let c2 : F := ops.2 c c in let c4 : F := ops.2 c2 c2 in
+      let y : F := ops.3 (ops.4 e (ops.3 d x)) (ops.2 c4 c4) in
+      let yz : F := ops.4 point.1 point.2 in tuple (x, y, ops.2 yz yz)
+def blsPointAdd : (0 F : Type 0) -> BlsFieldOps F -> BlsPoint F -> BlsPoint F -> BlsPoint F :=
+  fun (0 F : Type 0) (ops : BlsFieldOps F) (left : BlsPoint F) (right : BlsPoint F) =>
+    case (blsPointIsInfinity F ops left) with
+    | 1 (unit : prod ()) => right
+    | 0 (unit : prod ()) => case (blsPointIsInfinity F ops right) with
+      | 1 (unit : prod ()) => left
+      | 0 (unit : prod ()) =>
+        let z1 : F := ops.5 left.2 in let z2 : F := ops.5 right.2 in
+        let u1 : F := ops.4 left.0 z2 in let u2 : F := ops.4 right.0 z1 in
+        let s1 : F := ops.4 left.1 (ops.4 right.2 z2) in let s2 : F := ops.4 right.1 (ops.4 left.2 z1) in
+        case (ops.7 u1 u2) with
+        | 1 (unit : prod ()) => (case (ops.7 s1 s2) with
+          | 1 (unit : prod ()) => blsPointDouble F ops left
+          | 0 (unit : prod ()) => blsPointInfinity F ops)
+        | 0 (unit : prod ()) =>
+          let h : F := ops.3 u2 u1 in let i : F := ops.5 (ops.2 h h) in let j : F := ops.4 h i in
+          let difference : F := ops.3 s2 s1 in let r : F := ops.2 difference difference in let v : F := ops.4 u1 i in
+          let x : F := ops.3 (ops.3 (ops.5 r) j) (ops.2 v v) in let s1j : F := ops.4 s1 j in
+          let y : F := ops.3 (ops.4 r (ops.3 v x)) (ops.2 s1j s1j) in
+          let z : F := ops.4 (ops.3 (ops.3 (ops.5 (ops.2 left.2 right.2)) z1) z2) h in tuple (x, y, z)
+def blsPointMultiply : (0 F : Type 0) -> BlsFieldOps F -> Bytes -> BlsPoint F -> BlsPoint F :=
+  fun (0 F : Type 0) (ops : BlsFieldOps F) (scalar : Bytes) (point : BlsPoint F) =>
+    powerWithSquareBytes (BlsPoint F) (blsPointDouble F ops) (blsPointAdd F ops) point (blsPointInfinity F ops) scalar
+def blsPointEqual : (0 F : Type 0) -> BlsFieldOps F -> BlsPoint F -> BlsPoint F -> Bool :=
+  fun (0 F : Type 0) (ops : BlsFieldOps F) (left : BlsPoint F) (right : BlsPoint F) =>
+    case (blsPointIsInfinity F ops left) with
+    | 1 (unit : prod ()) => blsPointIsInfinity F ops right
+    | 0 (unit : prod ()) => case (blsPointIsInfinity F ops right) with
+      | 1 (unit : prod ()) => natEq 0 1
+      | 0 (unit : prod ()) => let z1 : F := ops.5 left.2 in let z2 : F := ops.5 right.2 in
+        boolAnd (ops.7 (ops.4 left.0 z2) (ops.4 right.0 z1))
+          (ops.7 (ops.4 left.1 (ops.4 right.2 z2)) (ops.4 right.1 (ops.4 left.2 z1)))
+def blsPointAffine : (0 F : Type 0) -> BlsFieldOps F -> BlsPoint F -> ValueOption (prod (F, F)) :=
+  fun (0 F : Type 0) (ops : BlsFieldOps F) (point : BlsPoint F) => case (ops.6 point.2) with
+  | 0 (unit : prod ()) => valueNone (prod (F, F))
+  | 1 (inverse : F) => let squared : F := ops.5 inverse in
+    valueSome (prod (F, F)) (tuple (ops.4 point.0 squared, ops.4 point.1 (ops.4 squared inverse)))
+def blsPointOnCurve : (0 F : Type 0) -> BlsFieldOps F -> F -> BlsPoint F -> Bool :=
+  fun (0 F : Type 0) (ops : BlsFieldOps F) (b : F) (point : BlsPoint F) =>
+    case (blsPointIsInfinity F ops point) with
+    | 1 (unit : prod ()) => natEq 0 0
+    | 0 (unit : prod ()) => let z2 : F := ops.5 point.2 in
+      ops.7 (ops.5 point.1) (ops.2 (ops.4 (ops.5 point.0) point.0) (ops.4 b (ops.4 (ops.5 z2) z2)))
+def blsG1Subgroup : BlsG1 -> Bool := fun (point : BlsG1) => blsPointIsInfinity Nat blsBaseOps (blsPointMultiply Nat blsBaseOps blsOrderBytes point)
+def blsG2Subgroup : BlsG2 -> Bool := fun (point : BlsG2) => blsPointIsInfinity BlsF2 blsExtensionOps (blsPointMultiply BlsF2 blsExtensionOps blsOrderBytes point)

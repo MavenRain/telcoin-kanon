@@ -1,0 +1,9 @@
+-- Admission checks and constructors retain subgroup points for the BLS profile.
+mu PublicKey : Type 0 :=
+| publicKeyValue (point : BlsG2) : PublicKey
+mu SecretKey : Type 0 :=
+| secretKeyValue (scalar : Nat) (public : PublicKey) : SecretKey
+mu Signature : Type 0 :=
+| signatureValue (point : BlsG1) : Signature
+mu Authority : Type 0 :=
+| authorityValue (id : AuthorityId) (key : PublicKey) (address : Address) : Authority

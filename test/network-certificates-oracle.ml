@@ -34,8 +34,10 @@ let bridge mode seed roster signer_seeds bitmap =
   match mode with
   | "3" -> Ok (vote_result (Vote_wire.to_vote wire_vote))
   | "4" -> Ok (vote_result (Vote_wire.to_verified (Tn_crypto.Secret_key.public_key (key seed)) wire_vote))
-  | "5" -> Ok (Vote_wire.of_vote (Vote.sign (key seed) ~voter:(Header.author header) header)
-    |> Result.fold ~error:(fun e -> "error:" ^ Vote_wire.error_to_string e) ~ok:(fun v -> "ok:" ^ hex (Bcs.encode Vote_wire.codec v)))
+  | "5" | "8" -> Ok (Vote_wire.of_vote (Vote.sign (key seed) ~voter:(Header.author header) header)
+    |> Result.fold ~error:(fun e -> "error:" ^ Vote_wire.error_to_string e) ~ok:(fun v ->
+      if String.equal mode "8" then vote_result (Vote_wire.to_verified (Tn_crypto.Secret_key.public_key (key seed)) v)
+      else "ok:" ^ hex (Bcs.encode Vote_wire.codec v)))
   | "0" | "1" | "2" ->
     let* signed_authorities=Roaring.of_bytes bitmap |> Result.map_error Roaring.error_to_string in
     let state=if mode="1" then Certificate_wire.Unverified signature else Certificate_wire.Genesis in

@@ -18,11 +18,9 @@ not a claim of complete module parity.
 | 5 | RLP, Keccak, trie/state roots, transaction envelopes, signatures and source-supported precompiles. Reuse existing golden fixtures; compare acceptance, output, gas and errors separately. | RLP, Keccak, tries, account/state roots, withdrawals, blooms, receipt encoding/roots, typed block roots, secp256k1 recovery, source-supported precompiles and all four signed envelope types tested. |
 | 6 | Batch validation, executed blocks, engine, driver, registry and epoch transitions. Compare complete committed/executed output and checkpoint consistency. | Block execution, real registry transitions, driver writes, replay, explicit forks and transaction skips tested. |
 | 7 | Durable file framing, logs, locks and checkpoints. Audit the host's fsync, atomic replacement, locking and recovery guarantees before porting the IO shell. Test interrupted writes and restart behavior. | File containers, codecs, frames, guarded I/O, atomic replacement, locks, log recovery, disk stores and checkpoint publication tested, including native restart and fault injection. |
-| 8 | tn_network and Snappy pure codecs through chunk 44, then integrate source-supported crypto implementations and shells. Compare wire vectors, canonicality, corruption and size-limit cases. | Snappy and all 24 network modules tested; production crypto and public runtime integration remain. |
+| 8 | tn_network and Snappy pure codecs through chunk 44, then integrate source-supported crypto implementations and shells. Compare wire vectors, canonicality, corruption and size-limit cases. | Snappy and all 24 network modules tested; BLS crypto, genesis and real vote/certificate adapter comparisons pass. Both complete profiles and public CLI suites pass; final regression status is recorded in VALIDATION.md. |
 
-Milestones 4 and 5 overlap at hash/state/transaction dependencies and should be
-split into dependency-ordered increments before implementation. The goal is
-parity with the current OCaml source. Implementing transport or node behavior
+The implementation follows the pinned OCaml source. Implementing transport or node behavior
 missing from that source is a separate extension.
 
 ## Implementation decisions
@@ -39,13 +37,14 @@ missing from that source is a separate extension.
 - Port a library seam with meaningful positive and negative comparisons
   before marking that seam complete. A successful build alone is insufficient.
 
-## Outstanding design work
+## Interface adaptations and runtime limits
 
 Kanon's primitives have add/subtract/multiply/compare but no division or bitwise
 operations. Bounded division, wrapping words, SplitMix64 and BLAKE2s are ordinary
-Kanon code. U256 arithmetic is implemented and tested. Production BLAKE3/BLS still
-need implementation and performance work. Simulation signatures are forgeable and cannot
-authenticate a real node.
+Kanon code. U256 arithmetic, BLAKE3 and BLS12-381 are implemented and tested.
+BLS arithmetic is variable time, and production-size performance remains
+unvalidated. CRYPTO.md records the profile contracts and finite retry adaptation.
+Simulation signatures are forgeable and cannot authenticate a real node.
 
 Kanon does not currently provide OCaml .mli-style constructor hiding. Review
 how checked values are admitted at every external boundary. Nominal types and
@@ -59,7 +58,8 @@ template. Zero-byte codec units use a nominal nullary type to avoid a backend
 trap with polymorphic empty-product payloads. Generated insertion sort is
 quadratic; production-size collection performance remains unvalidated.
 
-The next acceptance target is the EVM and execution driver. Simulator comparisons
+The EVM, execution driver, durable host and both crypto profiles have focused
+comparison suites. RUNTIME.md describes application entry points. Simulator comparisons
 establish parity on tested seeded transcripts; they are not a proof of consensus
 safety or liveness for every possible schedule.
 
@@ -115,7 +115,7 @@ safety or liveness for every possible schedule.
 | lib/consensus/vote_aggregator.ml | Ported: vote collection, rejection order and certificate formation, src/aggregators.kan; OCaml differential tests |
 | lib/consensus/voter.ml | Ported: vote-once records, recasts, parent validation, clock drift and recovery, src/voter.kan; OCaml differential traces |
 | lib/crypto_blst/blake3.ml | Ported: unkeyed 32-byte hash, exact compression flags and streaming subtree stack; known vectors and 54 OCaml rows across block, chunk and tree boundaries |
-| lib/crypto_blst/tn_crypto.ml | Pending |
+| lib/crypto_blst/tn_crypto.ml | Ported: selectable BLS MinSig Basic profile, key derivation, hash-to-G1, checked compressed points, aggregation and pairing verification; native field, curve, hash, pairing, signature and genesis comparisons; see CRYPTO.md for runtime limits |
 | lib/crypto_stub/tn_crypto.ml | Ported simulation profile: BLAKE2s, keys, signatures and aggregates, src/crypto_stub.kan; OCaml differential tests |
 | lib/driver/address_book.ml | Ported: committee address maps and newer-preferred union, src/address_book.kan; 36 OCaml differential rows |
 | lib/driver/batch_store.ml | Ported: digest-keyed body storage and lookup, src/batch_store.kan; 15 OCaml differential rows |

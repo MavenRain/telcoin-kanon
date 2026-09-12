@@ -1,0 +1,26 @@
+def blsFieldTestRender : Nat -> Bytes := fun (value : Nat) => bytesHex (blsEncodeField value)
+def blsFieldTestOption : ValueOption Nat -> Bytes := fun (value : ValueOption Nat) => case value with
+  | 0 (unit : prod ()) => b"none" | 1 (value : Nat) => blsFieldTestRender value
+def blsFieldTestF2 : BlsF2 -> Bytes := fun (value : BlsF2) => append (blsFieldTestRender value.0) (blsFieldTestRender value.1)
+def blsFieldTestF2Option : ValueOption BlsF2 -> Bytes := fun (value : ValueOption BlsF2) => case value with
+  | 0 (unit : prod ()) => b"none" | 1 (value : BlsF2) => blsFieldTestF2 value
+def blsFieldTestJoin : Bytes -> Bytes -> Bytes := fun (left : Bytes) (right : Bytes) => append left (append b"|" right)
+def blsFieldTestDecode : Bytes -> Bytes := fun (raw : Bytes) => blsFieldTestOption (blsDecodeField raw)
+def blsFieldTestBase : Bytes -> Bytes -> Bytes := fun (rawA : Bytes) (rawB : Bytes) =>
+  let a : Nat := blsReduce (blsReadBe rawA) in let b : Nat := blsReduce (blsReadBe rawB) in
+  let root : Bytes := case (blsSqrt a) with
+    | 0 (unit : prod ()) => b"none"
+    | 1 (root : Nat) => case (natEq (blsSquare root) a) with | 0 (unit : prod ()) => b"bad-root" | 1 (unit : prod ()) => b"some" in
+  blsFieldTestJoin (blsFieldTestRender a) (blsFieldTestJoin (blsFieldTestRender b)
+    (blsFieldTestJoin (blsFieldTestRender (blsAdd a b)) (blsFieldTestJoin (blsFieldTestRender (blsSub a b))
+    (blsFieldTestJoin (blsFieldTestRender (blsMul a b)) (blsFieldTestJoin (blsFieldTestRender (blsNeg a))
+    (blsFieldTestJoin (blsFieldTestOption (blsInverse a)) root))))))
+def blsFieldTestExtension : Bytes -> Bytes -> Bytes := fun (rawA : Bytes) (rawB : Bytes) =>
+  let a : BlsF2 := tuple (blsReduce (blsReadBe (take 48 rawA)), blsReduce (blsReadBe (drop rawA 48))) in
+  let b : BlsF2 := tuple (blsReduce (blsReadBe (take 48 rawB)), blsReduce (blsReadBe (drop rawB 48))) in
+  let root : Bytes := case (blsF2Sqrt a) with
+    | 0 (unit : prod ()) => b"none"
+    | 1 (root : BlsF2) => case (blsF2Equal (blsF2Square root) a) with | 0 (unit : prod ()) => b"bad-root" | 1 (unit : prod ()) => b"some" in
+  blsFieldTestJoin (blsFieldTestF2 (blsF2Add a b)) (blsFieldTestJoin (blsFieldTestF2 (blsF2Sub a b))
+    (blsFieldTestJoin (blsFieldTestF2 (blsF2Mul a b)) (blsFieldTestJoin (blsFieldTestF2 (blsF2Square a))
+    (blsFieldTestJoin (blsFieldTestF2Option (blsF2Inverse a)) (blsFieldTestJoin (blsFieldTestF2 (blsF2Xi a)) root)))))

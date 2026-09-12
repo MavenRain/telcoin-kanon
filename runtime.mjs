@@ -26,3 +26,7 @@ export async function loadFoundation(path = new URL('./build/telcoin-foundation.
   return { exports: instance.exports, ...byteAdapter(instance.exports) };
 }
 export const loadTelcoin = loadFoundation;
+export async function loadProfile(profile = 'simulation') {
+  if (!['simulation', 'bls'].includes(profile)) throw new RangeError(`Unknown crypto profile: ${profile}`);
+  return loadFoundation(new URL(profile === 'bls' ? './build/telcoin-bls.wasm' : './build/telcoin-foundation.wasm', import.meta.url));
+}

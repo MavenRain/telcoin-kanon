@@ -3,7 +3,7 @@
 A Kanon port of `telcoin-ocaml`, pinned to chunk 44 at
 `6b8bafe5ef1bb14376cddea5be6f4222c5720dfe`.
 
-The port is incomplete. Implemented code includes BCS primitive and composite
+Implemented code includes BCS primitive and composite
 codecs, generic nonempty operations, SplitMix64, ChaCha12, Keccak-256, scalar
 and digest types, simulation crypto, authorities and committees, batches,
 headers, votes, certificates, DAG and voting state, leader scheduling,
@@ -47,9 +47,13 @@ also pass differential and real-filesystem checks, including interrupted writes,
 duplicate retries and checkpoint guards. Typed transaction and receipt root wrappers
 also match the source. General Round and Authority map/set APIs pass 320 further
 comparisons; [COLLECTIONS.md](COLLECTIONS.md) describes their typed interface.
-Production consensus crypto and the complete public runtime interface still need work. The source has 178 implementation modules
-across 25 libraries. [PORTING.md](PORTING.md) records module coverage and the
-next acceptance target. [VALIDATION.md](VALIDATION.md) records tested behavior.
+BLS12-381 consensus crypto now passes native key, signature, aggregate and pairing
+comparisons, including the profile-specific genesis anchor and real vote/certificate
+wire adapters. Both source crypto
+profiles have runtime and CLI entry points. The source has 178 implementation
+modules across 25 libraries. [PORTING.md](PORTING.md) records the source map and
+interface adaptations. [VALIDATION.md](VALIDATION.md) records tested behavior
+and the status of final regression checks.
 
 ## Run
 
@@ -64,6 +68,7 @@ The project uses its own root variable because capture tools reserve
 
 ```sh
 npm run build
+npm run build:bls
 sh bin/telcoin-kanon simulate --validators 4 --seed 42 --until-s 20
 sh bin/telcoin-kanon bcs encode u64 18446744073709551615
 # ffffffffffffffff
@@ -73,6 +78,9 @@ sh bin/telcoin-kanon prng next 0
 # {"value":"16294208416658607535","state":"11400714819323198485"}
 sh bin/telcoin-kanon simulation hash 616263
 sh bin/telcoin-kanon simulation committee 1,2,3,4
+sh bin/telcoin-kanon bls hash 616263
+sh bin/telcoin-kanon bls key 1
+sh bin/telcoin-kanon bls sign 1 616263
 sh bin/telcoin-kanon wire batch 000000000014000000000000000000000000000000000000000007000000000000000000
 sh bin/telcoin-kanon evm precompile 0000000000000000000000000000000000000002 72 616263
 ```
@@ -81,22 +89,28 @@ sh bin/telcoin-kanon evm precompile 0000000000000000000000000000000000000002 72 
 runtime failure, and 64 for invalid command syntax. Codec errors preserve the
 source's text and offsets. Binary data uses hex; full-width words use decimal
 strings. `runtime.mjs` exports `loadTelcoin` (also named `loadFoundation` for
-compatibility) and byte adapters. The build artifact retains the filename
-`build/telcoin-foundation.wasm`.
+compatibility), `loadProfile('simulation' | 'bls')`, and byte adapters. The
+artifacts are `build/telcoin-foundation.wasm` and `build/telcoin-bls.wasm`.
+See [CRYPTO.md](CRYPTO.md) for the crypto API and [RUNTIME.md](RUNTIME.md)
+for importing the library, compiling application entry points and running
+durable effects.
 
 The precompile command reports `succeeded` with decimal `gasUsed` and hex `output`,
 `rejected`, or `not-precompile`. The public `apiPrecompile` Wasm export takes
 address bytes, decimal gas bytes and input bytes. Address and gas admission,
 cryptography, gas charging and dispatch run in Kanon.
 
-## Simulation crypto
+## Crypto profiles
 
 The explicit profile is `simulation-stub:blake2s256`. It reproduces the source's
 deterministic, forgeable stub: public keys derive from seeds, and signatures
 contain a public key and message digest. It provides no signature security.
-Unkeyed BLAKE3 is implemented and tested separately; BLS12-381 and production
-profile integration remain outstanding. Batch and header wire bytes
-match the tested source vectors; their digests use the simulation profile.
+The `bls12-381:minsig-basic:blake3` profile ports the source's BLS implementation:
+96-byte public keys, 48-byte signatures, SHA-256 hash-to-curve, seed derivation,
+aggregation and pairing verification, with BLAKE3 digests. Profile selection also
+selects consensus digests and the genesis anchor. The BLS implementation uses
+variable-time arbitrary-precision arithmetic; it is not hardened for secret-key
+operations in an adversarial timing environment. See [CRYPTO.md](CRYPTO.md).
 
 BLAKE2s-256 is implemented in ordinary Kanon using the algorithm in
 [RFC 7693](https://www.rfc-editor.org/rfc/rfc7693.html), with published vectors,
@@ -117,7 +131,9 @@ npm run collections:check
 ```
 
 Tests require the pinned OCaml checkout and a `tn-ocaml` opam switch with
-`ocamlfind`, `digestif.c` and `zarith`. Use `TELCOIN_OCAML_ROOT` and `OCAML_SWITCH` to
+`ocamlfind`, `digestif.c`, `zarith`, `bls12-381`, `bls12-381-signature` and `hex`.
+The validated BLS packages are versions 6.1.0, 1.0.0 and 1.5.0 respectively,
+with Zarith 1.14 and OCaml 5.3. Use `TELCOIN_OCAML_ROOT` and `OCAML_SWITCH` to
 relocate them. Tests hash-check and copy actual OCaml source modules into
 temporary directories, compile oracle executables, and compare their results
 with Kanon. They do not build or modify the source checkout or fetch packages.
@@ -131,6 +147,9 @@ kanon-wait run -- kanon-exec run --budget 4000 -- npm test
 ```
 
 The ordinary `npm test` runs all listed suites sequentially.
+The local validation switch is
+`/Users/oobi/Documents/gpt13/telcoin-kanon-ocaml`; select it with `OCAML_SWITCH`
+for both tests and generated-source checks. The default switch name is `tn-ocaml`.
 
 ## Semantics and limitations
 

@@ -1,0 +1,56 @@
+-- Compressed encodings use the lexicographic sign, distinct from SWU's parity sign.
+def blsFieldSign : Nat -> Bool := fun (value : Nat) => natLt blsHalf value
+def blsF2Sign : BlsF2 -> Bool := fun (value : BlsF2) => case (natEq value.1 0) with
+  | 1 (unit : prod ()) => blsFieldSign value.0 | 0 (unit : prod ()) => blsFieldSign value.1
+def blsCompressedSign : Bytes -> Bool := fun (raw : Bytes) => natEq (remainder64 (quotient64 (bytesHead raw) 32) 2) 1
+def blsCompressedInfinity : Bytes -> Bool := fun (raw : Bytes) => natEq (remainder64 (quotient64 (bytesHead raw) 64) 2) 1
+def blsCompressedFlag : Bytes -> Bool := fun (raw : Bytes) => natEq (quotient64 (bytesHead raw) 128) 1
+def blsCompressedPayload : Bytes -> Bytes := fun (raw : Bytes) => bytesCons (remainder64 (bytesHead raw) 32) (bytesTail raw)
+def blsG1DecodeCurve : Bytes -> ValueOption BlsG1 := fun (raw : Bytes) =>
+  case (boolAnd (natEq (bytesValid raw) 1) (boolAnd (natEq (bytesLength raw) 48) (blsCompressedFlag raw))) with
+  | 0 (unit : prod ()) => valueNone BlsG1
+  | 1 (unit : prod ()) => case (blsDecodeField (blsCompressedPayload raw)) with
+    | 0 (unit : prod ()) => valueNone BlsG1
+    | 1 (x : Nat) => case (blsCompressedInfinity raw) with
+      | 1 (unit : prod ()) => (case (boolAnd (natEq x 0) (natEq (boolNat (blsCompressedSign raw)) 0)) with
+        | 0 (unit : prod ()) => valueNone BlsG1 | 1 (unit : prod ()) => valueSome BlsG1 (blsPointInfinity Nat blsBaseOps))
+      | 0 (unit : prod ()) => case (blsSqrt (blsAdd (blsMul (blsSquare x) x) 4)) with
+        | 0 (unit : prod ()) => valueNone BlsG1
+        | 1 (root : Nat) =>
+          let y : Nat := choose (natEq (boolNat (blsFieldSign root)) (boolNat (blsCompressedSign raw))) root (blsNeg root) in
+          case (natEq (boolNat (blsFieldSign y)) (boolNat (blsCompressedSign raw))) with
+          | 0 (unit : prod ()) => valueNone BlsG1 | 1 (unit : prod ()) => valueSome BlsG1 (blsPointFromAffine Nat blsBaseOps x y)
+def blsG1Decode : Bytes -> ValueOption BlsG1 := fun (raw : Bytes) => case (blsG1DecodeCurve raw) with
+  | 0 (unit : prod ()) => valueNone BlsG1
+  | 1 (point : BlsG1) => case (blsG1Subgroup point) with
+    | 0 (unit : prod ()) => valueNone BlsG1 | 1 (unit : prod ()) => valueSome BlsG1 point
+def blsG1Encode : BlsG1 -> Bytes := fun (point : BlsG1) => case (blsPointAffine Nat blsBaseOps point) with
+  | 0 (unit : prod ()) => bytesCons 192 (bigNaturalWriteBe 0 47)
+  | 1 (point : prod (Nat, Nat)) => let raw : Bytes := blsEncodeField point.0 in
+    bytesCons (natAdd (bytesHead raw) (natAdd 128 (choose (blsFieldSign point.1) 32 0))) (bytesTail raw)
+def blsG2DecodeCurve : Bytes -> ValueOption BlsG2 := fun (raw : Bytes) =>
+  case (boolAnd (natEq (bytesValid raw) 1) (boolAnd (natEq (bytesLength raw) 96) (blsCompressedFlag raw))) with
+  | 0 (unit : prod ()) => valueNone BlsG2
+  | 1 (unit : prod ()) => case (blsDecodeField (take 48 (blsCompressedPayload raw))) with
+    | 0 (unit : prod ()) => valueNone BlsG2
+    | 1 (imaginary : Nat) => case (blsDecodeField (drop raw 48)) with
+      | 0 (unit : prod ()) => valueNone BlsG2
+      | 1 (real : Nat) => let x : BlsF2 := tuple (real, imaginary) in
+        case (blsCompressedInfinity raw) with
+        | 1 (unit : prod ()) => (case (boolAnd (blsF2IsZero x) (natEq (boolNat (blsCompressedSign raw)) 0)) with
+          | 0 (unit : prod ()) => valueNone BlsG2 | 1 (unit : prod ()) => valueSome BlsG2 (blsPointInfinity BlsF2 blsExtensionOps))
+        | 0 (unit : prod ()) => case (blsF2Sqrt (blsF2Add (blsF2Mul (blsF2Square x) x) (tuple (4, 4)))) with
+          | 0 (unit : prod ()) => valueNone BlsG2
+          | 1 (root : BlsF2) =>
+            let y : BlsF2 := case (natEq (boolNat (blsF2Sign root)) (boolNat (blsCompressedSign raw))) with
+              | 1 (unit : prod ()) => root | 0 (unit : prod ()) => blsF2Neg root in
+            case (natEq (boolNat (blsF2Sign y)) (boolNat (blsCompressedSign raw))) with
+            | 0 (unit : prod ()) => valueNone BlsG2 | 1 (unit : prod ()) => valueSome BlsG2 (blsPointFromAffine BlsF2 blsExtensionOps x y)
+def blsG2Decode : Bytes -> ValueOption BlsG2 := fun (raw : Bytes) => case (blsG2DecodeCurve raw) with
+  | 0 (unit : prod ()) => valueNone BlsG2
+  | 1 (point : BlsG2) => case (blsG2Subgroup point) with
+    | 0 (unit : prod ()) => valueNone BlsG2 | 1 (unit : prod ()) => valueSome BlsG2 point
+def blsG2Encode : BlsG2 -> Bytes := fun (point : BlsG2) => case (blsPointAffine BlsF2 blsExtensionOps point) with
+  | 0 (unit : prod ()) => bytesCons 192 (bigNaturalWriteBe 0 95)
+  | 1 (point : prod (BlsF2, BlsF2)) => let raw : Bytes := append (blsEncodeField point.0.1) (blsEncodeField point.0.0) in
+    bytesCons (natAdd (bytesHead raw) (natAdd 128 (choose (blsF2Sign point.1) 32 0))) (bytesTail raw)

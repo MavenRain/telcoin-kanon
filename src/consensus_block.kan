@@ -32,9 +32,9 @@ def consensusBlockDigestOf : OutputDigest -> SubDag -> ConsensusBlockNumber -> O
   outputDigestOfDigest (digestHash (consensusBlockPreimageBytes parent subdag number))
 def consensusBlockDefaultHeader : Header := headerMake authorityIdZero roundGenesis epochZero timestampZero batchWorkersNil headerDigestsNil blockNumHashZero
 def consensusBlockDefaultSubDag : SubDag := subDagOfPersisted (tuple (consensusBlockDefaultHeader, headersNil)) (reputationScores authorityScoresNil (natEq 0 1)) timestampZero subDagDefaultRandomness
--- Pinned simulation-profile genesis, checked against the OCaml derivation in execution.test.mjs.
+-- Each profile pins the genesis computed by the source's digest implementation.
 -- A stored constant avoids repeatedly normalizing the complete hash during erasure.
-def consensusBlockGenesisParent : OutputDigest := outputDigestValue b"\x9d\xfc\xa1\x74\xbd\xdc\x9a\x0f\x0d\xb2\x66\x2d\x85\xbe\x94\xf9\x00\xdc\x54\x15\xc1\x86\x67\x8d\x2a\xb3\xc7\x82\x80\xa8\xa9\x05"
+def consensusBlockGenesisParent : OutputDigest := outputDigestValue cryptoGenesisParent
 def consensusBlockOfPersisted : OutputDigest -> SubDag -> ConsensusBlockNumber -> Hash32 -> ConsensusBlock := fun (parent : OutputDigest) (subdag : SubDag) (number : ConsensusBlockNumber) (extra : Hash32) =>
   consensusBlock parent subdag number extra (consensusBlockDigestOf parent subdag number)
 def consensusBlockCreate : OutputDigest -> SubDag -> ConsensusBlockNumber -> ConsensusBlock := fun (parent : OutputDigest) (subdag : SubDag) (number : ConsensusBlockNumber) => consensusBlockOfPersisted parent subdag number hash32Zero

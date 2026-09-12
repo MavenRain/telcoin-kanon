@@ -1,0 +1,84 @@
+-- MinSig.Basic BLS12-381 with BLAKE3 protocol digests, matching crypto_blst/tn_crypto.ml.
+def cryptoProfile : Bytes := b"bls12-381:minsig-basic:blake3"
+def cryptoGenesisParent : Bytes := b"\x03\x6e\x5c\x0a\x72\x07\x7a\x23\xc8\x17\xab\x35\x90\x7e\x7a\x5e\xed\xf5\x01\x4e\x42\x09\x5c\x40\x33\xf3\x0f\x9c\x5c\xb9\x4e\xd6"
+def digestHash : Bytes -> Digest := fun (input : Bytes) => digestValue (blake3Hash input)
+def publicKeyPoint : PublicKey -> BlsG2 := fun (key : PublicKey) => match key as self in PublicKey return BlsG2 with
+  | publicKeyValue point => point
+def publicKeyBytes : PublicKey -> Bytes := fun (key : PublicKey) => blsG2Encode (publicKeyPoint key)
+def publicKeyOfBytes : Bytes -> ValueOption PublicKey := fun (raw : Bytes) => case (blsG2Decode raw) with
+  | 0 (unit : prod ()) => valueNone PublicKey
+  | 1 (point : BlsG2) => case (blsPointIsInfinity BlsF2 blsExtensionOps point) with
+    | 1 (unit : prod ()) => valueNone PublicKey
+    | 0 (unit : prod ()) => valueSome PublicKey (publicKeyValue point)
+def publicKeyEqual : PublicKey -> PublicKey -> Bool := fun (a : PublicKey) (b : PublicKey) => blsPointEqual BlsF2 blsExtensionOps (publicKeyPoint a) (publicKeyPoint b)
+def publicKeyCompare : PublicKey -> PublicKey -> Ordering := fun (a : PublicKey) (b : PublicKey) => bytesOrdering (publicKeyBytes a) (publicKeyBytes b)
+def secretKeyFromScalar : Nat -> SecretKey := fun (scalar : Nat) => secretKeyValue scalar (publicKeyValue (blsPublicKeyPoint scalar))
+def secretKeyDeriveCheckedWith : (Nat -> ValueOption Nat) -> Nat -> ValueOption SecretKey :=
+  fun (derive : Nat -> ValueOption Nat) (seed : Nat) => case (derive seed) with
+  | 0 (unit : prod ()) => valueNone SecretKey
+  | 1 (scalar : Nat) => valueSome SecretKey (secretKeyFromScalar scalar)
+def secretKeyDeriveChecked : Nat -> ValueOption SecretKey := secretKeyDeriveCheckedWith blsDeriveScalar
+-- A failed internal derivation stays inert, as do the pinned source's bridge fallbacks.
+def secretKeyDeriveWith : (Nat -> ValueOption SecretKey) -> Nat -> SecretKey :=
+  fun (derive : Nat -> ValueOption SecretKey) (seed : Nat) => case (derive seed) with
+  | 0 (unit : prod ()) => secretKeyValue 0 (publicKeyValue (blsPointInfinity BlsF2 blsExtensionOps))
+  | 1 (key : SecretKey) => key
+def secretKeyDerive : Nat -> SecretKey := secretKeyDeriveWith secretKeyDeriveChecked
+def secretKeyPublic : SecretKey -> PublicKey := fun (key : SecretKey) => match key as self in SecretKey return PublicKey with
+  | secretKeyValue scalar public => public
+def secretKeyScalar : SecretKey -> Nat := fun (key : SecretKey) => match key as self in SecretKey return Nat with
+  | secretKeyValue scalar public => scalar
+def signaturePoint : Signature -> BlsG1 := fun (signature : Signature) => match signature as self in Signature return BlsG1 with
+  | signatureValue point => point
+def signatureBytes : Signature -> Bytes := fun (signature : Signature) => blsG1Encode (signaturePoint signature)
+def signatureOfBytes : Bytes -> ValueOption Signature := fun (raw : Bytes) => case (blsG1Decode raw) with
+  | 0 (unit : prod ()) => valueNone Signature
+  | 1 (point : BlsG1) => valueSome Signature (signatureValue point)
+def signatureEqual : Signature -> Signature -> Bool := fun (a : Signature) (b : Signature) => blsPointEqual Nat blsBaseOps (signaturePoint a) (signaturePoint b)
+def cryptoSignWith : (Nat -> Bytes -> ValueOption BlsG1) -> SecretKey -> Bytes -> Signature :=
+  fun (sign : Nat -> Bytes -> ValueOption BlsG1) (key : SecretKey) (message : Bytes) =>
+    case (natEq (secretKeyScalar key) 0) with
+    | 1 (unit : prod ()) => signatureValue (blsPointInfinity Nat blsBaseOps)
+    | 0 (unit : prod ()) =>
+      case (sign (secretKeyScalar key) message) with
+      | 0 (unit : prod ()) => signatureValue (blsPointInfinity Nat blsBaseOps)
+      | 1 (point : BlsG1) => signatureValue point
+def cryptoSign : SecretKey -> Bytes -> Signature := cryptoSignWith blsSignScalar
+def cryptoVerify : PublicKey -> Bytes -> Signature -> Bool := fun (key : PublicKey) (message : Bytes) (signature : Signature) =>
+  blsVerifyPoint (publicKeyPoint key) message (signaturePoint signature)
+def Aggregate : Type 0 := BlsG1
+def cryptoAggregate : Signatures -> Aggregate := fun (signatures : Signatures) =>
+  listFoldLeft Signature Signatures BlsG1 seqSignatureOps
+    (fun (point : BlsG1) (signature : Signature) => blsPointAdd Nat blsBaseOps point (signaturePoint signature))
+    (blsPointInfinity Nat blsBaseOps) signatures
+def aggregateBytes : Aggregate -> Bytes := blsG1Encode
+def aggregateOfBytes : Bytes -> ValueOption Aggregate := blsG1Decode
+def aggregateEqual : Aggregate -> Aggregate -> Bool := blsPointEqual Nat blsBaseOps
+def rec aggregatePublicPoints : PublicKeys -> BlsG2 -> ValueOption BlsG2 := fun (keys : PublicKeys) (acc : BlsG2) =>
+  match keys as self in PublicKeys return ValueOption BlsG2 with
+  | publicKeysNil => valueSome BlsG2 acc
+  | publicKeysCons head tail => let point : BlsG2 := publicKeyPoint head in
+    case (blsPointIsInfinity BlsF2 blsExtensionOps point) with
+    | 1 (unit : prod ()) => valueNone BlsG2
+    | 0 (unit : prod ()) => aggregatePublicPoints tail (blsPointAdd BlsF2 blsExtensionOps acc point)
+def cryptoVerifyAggregateWith : (Bytes -> ValueOption BlsG1) -> PublicKeys -> Bytes -> Aggregate -> Bool :=
+  fun (hash : Bytes -> ValueOption BlsG1) (keys : PublicKeys) (message : Bytes) (aggregate : Aggregate) =>
+  case (natEq (seqPublicKeyLength keys) 0) with
+  | 1 (unit : prod ()) => natEq 0 1
+  | 0 (unit : prod ()) => case (aggregatePublicPoints keys (blsPointInfinity BlsF2 blsExtensionOps)) with
+    | 0 (unit : prod ()) => natEq 0 1
+    | 1 (key : BlsG2) => case (hash message) with
+      | 0 (unit : prod ()) => natEq 0 1
+      | 1 (hashed : BlsG1) => blsVerifyEquation key hashed aggregate
+def cryptoVerifyAggregate : PublicKeys -> Bytes -> Aggregate -> Bool := cryptoVerifyAggregateWith blsHashToG1
+def authorityIdOfPublicKey : PublicKey -> AuthorityId := fun (key : PublicKey) => authorityIdValue (digestBytes (digestHash (publicKeyBytes key)))
+def authorityMake : PublicKey -> Address -> Authority := fun (key : PublicKey) (address : Address) => authorityValue (authorityIdOfPublicKey key) key address
+def authorityId : Authority -> AuthorityId := fun (authority : Authority) => match authority as self in Authority return AuthorityId with
+  | authorityValue id key address => id
+def authorityKey : Authority -> PublicKey := fun (authority : Authority) => match authority as self in Authority return PublicKey with
+  | authorityValue id key address => key
+def authorityAddress : Authority -> Address := fun (authority : Authority) => match authority as self in Authority return Address with
+  | authorityValue id key address => address
+def authorityVotingPower : Authority -> Stake := fun (authority : Authority) => stakeOne
+def authorityEqual : Authority -> Authority -> Bool := fun (a : Authority) (b : Authority) => authorityIdEqual (authorityId a) (authorityId b)
+def authorityCompare : Authority -> Authority -> Ordering := fun (a : Authority) (b : Authority) => authorityIdCompare (authorityId a) (authorityId b)

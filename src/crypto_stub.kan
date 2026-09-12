@@ -1,6 +1,7 @@
 -- Deliberately forgeable simulation signatures, matching tn_crypto_stub.
 -- These definitions must never be selected for a production validator.
 def cryptoProfile : Bytes := b"simulation-stub:blake2s256"
+def cryptoGenesisParent : Bytes := b"\x9d\xfc\xa1\x74\xbd\xdc\x9a\x0f\x0d\xb2\x66\x2d\x85\xbe\x94\xf9\x00\xdc\x54\x15\xc1\x86\x67\x8d\x2a\xb3\xc7\x82\x80\xa8\xa9\x05"
 def digestHash : Bytes -> Digest := fun (input : Bytes) => digestValue (blake2s256 input)
 def publicKeyBytes : PublicKey -> Bytes := fun (value : PublicKey) =>
   match value as self in PublicKey return Bytes with

@@ -1,0 +1,10 @@
+def blsHashTestScalar : ValueOption Nat -> Bytes := fun (value : ValueOption Nat) => case value with
+  | 0 (unit : prod ()) => b"none" | 1 (value : Nat) => bytesHex (bigNaturalWriteBe value 32)
+def blsHashTestKeygenWith : (Bytes -> Bytes -> ValueOption Nat) -> Bytes -> Bytes -> Bytes :=
+  fun (keygen : Bytes -> Bytes -> ValueOption Nat) (ikm : Bytes) (info : Bytes) => blsHashTestScalar (keygen ikm info)
+def blsHashTestKeygen : Bytes -> Bytes -> Bytes := blsHashTestKeygenWith blsKeygen
+def blsHashTestDeriveWith : (Nat -> ValueOption Nat) -> Bytes -> Bytes := fun (derive : Nat -> ValueOption Nat) (seed : Bytes) => blsHashTestScalar (derive (blsReadBe seed))
+def blsHashTestDerive : Bytes -> Bytes := blsHashTestDeriveWith blsDeriveScalar
+def blsHashTestPointWith : (Bytes -> ValueOption BlsG1) -> Bytes -> Bytes := fun (hash : Bytes -> ValueOption BlsG1) (message : Bytes) => case (hash message) with
+  | 0 (unit : prod ()) => b"none" | 1 (point : BlsG1) => bytesHex (blsG1Encode point)
+def blsHashTestPoint : Bytes -> Bytes := blsHashTestPointWith blsHashToG1

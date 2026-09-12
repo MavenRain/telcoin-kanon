@@ -1,0 +1,49 @@
+-- Fp6 = Fp2[v]/(v^3 - (1+i)); Fp12 = Fp6[w]/(w^2-v).
+def BlsF6 : Type 0 := prod (BlsF2, BlsF2, BlsF2)
+def blsF6Zero : BlsF6 := tuple (blsF2Zero, blsF2Zero, blsF2Zero)
+def blsF6One : BlsF6 := tuple (blsF2One, blsF2Zero, blsF2Zero)
+def blsF6Equal : BlsF6 -> BlsF6 -> Bool := fun (a : BlsF6) (b : BlsF6) =>
+  boolAnd (blsF2Equal a.0 b.0) (boolAnd (blsF2Equal a.1 b.1) (blsF2Equal a.2 b.2))
+def blsF6Add : BlsF6 -> BlsF6 -> BlsF6 := fun (a : BlsF6) (b : BlsF6) => tuple (blsF2Add a.0 b.0, blsF2Add a.1 b.1, blsF2Add a.2 b.2)
+def blsF6Sub : BlsF6 -> BlsF6 -> BlsF6 := fun (a : BlsF6) (b : BlsF6) => tuple (blsF2Sub a.0 b.0, blsF2Sub a.1 b.1, blsF2Sub a.2 b.2)
+def blsF6Neg : BlsF6 -> BlsF6 := fun (a : BlsF6) => tuple (blsF2Neg a.0, blsF2Neg a.1, blsF2Neg a.2)
+def blsF6Scale : BlsF2 -> BlsF6 -> BlsF6 := fun (scalar : BlsF2) (a : BlsF6) => tuple (blsF2Mul scalar a.0, blsF2Mul scalar a.1, blsF2Mul scalar a.2)
+def blsF6MulByV : BlsF6 -> BlsF6 := fun (a : BlsF6) => tuple (blsF2Xi a.2, a.0, a.1)
+def blsF6Mul : BlsF6 -> BlsF6 -> BlsF6 := fun (a : BlsF6) (b : BlsF6) =>
+  case (boolOr (blsF6Equal a blsF6Zero) (blsF6Equal b blsF6Zero)) with
+  | 1 (unit : prod ()) => blsF6Zero | 0 (unit : prod ()) =>
+    let v0 : BlsF2 := blsF2Mul a.0 b.0 in let v1 : BlsF2 := blsF2Mul a.1 b.1 in let v2 : BlsF2 := blsF2Mul a.2 b.2 in tuple (
+      blsF2Add v0 (blsF2Xi (blsF2Sub (blsF2Sub (blsF2Mul (blsF2Add a.1 a.2) (blsF2Add b.1 b.2)) v1) v2)),
+      blsF2Add (blsF2Sub (blsF2Sub (blsF2Mul (blsF2Add a.0 a.1) (blsF2Add b.0 b.1)) v0) v1) (blsF2Xi v2),
+      blsF2Add (blsF2Sub (blsF2Sub (blsF2Mul (blsF2Add a.0 a.2) (blsF2Add b.0 b.2)) v0) v2) v1)
+def blsF6Square : BlsF6 -> BlsF6 := fun (a : BlsF6) => blsF6Mul a a
+def blsF6Inverse : BlsF6 -> ValueOption BlsF6 := fun (a : BlsF6) =>
+  let s0 : BlsF2 := blsF2Sub (blsF2Square a.0) (blsF2Xi (blsF2Mul a.1 a.2)) in
+  let s1 : BlsF2 := blsF2Sub (blsF2Xi (blsF2Square a.2)) (blsF2Mul a.0 a.1) in
+  let s2 : BlsF2 := blsF2Sub (blsF2Square a.1) (blsF2Mul a.0 a.2) in
+  let norm : BlsF2 := blsF2Add (blsF2Mul a.0 s0) (blsF2Xi (blsF2Add (blsF2Mul a.2 s1) (blsF2Mul a.1 s2))) in
+  case (blsF2Inverse norm) with | 0 (unit : prod ()) => valueNone BlsF6
+  | 1 (inverse : BlsF2) => valueSome BlsF6 (blsF6Scale inverse (tuple (s0, s1, s2)))
+def BlsF12 : Type 0 := prod (BlsF6, BlsF6)
+def blsF12Zero : BlsF12 := tuple (blsF6Zero, blsF6Zero)
+def blsF12One : BlsF12 := tuple (blsF6One, blsF6Zero)
+def blsF12Equal : BlsF12 -> BlsF12 -> Bool := fun (a : BlsF12) (b : BlsF12) => boolAnd (blsF6Equal a.0 b.0) (blsF6Equal a.1 b.1)
+def blsF12Conjugate : BlsF12 -> BlsF12 := fun (a : BlsF12) => tuple (a.0, blsF6Neg a.1)
+def blsF12Mul : BlsF12 -> BlsF12 -> BlsF12 := fun (a : BlsF12) (b : BlsF12) =>
+  case (boolOr (blsF12Equal a blsF12Zero) (blsF12Equal b blsF12Zero)) with
+  | 1 (unit : prod ()) => blsF12Zero | 0 (unit : prod ()) =>
+    let v0 : BlsF6 := blsF6Mul a.0 b.0 in let v1 : BlsF6 := blsF6Mul a.1 b.1 in
+    tuple (blsF6Add v0 (blsF6MulByV v1), blsF6Sub (blsF6Sub (blsF6Mul (blsF6Add a.0 a.1) (blsF6Add b.0 b.1)) v0) v1)
+def blsF12Square : BlsF12 -> BlsF12 := fun (a : BlsF12) =>
+  case (blsF12Equal a blsF12Zero) with | 1 (unit : prod ()) => blsF12Zero | 0 (unit : prod ()) =>
+    let cross : BlsF6 := blsF6Mul a.0 a.1 in
+    tuple (blsF6Sub (blsF6Sub (blsF6Mul (blsF6Add a.0 a.1) (blsF6Add a.0 (blsF6MulByV a.1))) cross) (blsF6MulByV cross), blsF6Add cross cross)
+def blsF12Inverse : BlsF12 -> ValueOption BlsF12 := fun (a : BlsF12) =>
+  case (blsF6Inverse (blsF6Sub (blsF6Square a.0) (blsF6MulByV (blsF6Square a.1)))) with
+  | 0 (unit : prod ()) => valueNone BlsF12
+  | 1 (inverse : BlsF6) => valueSome BlsF12 (tuple (blsF6Mul a.0 inverse, blsF6Neg (blsF6Mul a.1 inverse)))
+def blsF12Power : BlsF12 -> Bytes -> BlsF12 := fun (a : BlsF12) (exponent : Bytes) =>
+  powerAbsorbingBytes BlsF12 blsF12Square blsF12Mul (fun (value : BlsF12) => blsF12Equal value blsF12Zero) a blsF12One exponent
+def blsF2Encode : BlsF2 -> Bytes := fun (value : BlsF2) => append (blsEncodeField value.0) (blsEncodeField value.1)
+def blsF6Encode : BlsF6 -> Bytes := fun (value : BlsF6) => append (blsF2Encode value.0) (append (blsF2Encode value.1) (blsF2Encode value.2))
+def blsF12Encode : BlsF12 -> Bytes := fun (value : BlsF12) => append (blsF6Encode value.0) (blsF6Encode value.1)

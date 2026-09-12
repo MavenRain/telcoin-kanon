@@ -1,0 +1,70 @@
+-- Internal field operations require canonical residues. Byte admission enforces it.
+def blsReductionPowers : Powers := powersBuild (append fuel256 fuel128) blsPrime 1 powersNil
+def blsSmallReductionPowers : Powers := powersBuild b"1234" blsPrime 1 powersNil
+def blsReduce : Nat -> Nat := fun (value : Nat) => bigNaturalReducePositive blsPrime value
+def blsAdd : Nat -> Nat -> Nat := fun (a : Nat) (b : Nat) =>
+  let added : Nat := natAdd a b in choose (natLt added blsPrime) added (natSub added blsPrime)
+def blsSub : Nat -> Nat -> Nat := fun (a : Nat) (b : Nat) =>
+  choose (natLt a b) (natSub (natAdd a blsPrime) b) (natSub a b)
+def blsNeg : Nat -> Nat := fun (value : Nat) => choose (natEq value 0) 0 (natSub blsPrime value)
+def blsMul : Nat -> Nat -> Nat := fun (a : Nat) (b : Nat) =>
+  let value : Nat := natMul a b in case (natLt value blsPrime) with
+  | 1 (unit : prod ()) => value
+  | 0 (unit : prod ()) => divRemainder (divideScan (case (natLt value (natMul blsPrime 16)) with
+    | 1 (unit : prod ()) => blsSmallReductionPowers | 0 (unit : prod ()) => blsReductionPowers) value 0)
+def blsSquare : Nat -> Nat := fun (value : Nat) => blsMul value value
+def blsInverse : Nat -> ValueOption Nat := fun (value : Nat) =>
+  let final : prod (Nat, Nat, Nat, Nat) := stepsFold (prod (Nat, Nat, Nat, Nat)) steps32
+    (fun (state : prod (Nat, Nat, Nat, Nat)) => boolNat (natEq state.1 0))
+    (fun (state : prod (Nat, Nat, Nat, Nat)) => let divided : DivResult := bigNaturalDividePositive state.0 state.1 in
+      tuple (state.1, divRemainder divided, state.3, blsSub state.2 (blsMul (divQuotient divided) state.3)))
+    (tuple (blsPrime, value, 0, 1)) in
+  case (natEq final.0 1) with | 0 (unit : prod ()) => valueNone Nat | 1 (unit : prod ()) => valueSome Nat final.2
+def blsPower : Nat -> Bytes -> Nat := fun (value : Nat) (exponent : Bytes) =>
+  powerAbsorbingBytes Nat blsSquare blsMul (fun (value : Nat) => natEq value 0) value 1 exponent
+def blsSqrt : Nat -> ValueOption Nat := fun (value : Nat) =>
+  let root : Nat := blsPower value blsSqrtExponent in case (natEq (blsSquare root) value) with
+  | 0 (unit : prod ()) => valueNone Nat | 1 (unit : prod ()) => valueSome Nat root
+def rec blsReadBeAcc : Bytes -> Nat -> Nat := fun (input : Bytes) (acc : Nat) => match input as self in Bytes return Nat with
+  | bytesNil => acc | bytesCons head tail => blsReadBeAcc tail (natAdd (natMul acc 256) head)
+def blsReadBe : Bytes -> Nat := fun (input : Bytes) => blsReadBeAcc input 0
+def blsDecodeField : Bytes -> ValueOption Nat := fun (input : Bytes) => case (boolAnd (natEq (bytesLength input) 48) (natEq (bytesValid input) 1)) with
+  | 0 (unit : prod ()) => valueNone Nat
+  | 1 (unit : prod ()) => let value : Nat := blsReadBe input in case (natLt value blsPrime) with
+    | 0 (unit : prod ()) => valueNone Nat | 1 (unit : prod ()) => valueSome Nat value
+def blsEncodeField : Nat -> Bytes := fun (value : Nat) => bigNaturalWriteBe value 48
+def blsF2Zero : BlsF2 := tuple (0, 0)
+def blsF2One : BlsF2 := tuple (1, 0)
+def blsF2Equal : BlsF2 -> BlsF2 -> Bool := fun (a : BlsF2) (b : BlsF2) => boolAnd (natEq a.0 b.0) (natEq a.1 b.1)
+def blsF2IsZero : BlsF2 -> Bool := fun (value : BlsF2) => blsF2Equal value blsF2Zero
+def blsF2Add : BlsF2 -> BlsF2 -> BlsF2 := fun (a : BlsF2) (b : BlsF2) => tuple (blsAdd a.0 b.0, blsAdd a.1 b.1)
+def blsF2Sub : BlsF2 -> BlsF2 -> BlsF2 := fun (a : BlsF2) (b : BlsF2) => tuple (blsSub a.0 b.0, blsSub a.1 b.1)
+def blsF2Neg : BlsF2 -> BlsF2 := fun (value : BlsF2) => tuple (blsNeg value.0, blsNeg value.1)
+def blsF2Mul : BlsF2 -> BlsF2 -> BlsF2 := fun (a : BlsF2) (b : BlsF2) =>
+  let ac : Nat := blsMul a.0 b.0 in let bd : Nat := blsMul a.1 b.1 in
+  tuple (blsSub ac bd, blsSub (blsSub (blsMul (blsAdd a.0 a.1) (blsAdd b.0 b.1)) ac) bd)
+def blsF2Square : BlsF2 -> BlsF2 := fun (value : BlsF2) =>
+  tuple (blsMul (blsAdd value.0 value.1) (blsSub value.0 value.1), blsMul (blsAdd value.0 value.0) value.1)
+def blsF2Scale : BlsF2 -> Nat -> BlsF2 := fun (value : BlsF2) (factor : Nat) => tuple (blsMul value.0 factor, blsMul value.1 factor)
+def blsF2Xi : BlsF2 -> BlsF2 := fun (value : BlsF2) => tuple (blsSub value.0 value.1, blsAdd value.0 value.1)
+def blsF2Inverse : BlsF2 -> ValueOption BlsF2 := fun (value : BlsF2) =>
+  case (blsInverse (blsAdd (blsSquare value.0) (blsSquare value.1))) with
+  | 0 (unit : prod ()) => valueNone BlsF2
+  | 1 (inverse : Nat) => valueSome BlsF2 (tuple (blsMul value.0 inverse, blsNeg (blsMul value.1 inverse)))
+def blsF2SqrtCandidate : BlsF2 -> Nat -> ValueOption BlsF2 := fun (value : BlsF2) (normRoot : Nat) =>
+  case (blsSqrt (blsMul (blsAdd value.0 normRoot) blsHalfInverse)) with
+  | 0 (unit : prod ()) => valueNone BlsF2
+  | 1 (real : Nat) => case (blsInverse (blsAdd real real)) with
+    | 0 (unit : prod ()) => valueNone BlsF2
+    | 1 (denominator : Nat) => let root : BlsF2 := tuple (real, blsMul value.1 denominator) in
+      case (blsF2Equal (blsF2Square root) value) with | 0 (unit : prod ()) => valueNone BlsF2 | 1 (unit : prod ()) => valueSome BlsF2 root
+def blsF2Sqrt : BlsF2 -> ValueOption BlsF2 := fun (value : BlsF2) => case (natEq value.1 0) with
+  | 1 (unit : prod ()) => (case (blsSqrt value.0) with
+    | 1 (root : Nat) => valueSome BlsF2 (tuple (root, 0))
+    | 0 (unit : prod ()) => case (blsSqrt (blsNeg value.0)) with
+      | 0 (unit : prod ()) => valueNone BlsF2 | 1 (root : Nat) => valueSome BlsF2 (tuple (0, root)))
+  | 0 (unit : prod ()) => case (blsSqrt (blsAdd (blsSquare value.0) (blsSquare value.1))) with
+    | 0 (unit : prod ()) => valueNone BlsF2
+    | 1 (normRoot : Nat) => case (blsF2SqrtCandidate value normRoot) with
+      | 1 (root : BlsF2) => valueSome BlsF2 root
+      | 0 (unit : prod ()) => blsF2SqrtCandidate value (blsNeg normRoot)

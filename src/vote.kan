@@ -17,9 +17,11 @@ def voteEpoch : Vote -> Epoch := fun (vote : Vote) => (voteFields vote).2
 def voteOrigin : Vote -> AuthorityId := fun (vote : Vote) => (voteFields vote).3
 def voteAuthor : Vote -> AuthorityId := fun (vote : Vote) => (voteFields vote).4
 def voteSignature : Vote -> Signature := fun (vote : Vote) => (voteFields vote).5
-def voteSign : SecretKey -> AuthorityId -> Header -> Vote := fun (secret : SecretKey) (voter : AuthorityId) (header : Header) =>
+def voteSignWith : (SecretKey -> Bytes -> Signature) -> SecretKey -> AuthorityId -> Header -> Vote :=
+  fun (sign : SecretKey -> Bytes -> Signature) (secret : SecretKey) (voter : AuthorityId) (header : Header) =>
   voteValue (headerDigest header) (headerRound header) (headerEpoch header) (headerAuthor header) voter
-    (cryptoSign secret (voteSigningMessage (headerDigest header)))
+    (sign secret (voteSigningMessage (headerDigest header)))
+def voteSign : SecretKey -> AuthorityId -> Header -> Vote := voteSignWith cryptoSign
 def voteClaim : HeaderDigest -> Round -> Epoch -> AuthorityId -> AuthorityId -> Bytes -> ValueOption Vote :=
   fun (digest : HeaderDigest) (round : Round) (epoch : Epoch) (origin : AuthorityId) (author : AuthorityId) (bytes : Bytes) =>
     case (signatureOfBytes bytes) with

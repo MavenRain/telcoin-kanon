@@ -1,0 +1,49 @@
+-- Evaluated M-twist lines occupy coefficients 0, v and v*w in Fp12.
+def blsLineValue : BlsF2 -> BlsF2 -> BlsF2 -> BlsF12 := fun (constant : BlsF2) (x : BlsF2) (y : BlsF2) =>
+  tuple (tuple (constant, x, blsF2Zero), tuple (blsF2Zero, y, blsF2Zero))
+def blsLineDouble : prod (Nat, Nat) -> BlsG2 -> prod (BlsG2, BlsF12) :=
+  fun (p : prod (Nat, Nat)) (q : BlsG2) =>
+    let doubled : BlsG2 := blsPointDouble BlsF2 blsExtensionOps q in
+    case (boolOr (blsPointIsInfinity BlsF2 blsExtensionOps q) (blsF2IsZero q.1)) with
+    | 1 (unit : prod ()) => tuple (doubled, blsF12One)
+    | 0 (unit : prod ()) =>
+      let x2 : BlsF2 := blsF2Square q.0 in let y2 : BlsF2 := blsF2Square q.1 in
+      let z2 : BlsF2 := blsF2Square q.2 in let z3 : BlsF2 := blsF2Mul z2 q.2 in
+      let constant : BlsF2 := blsF2Sub (blsF2Scale (blsF2Mul x2 q.0) 3) (blsF2Scale y2 2) in
+      let x : BlsF2 := blsF2Neg (blsF2Scale (blsF2Mul x2 z2) (blsMul 3 p.0)) in
+      let y : BlsF2 := blsF2Scale (blsF2Mul q.1 z3) (blsMul 2 p.1) in
+      tuple (doubled, blsLineValue constant x y)
+-- The second point is affine. Vertical lines lie in Fp6 and vanish in the final exponent.
+def blsLineAdd : prod (Nat, Nat) -> BlsG2 -> prod (BlsF2, BlsF2) -> prod (BlsG2, BlsF12) :=
+  fun (p : prod (Nat, Nat)) (left : BlsG2) (right : prod (BlsF2, BlsF2)) =>
+    let rightPoint : BlsG2 := blsPointFromAffine BlsF2 blsExtensionOps right.0 right.1 in
+    case (blsPointIsInfinity BlsF2 blsExtensionOps left) with
+    | 1 (unit : prod ()) => tuple (rightPoint, blsF12One)
+    | 0 (unit : prod ()) =>
+      let z2 : BlsF2 := blsF2Square left.2 in let z3 : BlsF2 := blsF2Mul z2 left.2 in
+      let dx : BlsF2 := blsF2Sub (blsF2Mul right.0 z2) left.0 in
+      let dy : BlsF2 := blsF2Sub (blsF2Mul right.1 z3) left.1 in
+      case (blsF2IsZero dx) with
+      | 1 (unit : prod ()) => (case (blsF2IsZero dy) with
+        | 1 (unit : prod ()) => blsLineDouble p left
+        | 0 (unit : prod ()) => tuple (blsPointInfinity BlsF2 blsExtensionOps, blsF12One))
+      | 0 (unit : prod ()) =>
+        let constant : BlsF2 := blsF2Sub (blsF2Mul dy left.0) (blsF2Mul left.1 dx) in
+        let x : BlsF2 := blsF2Neg (blsF2Scale (blsF2Mul dy z2) p.0) in
+        let y : BlsF2 := blsF2Scale (blsF2Mul z3 dx) p.1 in
+        tuple (blsPointAdd BlsF2 blsExtensionOps left rightPoint, blsLineValue constant x y)
+def blsMillerLoop : BlsG1 -> BlsG2 -> BlsF12 := fun (g1 : BlsG1) (g2 : BlsG2) =>
+  case (blsPointAffine Nat blsBaseOps g1) with
+  | 0 (unit : prod ()) => blsF12One
+  | 1 (p : prod (Nat, Nat)) => case (blsPointAffine BlsF2 blsExtensionOps g2) with
+    | 0 (unit : prod ()) => blsF12One
+    | 1 (q : prod (BlsF2, BlsF2)) =>
+      let double : prod (BlsG2, BlsF12) -> prod (BlsG2, BlsF12) := fun (state : prod (BlsG2, BlsF12)) =>
+        let line : prod (BlsG2, BlsF12) := blsLineDouble p state.0 in tuple (line.0, blsF12Mul (blsF12Square state.1) line.1) in
+      let add : prod (BlsG2, BlsF12) -> prod (BlsG2, BlsF12) -> prod (BlsG2, BlsF12) :=
+        fun (state : prod (BlsG2, BlsF12)) (ignored : prod (BlsG2, BlsF12)) =>
+          let line : prod (BlsG2, BlsF12) := blsLineAdd p state.0 q in tuple (line.0, blsF12Mul state.1 line.1) in
+      let initial : prod (BlsG2, BlsF12) := tuple (blsPointInfinity BlsF2 blsExtensionOps, blsF12One) in
+      let final : prod (BlsG2, BlsF12) := powerWithSquareBytes (prod (BlsG2, BlsF12)) double add initial initial blsCurveParameterBytes in
+      blsF12Conjugate final.1
+def blsPairing : BlsG1 -> BlsG2 -> ValueOption BlsF12 := fun (g1 : BlsG1) (g2 : BlsG2) => blsFinalExponentiation (blsMillerLoop g1 g2)

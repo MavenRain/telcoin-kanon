@@ -9,7 +9,7 @@ import { byteAdapter } from '../runtime.mjs';
 const directory = mkdtempSync(join(tmpdir(), 'telcoin-blake2s-'));
 after(() => rmSync(directory, { recursive: true, force: true }));
 const path = join(directory, 'blake2s.wasm');
-build(path, ['emptyBytes', 'consBytes', 'bytesEmpty', 'bytesHead', 'bytesTail', 'blake2s256']);
+build(path, ['emptyBytes', 'consBytes', 'bytesEmpty', 'bytesHead', 'bytesTail', 'blake2s256'], [], { scope: true });
 const { instance } = await WebAssembly.instantiate(readFileSync(path), {});
 const { toBytes, fromBytes } = byteAdapter(instance.exports);
 const hash = bytes => fromBytes(instance.exports.blake2s256(toBytes(bytes))).toString('hex');

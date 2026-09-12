@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-import { loadFoundation } from './runtime.mjs';
+import { loadProfile } from './runtime.mjs';
 import { runSimulatorCli } from './sim-cli.mjs';
 
-const usage = `telcoin-kanon (partial port)
+const usage = `telcoin-kanon
 Usage:
   telcoin-kanon simulate [--validators N] [--seed S] [--until-s T]
   telcoin-kanon bcs encode <u8|u16|u32|u64|uleb> <decimal>
@@ -12,10 +12,13 @@ Usage:
   telcoin-kanon prng <next|split> <u64-seed>
   telcoin-kanon wire <batch|sealed-batch|header> <hex>
   telcoin-kanon evm precompile <20-byte-address-hex> <gas-decimal> <input-hex>
-  telcoin-kanon simulation hash <hex>
-  telcoin-kanon simulation key <u64-seed>
-  telcoin-kanon simulation <sign|vote> <u64-seed> <message-or-header-hex>
-  telcoin-kanon simulation committee <comma-separated-u64-seeds>
+  telcoin-kanon <simulation|bls> hash <hex>
+  telcoin-kanon <simulation|bls> key <u64-seed>
+  telcoin-kanon <simulation|bls> <sign|vote> <u64-seed> <message-or-header-hex>
+  telcoin-kanon <simulation|bls> committee <comma-separated-u64-seeds>
+  telcoin-kanon <simulation|bls> verify <public-key-hex> <message-hex> <signature-hex>
+  telcoin-kanon <simulation|bls> aggregate <comma-separated-signature-hex>
+  telcoin-kanon <simulation|bls> verify-aggregate <comma-separated-public-key-hex> <message-hex> <aggregate-hex>
 `;
 const integerKinds = { u8: 'U8', u16: 'U16', u32: 'U32', u64: 'U64', uleb: 'Uleb' };
 const scalarKinds = new Set(['round', 'epoch', 'workerId', 'timestamp', 'stake', 'duration', 'baseFee', 'leaderRound']);
@@ -37,15 +40,20 @@ if (args.length === 1 && args[0] === '--help') {
   const prng = command === 'prng' && ['next', 'split'].includes(operation) && args.length === 3;
   const wire = command === 'wire' && Object.hasOwn(inspectors, operation) && args.length === 3;
   const precompile = command === 'evm' && operation === 'precompile' && args.length === 5;
-  const simulation = command === 'simulation' && (
-    (['hash', 'key', 'committee'].includes(operation) && args.length === 3) ||
-    (['sign', 'vote'].includes(operation) && args.length === 4));
-  const hexInput = precompile ? args[4] : (decode || normalize || (simulation && ['sign', 'vote'].includes(operation))) ? input :
-    (wire || (simulation && operation === 'hash')) ? kind : undefined;
-  if (!scalar && !encode && !decode && !normalize && !prng && !wire && !simulation && !precompile) {
+  const crypto = ['simulation', 'bls'].includes(command) && (
+    (['hash', 'key', 'committee', 'aggregate'].includes(operation) && args.length === 3) ||
+    (['sign', 'vote'].includes(operation) && args.length === 4) ||
+    (['verify', 'verify-aggregate'].includes(operation) && args.length === 5));
+  const csv = value => value === '' ? [] : value.split(',');
+  const hexInput = precompile ? args[4] : (decode || normalize || (crypto && ['sign', 'vote'].includes(operation))) ? input :
+    (wire || (crypto && operation === 'hash')) ? kind : undefined;
+  const hexInputs = hexInput === undefined ? [] : [hexInput];
+  if (crypto && operation === 'aggregate') hexInputs.push(...csv(kind));
+  if (crypto && ['verify', 'verify-aggregate'].includes(operation)) hexInputs.push(...(operation === 'verify' ? [kind] : csv(kind)), input, args[4]);
+  if (!scalar && !encode && !decode && !normalize && !prng && !wire && !crypto && !precompile) {
     process.stderr.write(usage);
     process.exitCode = 64;
-  } else if (hexInput !== undefined && !/^(?:[0-9a-fA-F]{2})*$/.test(hexInput)) {
+  } else if (hexInputs.some(value => !/^(?:[0-9a-fA-F]{2})*$/.test(value))) {
     process.stderr.write('Hex input must contain complete byte pairs.\n');
     process.exitCode = 1;
   } else if (precompile && !/^[0-9a-fA-F]{40}$/.test(kind)) {
@@ -53,8 +61,14 @@ if (args.length === 1 && args[0] === '--help') {
     process.exitCode = 1;
   } else {
     try {
-      const { exports: e, toBytes, fromBytes } = await loadFoundation();
+      const { exports: e, toBytes, fromBytes } = await loadProfile(command === 'bls' ? 'bls' : 'simulation');
       const text = bytes => fromBytes(bytes).toString('utf8');
+      const raw = hex => toBytes(Buffer.from(hex, 'hex'));
+      const byteList = (values, convert) => {
+        let result = e.seqBytesEmpty();
+        for (const value of [...values].reverse()) result = e.seqBytesCons(convert(value), result);
+        return result;
+      };
       let output;
       let failed = false;
       if (precompile) {
@@ -82,21 +96,26 @@ if (args.length === 1 && args[0] === '--help') {
           const profile = text(e.cryptoProfile());
           output = JSON.stringify(operation === 'sealed-batch' ? { profile, bytes, claimedDigest: digest, computedDigest: computed } : { profile, bytes, digest });
         }
-      } else if (simulation) {
+      } else if (crypto) {
         const profile = text(e.cryptoProfile());
-        if (operation === 'hash') output = JSON.stringify({ profile, digest: fromBytes(e.blake2s256(toBytes(Buffer.from(kind, 'hex')))).toString('hex') });
+        if (operation === 'hash') output = JSON.stringify({ profile, digest: text(e.apiCryptoHash(raw(kind))) });
+        else if (['verify', 'verify-aggregate', 'aggregate'].includes(operation)) {
+          output = operation === 'aggregate' ? text(e.apiCryptoAggregate(byteList(csv(kind), raw))) :
+            operation === 'verify' ? text(e.apiCryptoVerify(raw(kind), raw(input), raw(args[4]))) :
+              text(e.apiCryptoVerifyAggregate(byteList(csv(kind), raw), raw(input), raw(args[4])));
+          failed = output.startsWith('error: ');
+          if (!failed) output = JSON.stringify(operation === 'aggregate' ? { profile, aggregate: output } : { profile, valid: output === 'true' });
+        }
         else if (operation === 'committee') {
-          let seeds = e.seqBytesEmpty();
-          for (const seed of (kind === '' ? [] : kind.split(',')).reverse()) seeds = e.seqBytesCons(toBytes(seed), seeds);
-          output = text(e.apiCommitteeInspect(seeds));
+          output = text(e.apiCommitteeInspect(byteList(csv(kind), toBytes)));
           failed = output.startsWith('error: ');
           if (!failed) {
             const [size, quorum, validity, roster] = output.split(':');
             output = JSON.stringify({ profile, epoch: 0, size: Number(size), quorum: Number(quorum), validity: Number(validity), authorities: roster.split(',') });
           }
         } else {
-          output = operation === 'key' ? text(e.apiSimulationKey(toBytes(kind))) :
-            text(e[operation === 'vote' ? 'apiVoteSign' : 'apiSimulationSign'](toBytes(kind), toBytes(Buffer.from(input, 'hex'))));
+          output = operation === 'key' ? text(e.apiCryptoKey(toBytes(kind))) :
+            text(e[operation === 'vote' ? 'apiVoteSign' : 'apiCryptoSign'](toBytes(kind), raw(input)));
           failed = output.startsWith('error: ');
           if (!failed) output = JSON.stringify(operation === 'key' ? { profile, publicKey: output } : { profile, signature: output });
         }
@@ -124,7 +143,7 @@ if (args.length === 1 && args[0] === '--help') {
       (failed ? process.stderr : process.stdout).write(`${output}\n`);
       process.exitCode = failed ? 1 : 0;
     } catch (error) {
-      process.stderr.write(`${error.code === 'ENOENT' ? 'Build the foundation module with npm run build first.' : error.message}\n`);
+      process.stderr.write(`${error.code === 'ENOENT' ? `Build the ${command === 'bls' ? 'BLS' : 'simulation'} module with npm run ${command === 'bls' ? 'build:bls' : 'build'} first.` : error.message}\n`);
       process.exitCode = 1;
     }
   }

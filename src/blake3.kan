@@ -14,14 +14,15 @@ def blake3Compress : Blake8 -> Blake16 -> Nat -> Nat -> Nat -> Blake8 :=
         remainder64 counter 4294967296, remainder64 (quotient64 counter 4294967296) 4294967296, length, flags)) in
     tuple (wordXor32 s.0 s.8, wordXor32 s.1 s.9, wordXor32 s.2 s.10, wordXor32 s.3 s.11,
       wordXor32 s.4 s.12, wordXor32 s.5 s.13, wordXor32 s.6 s.14, wordXor32 s.7 s.15)
-def rec blake3ChunkScan : Bytes -> Bytes -> Nat -> Blake8 -> Nat -> Nat -> Nat -> Blake8 :=
-  fun (input : Bytes) (block : Bytes) (length : Nat) (cv : Blake8) (counter : Nat) (first : Nat) (root : Nat) =>
+def rec blake3ChunkScanWith : (Blake8 -> Blake16 -> Nat -> Nat -> Nat -> Blake8) -> Bytes -> Bytes -> Nat -> Blake8 -> Nat -> Nat -> Nat -> Blake8 :=
+  fun (compress : Blake8 -> Blake16 -> Nat -> Nat -> Nat -> Blake8) (input : Bytes) (block : Bytes) (length : Nat) (cv : Blake8) (counter : Nat) (first : Nat) (root : Nat) =>
     match input as self in Bytes return Blake8 with
-    | bytesNil => blake3Compress cv (blakeMessage (reverse block)) counter length (natAdd first (natAdd 2 root))
+    | bytesNil => compress cv (blakeMessage (reverse block)) counter length (natAdd first (natAdd 2 root))
     | bytesCons head tail => case (natEq length 64) with
-      | 0 (unit : prod ()) => blake3ChunkScan tail (bytesCons head block) (natAdd length 1) cv counter first root
-      | 1 (unit : prod ()) => blake3ChunkScan tail (bytesCons head bytesNil) 1
-          (blake3Compress cv (blakeMessage (reverse block)) counter 64 first) counter 0 root
+      | 0 (unit : prod ()) => blake3ChunkScanWith compress tail (bytesCons head block) (natAdd length 1) cv counter first root
+      | 1 (unit : prod ()) => blake3ChunkScanWith compress tail (bytesCons head bytesNil) 1
+          (compress cv (blakeMessage (reverse block)) counter 64 first) counter 0 root
+def blake3ChunkScan : Bytes -> Bytes -> Nat -> Blake8 -> Nat -> Nat -> Nat -> Blake8 := blake3ChunkScanWith blake3Compress
 def blake3Chunk : Nat -> Nat -> Bytes -> Blake8 := fun (counter : Nat) (root : Nat) (chunk : Bytes) =>
   blake3ChunkScan chunk bytesNil 0 blake3Key counter 1 root
 def blake3Parent : Blake8 -> Blake8 -> Nat -> Blake8 := fun (left : Blake8) (right : Blake8) (root : Nat) =>

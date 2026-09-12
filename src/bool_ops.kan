@@ -1,0 +1,3 @@
+def boolAnd : Bool -> Bool -> Bool := fun (a : Bool) (b : Bool) => natEq (natMul (boolNat a) (boolNat b)) 1
+def boolOr : Bool -> Bool -> Bool := fun (a : Bool) (b : Bool) => natLt 0 (natAdd (boolNat a) (boolNat b))
+def boolNot : Bool -> Bool := fun (value : Bool) => natEq (boolNat value) 0

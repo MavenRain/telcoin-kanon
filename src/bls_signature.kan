@@ -1,0 +1,22 @@
+def blsG2Generator : BlsG2 := tuple (blsG2GeneratorX, blsG2GeneratorY, blsF2One)
+def blsPublicKeyPoint : Nat -> BlsG2 := fun (scalar : Nat) => blsPointMultiply BlsF2 blsExtensionOps (bigNaturalWriteBe scalar 32) blsG2Generator
+def blsSignScalarWith : (Bytes -> ValueOption BlsG1) -> Nat -> Bytes -> ValueOption BlsG1 :=
+  fun (hash : Bytes -> ValueOption BlsG1) (scalar : Nat) (message : Bytes) => case (hash message) with
+  | 0 (unit : prod ()) => valueNone BlsG1
+  | 1 (point : BlsG1) => valueSome BlsG1 (blsPointMultiply Nat blsBaseOps (bigNaturalWriteBe scalar 32) point)
+def blsSignScalar : Nat -> Bytes -> ValueOption BlsG1 := blsSignScalarWith blsHashToG1
+def blsVerifyEquationWith : (BlsG1 -> BlsG2 -> BlsF12) -> BlsG2 -> BlsG1 -> BlsG1 -> Bool :=
+  fun (miller : BlsG1 -> BlsG2 -> BlsF12) (key : BlsG2) (hashed : BlsG1) (signature : BlsG1) =>
+  let product : BlsF12 := blsF12Mul (miller (blsPointNeg Nat blsBaseOps signature) blsG2Generator) (miller hashed key) in
+  case (blsFinalExponentiation product) with
+  | 0 (unit : prod ()) => natEq 0 1
+  | 1 (value : BlsF12) => blsF12Equal value blsF12One
+def blsVerifyEquation : BlsG2 -> BlsG1 -> BlsG1 -> Bool := blsVerifyEquationWith blsMillerLoop
+def blsVerifyPointWith : (Bytes -> ValueOption BlsG1) -> BlsG2 -> Bytes -> BlsG1 -> Bool :=
+  fun (hash : Bytes -> ValueOption BlsG1) (key : BlsG2) (message : Bytes) (signature : BlsG1) =>
+  case (blsPointIsInfinity BlsF2 blsExtensionOps key) with
+  | 1 (unit : prod ()) => natEq 0 1
+  | 0 (unit : prod ()) => case (hash message) with
+    | 0 (unit : prod ()) => natEq 0 1
+    | 1 (hashed : BlsG1) => blsVerifyEquation key hashed signature
+def blsVerifyPoint : BlsG2 -> Bytes -> BlsG1 -> Bool := blsVerifyPointWith blsHashToG1

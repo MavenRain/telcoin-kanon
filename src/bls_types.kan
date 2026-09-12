@@ -1,0 +1,5 @@
+-- Shared coordinate carriers allow the crypto profile to keep validated points.
+def BlsF2 : Type 0 := prod (Nat, Nat)
+def BlsPoint : (0 F : Type 0) -> Type 0 := fun (0 F : Type 0) => prod (F, F, F)
+def BlsG1 : Type 0 := BlsPoint Nat
+def BlsG2 : Type 0 := BlsPoint BlsF2

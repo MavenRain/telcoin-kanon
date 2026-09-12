@@ -6,19 +6,21 @@ def simServiceErrorText : NodeError -> Bytes := fun (error : NodeError) => match
   | nodeCertificateEquivocation round id => append b"certificate equivocation at round " (append (roundShow round) (append b" for " (simServiceShort id)))
   | nodeMissingParent digest => append b"missing parent " (headerDigestHex digest)
   | nodeMissingParentRound round => append b"missing parent round " (roundShow round)
-def simServiceAuthorities : Nat -> Authorities := fun (count : Nat) =>
+def simServiceAuthoritiesWith : (Nat -> SecretKey) -> Nat -> Authorities := fun (derive : Nat -> SecretKey) (count : Nat) =>
   let result : prod (Nat, Authorities) := stepsFold (prod (Nat, Authorities)) steps64
     (fun (acc : prod (Nat, Authorities)) => boolNat (natEq acc.0 count))
-    (fun (acc : prod (Nat, Authorities)) => tuple (natAdd acc.0 1, authoritiesCons (authorityMake (secretKeyPublic (secretKeyDerive acc.0)) addressZero) acc.1))
+    (fun (acc : prod (Nat, Authorities)) => tuple (natAdd acc.0 1, authoritiesCons (authorityMake (secretKeyPublic (derive acc.0)) addressZero) acc.1))
     (tuple (0, authoritiesNil)) in seqAuthorityReverse result.1
-def simServiceKey : Nat -> AuthorityId -> SecretKey := fun (count : Nat) (id : AuthorityId) =>
+def simServiceAuthorities : Nat -> Authorities := simServiceAuthoritiesWith secretKeyDerive
+def simServiceKeyWith : (Nat -> SecretKey) -> Nat -> AuthorityId -> SecretKey := fun (derive : Nat -> SecretKey) (count : Nat) (id : AuthorityId) =>
   let result : prod (Nat, ValueOption SecretKey) := stepsFold (prod (Nat, ValueOption SecretKey)) steps64
     (fun (acc : prod (Nat, ValueOption SecretKey)) => boolNat (boolOr (natEq acc.0 count) (optionIsSome SecretKey acc.1)))
-    (fun (acc : prod (Nat, ValueOption SecretKey)) => let key : SecretKey := secretKeyDerive acc.0 in
+    (fun (acc : prod (Nat, ValueOption SecretKey)) => let key : SecretKey := derive acc.0 in
       let found : ValueOption SecretKey := case (authorityIdEqual id (authorityIdOfPublicKey (secretKeyPublic key))) with
         | 0 (unit : prod ()) => valueNone SecretKey | 1 (unit : prod ()) => valueSome SecretKey key in tuple (natAdd acc.0 1, found))
     (tuple (0, valueNone SecretKey)) in
-  case result.1 with | 0 (unit : prod ()) => secretKeyDerive 0 | 1 (key : SecretKey) => key
+  case result.1 with | 0 (unit : prod ()) => derive 0 | 1 (key : SecretKey) => key
+def simServiceKey : Nat -> AuthorityId -> SecretKey := simServiceKeyWith secretKeyDerive
 def simServiceMembersText : Simulator -> Bytes := fun (state : Simulator) =>
   let result : prod (Nat, Bytes) := listFoldLeft Authority Authorities (prod (Nat, Bytes)) seqAuthorityOps
     (fun (acc : prod (Nat, Bytes)) (authority : Authority) => tuple (natAdd acc.0 1, append acc.1

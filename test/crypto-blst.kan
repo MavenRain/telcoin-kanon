@@ -1,0 +1,66 @@
+def cryptoBlstTestBool : Bool -> Bytes := fun (value : Bool) => case value with
+  | 0 (unit : prod ()) => b"false" | 1 (unit : prod ()) => b"true"
+def cryptoBlstTestSigned : PublicKey -> Signature -> Bytes -> Bytes := fun (key : PublicKey) (signature : Signature) (message : Bytes) =>
+  blsFieldTestJoin (bytesHex (publicKeyBytes key)) (blsFieldTestJoin (bytesHex (signatureBytes signature)) (bytesHex (digestBytes (digestHash message))))
+def cryptoBlstTestSignWith : (SecretKey -> Bytes -> Signature) -> SecretKey -> Bytes -> Bytes :=
+  fun (sign : SecretKey -> Bytes -> Signature) (key : SecretKey) (message : Bytes) => cryptoBlstTestSigned (secretKeyPublic key) (sign key message) message
+def cryptoBlstTestSign : SecretKey -> Bytes -> Bytes := cryptoBlstTestSignWith cryptoSign
+def cryptoBlstTestDeriveWith : (Nat -> ValueOption SecretKey) -> Bytes -> Bytes -> Bytes :=
+  fun (derive : Nat -> ValueOption SecretKey) (raw : Bytes) (message : Bytes) => case (derive (blsReadBe raw)) with
+  | 0 (unit : prod ()) => b"none" | 1 (key : SecretKey) => cryptoBlstTestSign key message
+def cryptoBlstTestDerive : Bytes -> Bytes -> Bytes := cryptoBlstTestDeriveWith secretKeyDeriveChecked
+def cryptoBlstTestKeygenWith : (Bytes -> Bytes -> ValueOption Nat) -> Bytes -> Bytes -> Bytes -> Bytes :=
+  fun (keygen : Bytes -> Bytes -> ValueOption Nat) (ikm : Bytes) (info : Bytes) (message : Bytes) => case (keygen ikm info) with
+  | 0 (unit : prod ()) => b"none" | 1 (scalar : Nat) => cryptoBlstTestSign (secretKeyFromScalar scalar) message
+def cryptoBlstTestKeygen : Bytes -> Bytes -> Bytes -> Bytes := cryptoBlstTestKeygenWith blsKeygen
+def cryptoBlstTestAdmit : Nat -> Bytes -> Bytes := fun (kind : Nat) (raw : Bytes) => case (natEq kind 0) with
+  | 1 (unit : prod ()) => (case (publicKeyOfBytes raw) with
+    | 0 (unit : prod ()) => b"none" | 1 (key : PublicKey) => bytesHex (publicKeyBytes key))
+  | 0 (unit : prod ()) => case (natEq kind 1) with
+    | 1 (unit : prod ()) => (case (signatureOfBytes raw) with
+      | 0 (unit : prod ()) => b"none" | 1 (signature : Signature) => bytesHex (signatureBytes signature))
+    | 0 (unit : prod ()) => case (aggregateOfBytes raw) with
+      | 0 (unit : prod ()) => b"none" | 1 (aggregate : Aggregate) => bytesHex (aggregateBytes aggregate)
+def cryptoBlstTestInvalidOctet : Nat -> Nat -> Bytes -> Bytes := fun (kind : Nat) (head : Nat) (raw : Bytes) =>
+  cryptoBlstTestAdmit kind (consBytes head (bytesTail raw))
+def rec cryptoBlstTestSignatures : ByteStrings -> ValueOption Signatures := fun (values : ByteStrings) =>
+  match values as self in ByteStrings return ValueOption Signatures with
+  | byteStringsNil => valueSome Signatures signaturesNil
+  | byteStringsCons head tail => case (signatureOfBytes head) with
+    | 0 (unit : prod ()) => valueNone Signatures
+    | 1 (signature : Signature) => case (cryptoBlstTestSignatures tail) with
+      | 0 (unit : prod ()) => valueNone Signatures
+      | 1 (rest : Signatures) => valueSome Signatures (signaturesCons signature rest)
+def rec cryptoBlstTestKeys : ByteStrings -> ValueOption PublicKeys := fun (values : ByteStrings) =>
+  match values as self in ByteStrings return ValueOption PublicKeys with
+  | byteStringsNil => valueSome PublicKeys publicKeysNil
+  | byteStringsCons head tail => case (publicKeyOfBytes head) with
+    | 0 (unit : prod ()) => valueNone PublicKeys
+    | 1 (key : PublicKey) => case (cryptoBlstTestKeys tail) with
+      | 0 (unit : prod ()) => valueNone PublicKeys
+      | 1 (rest : PublicKeys) => valueSome PublicKeys (publicKeysCons key rest)
+def cryptoBlstTestAggregate : ByteStrings -> Bytes := fun (raw : ByteStrings) => case (cryptoBlstTestSignatures raw) with
+  | 0 (unit : prod ()) => b"none" | 1 (signatures : Signatures) => bytesHex (aggregateBytes (cryptoAggregate signatures))
+def cryptoBlstTestVerify : ByteStrings -> Bytes -> Bytes -> Bytes := fun (keys : ByteStrings) (message : Bytes) (raw : Bytes) =>
+  case (cryptoBlstTestKeys keys) with
+  | 0 (unit : prod ()) => b"false"
+  | 1 (keys : PublicKeys) => case (aggregateOfBytes raw) with
+    | 0 (unit : prod ()) => b"false"
+    | 1 (aggregate : Aggregate) => cryptoBlstTestBool (cryptoVerifyAggregate keys message aggregate)
+def cryptoBlstTestSingle : Bytes -> Bytes -> Bytes := fun (keyAndSignature : Bytes) (message : Bytes) =>
+  case (publicKeyOfBytes (take 96 keyAndSignature)) with
+  | 0 (unit : prod ()) => b"false"
+  | 1 (key : PublicKey) => case (signatureOfBytes (drop keyAndSignature 96)) with
+    | 0 (unit : prod ()) => b"false"
+    | 1 (signature : Signature) => cryptoBlstTestBool (cryptoVerify key message signature)
+def cryptoBlstTestZeroSign : Bytes -> Bytes := fun (message : Bytes) =>
+  bytesHex (signatureBytes (cryptoSign (secretKeyValue 0 (publicKeyValue (blsPointInfinity BlsF2 blsExtensionOps))) message))
+def cryptoBlstTestZero : Bytes -> Bytes -> Bytes := fun (keyAndSignature : Bytes) (message : Bytes) =>
+  case (publicKeyOfBytes (take 96 keyAndSignature)) with
+  | 0 (unit : prod ()) => b"bad key"
+  | 1 (key : PublicKey) => case (signatureOfBytes (drop keyAndSignature 96)) with
+    | 0 (unit : prod ()) => b"bad signature"
+    | 1 (signature : Signature) =>
+      let zero : PublicKey := publicKeyValue (blsPointInfinity BlsF2 blsExtensionOps) in
+      blsFieldTestJoin (cryptoBlstTestBool (cryptoVerify zero message signature))
+        (cryptoBlstTestBool (cryptoVerifyAggregate (publicKeysCons key (publicKeysCons zero publicKeysNil)) message (signaturePoint signature)))

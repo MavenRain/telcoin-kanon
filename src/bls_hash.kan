@@ -1,0 +1,83 @@
+-- SHA-256 XMD and the RFC 9380 G1 random-oracle suite used by MinSig.Basic.
+def blsSignatureDst : Bytes := b"BLS_SIG_BLS12381G1_XMD:SHA-256_SSWU_RO_NUL_"
+def rec blsBytesXor : Bytes -> Bytes -> Bytes := fun (left : Bytes) (right : Bytes) =>
+  match left as self in Bytes return Bytes with
+  | bytesNil => bytesNil
+  | bytesCons head tail => consBytes (wordXor32 head (bytesHead right)) (blsBytesXor tail (bytesTail right))
+def rec blsBytesPad : Bytes -> Nat -> Bytes := fun (input : Bytes) (pad : Nat) =>
+  match input as self in Bytes return Bytes with
+  | bytesNil => bytesNil
+  | bytesCons head tail => consBytes (wordXor32 head pad) (blsBytesPad tail pad)
+def blsHmacWith : (Bytes -> Bytes) -> Bytes -> Bytes -> Bytes := fun (hash : Bytes -> Bytes) (key : Bytes) (message : Bytes) =>
+  let normalized : Bytes := case (natLt (bytesLength key) 65) with
+    | 1 (unit : prod ()) => key | 0 (unit : prod ()) => hash key in
+  let block : Bytes := append normalized (precompileZeros (natSub 64 (bytesLength normalized))) in
+  hash (append (blsBytesPad block 92) (hash (append (blsBytesPad block 54) message)))
+def blsHmacSha256 : Bytes -> Bytes -> Bytes := blsHmacWith sha256
+def blsExpand128With : (Bytes -> Bytes) -> Bytes -> Bytes := fun (hash : Bytes -> Bytes) (message : Bytes) =>
+  let dst : Bytes := append blsSignatureDst (consBytes (bytesLength blsSignatureDst) bytesNil) in
+  let b0 : Bytes := hash (append (precompileZeros 64) (append message (append b"\x00\x80\x00" dst))) in
+  let block : Bytes -> Nat -> Bytes := fun (previous : Bytes) (index : Nat) =>
+    hash (append (blsBytesXor b0 previous) (consBytes index dst)) in
+  let b1 : Bytes := hash (append b0 (consBytes 1 dst)) in
+  let b2 : Bytes := block b1 2 in let b3 : Bytes := block b2 3 in let b4 : Bytes := block b3 4 in
+  append b1 (append b2 (append b3 b4))
+def blsExpand128 : Bytes -> Bytes := blsExpand128With sha256
+def rec blsPolynomialAcc : Nats -> Nat -> Nat -> Nat := fun (coefficients : Nats) (x : Nat) (acc : Nat) =>
+  match coefficients as self in Nats return Nat with
+  | natsNil => acc
+  | natsCons head tail => blsPolynomialAcc tail x (blsAdd (blsMul acc x) head)
+def blsIsogeny : Nat -> Nat -> BlsG1 := fun (x : Nat) (y : Nat) =>
+  let xn : Nat := blsPolynomialAcc blsIsoXNumerator x 0 in
+  let xd : Nat := blsPolynomialAcc blsIsoXDenominator x 0 in
+  let yn : Nat := blsPolynomialAcc blsIsoYNumerator x 0 in
+  let yd : Nat := blsPolynomialAcc blsIsoYDenominator x 0 in
+  let xd2 : Nat := blsSquare xd in let yd2 : Nat := blsSquare yd in
+  tuple (blsMul (blsMul xn xd) yd2, blsMul (blsMul y yn) (blsMul (blsMul xd2 xd) yd2), blsMul xd yd)
+def blsParity : Nat -> Nat := bigNaturalReducePositive 2
+def blsSwuCurve : Nat -> Nat := fun (x : Nat) => blsAdd (blsAdd (blsMul (blsSquare x) x) (blsMul blsSwuA x)) blsSwuB
+def blsSwu : Nat -> ValueOption BlsG1 := fun (u : Nat) =>
+  let zu2 : Nat := blsMul 11 (blsSquare u) in
+  let denominator : Nat := blsAdd (blsSquare zu2) zu2 in
+  let x1 : Nat := case (blsInverse denominator) with
+    | 0 (unit : prod ()) => blsSwuExceptionalX
+    | 1 (inverse : Nat) => blsMul blsSwuMinusBOverA (blsAdd 1 inverse) in
+  let candidate : ValueOption (prod (Nat, Nat)) := case (blsSqrt (blsSwuCurve x1)) with
+    | 1 (y1 : Nat) => valueSome (prod (Nat, Nat)) (tuple (x1, y1))
+    | 0 (unit : prod ()) => let x2 : Nat := blsMul zu2 x1 in case (blsSqrt (blsSwuCurve x2)) with
+      | 0 (unit : prod ()) => valueNone (prod (Nat, Nat))
+      | 1 (y2 : Nat) => valueSome (prod (Nat, Nat)) (tuple (x2, y2)) in
+  case candidate with
+  | 0 (unit : prod ()) => valueNone BlsG1
+  | 1 (point : prod (Nat, Nat)) =>
+    let y : Nat := case (natEq (blsParity u) (blsParity point.1)) with
+      | 1 (unit : prod ()) => point.1 | 0 (unit : prod ()) => blsNeg point.1 in
+    valueSome BlsG1 (blsIsogeny point.0 y)
+def blsHashExpandedToG1 : Bytes -> ValueOption BlsG1 := fun (expanded : Bytes) =>
+  case (blsSwu (blsReduce (blsReadBe (take 64 expanded)))) with
+  | 0 (unit : prod ()) => valueNone BlsG1
+  | 1 (left : BlsG1) => case (blsSwu (blsReduce (blsReadBe (drop expanded 64)))) with
+    | 0 (unit : prod ()) => valueNone BlsG1
+    | 1 (right : BlsG1) => valueSome BlsG1
+      (blsPointMultiply Nat blsBaseOps blsG1CofactorBytes (blsPointAdd Nat blsBaseOps left right))
+def blsHashToG1With : (Bytes -> Bytes) -> Bytes -> ValueOption BlsG1 := fun (expand : Bytes -> Bytes) (message : Bytes) => blsHashExpandedToG1 (expand message)
+def blsHashToG1 : Bytes -> ValueOption BlsG1 := blsHashToG1With blsExpand128
+-- KeyGen draft 04, with explicit rejection of short IKM and exhausted retries.
+def blsKeygenWith : (Bytes -> Bytes) -> (Bytes -> Bytes -> Bytes) -> Bytes -> Bytes -> ValueOption Nat :=
+  fun (hash : Bytes -> Bytes) (hmac : Bytes -> Bytes -> Bytes) (ikm : Bytes) (info : Bytes) =>
+  case (natLt 31 (bytesLength ikm)) with
+  | 0 (unit : prod ()) => valueNone Nat
+  | 1 (unit : prod ()) =>
+    let next : prod (Bytes, Nat) -> prod (Bytes, Nat) := fun (state : prod (Bytes, Nat)) =>
+      let salt : Bytes := hash state.0 in let prk : Bytes := hmac salt (append ikm b"\x00") in
+      let t1 : Bytes := hmac prk (append info b"\x00\x30\x01") in
+      let t2 : Bytes := hmac prk (append t1 (append info b"\x00\x30\x02")) in
+      tuple (salt, bigNaturalReducePositive blsOrder (blsReadBe (append t1 (take 16 t2)))) in
+    let final : prod (Bytes, Nat) := stepsFold (prod (Bytes, Nat)) steps64
+      (fun (state : prod (Bytes, Nat)) => boolNat (natLt 0 state.1)) next (tuple (b"BLS-SIG-KEYGEN-SALT-", 0)) in
+    case (natEq final.1 0) with | 1 (unit : prod ()) => valueNone Nat | 0 (unit : prod ()) => valueSome Nat final.1
+def blsKeygen : Bytes -> Bytes -> ValueOption Nat := blsKeygenWith sha256 blsHmacSha256
+def blsDeriveScalarWith : (Bytes -> Bytes) -> (Bytes -> Bytes -> ValueOption Nat) -> Nat -> ValueOption Nat :=
+  fun (hash : Bytes -> Bytes) (keygen : Bytes -> Bytes -> ValueOption Nat) (seed : Nat) =>
+    keygen (hash (append b"tn-crypto-blst:secret-key-derive:" (bcsEncodeU64 seed))) bytesNil
+def blsDeriveScalar : Nat -> ValueOption Nat := blsDeriveScalarWith blake3Hash blsKeygen

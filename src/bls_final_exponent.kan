@@ -1,0 +1,26 @@
+def blsF2Conjugate : BlsF2 -> BlsF2 := fun (value : BlsF2) => tuple (value.0, blsNeg value.1)
+def blsF6Frobenius : BlsF6 -> BlsF6 := fun (value : BlsF6) =>
+  tuple (blsF2Conjugate value.0, blsF2Mul (blsF2Conjugate value.1) blsFrobeniusV, blsF2Mul (blsF2Conjugate value.2) blsFrobeniusV2)
+def blsF12Frobenius : BlsF12 -> BlsF12 := fun (value : BlsF12) => tuple (blsF6Frobenius value.0, blsF6Scale blsFrobeniusW (blsF6Frobenius value.1))
+def blsF12Frobenius2 : BlsF12 -> BlsF12 := fun (value : BlsF12) => blsF12Frobenius (blsF12Frobenius value)
+def blsF12Frobenius3 : BlsF12 -> BlsF12 := fun (value : BlsF12) => blsF12Frobenius (blsF12Frobenius2 value)
+-- On the cyclotomic subgroup conjugation is inversion; the curve parameter is negative.
+def blsCyclotomicParameter : BlsF12 -> BlsF12 := fun (value : BlsF12) => blsF12Conjugate (blsF12Power value blsCurveParameterBytes)
+def blsCyclotomicHalfParameter : BlsF12 -> BlsF12 := fun (value : BlsF12) => blsF12Conjugate (blsF12Power value blsCurveHalfParameterBytes)
+-- The chain computes three times the conventional final exponent, as blst does.
+-- The generator checks the exponent identity and gcd(3,r)=1, so the identity test is equivalent.
+def blsFinalExponentiation : BlsF12 -> ValueOption BlsF12 := fun (value : BlsF12) =>
+  case (blsF12Inverse value) with
+  | 0 (unit : prod ()) => valueNone BlsF12
+  | 1 (inverse : BlsF12) =>
+    let easy1 : BlsF12 := blsF12Mul (blsF12Conjugate value) inverse in
+    let easy : BlsF12 := blsF12Mul easy1 (blsF12Frobenius2 easy1) in
+    let y0 : BlsF12 := blsF12Square easy in
+    let z2 : BlsF12 := blsCyclotomicParameter y0 in
+    let zz : BlsF12 := blsCyclotomicHalfParameter z2 in
+    let base : BlsF12 := blsF12Mul (blsF12Conjugate (blsF12Mul z2 (blsF12Conjugate easy))) zz in
+    let baseZ : BlsF12 := blsCyclotomicParameter base in
+    let difference : BlsF12 := blsF12Mul (blsCyclotomicParameter baseZ) (blsF12Conjugate base) in
+    let high : BlsF12 := blsF12Mul (blsF12Frobenius3 base) (blsF12Frobenius2 baseZ) in
+    let low : BlsF12 := blsF12Mul (blsF12Mul (blsCyclotomicParameter difference) y0) easy in
+    valueSome BlsF12 (blsF12Mul (blsF12Mul high low) (blsF12Frobenius difference))

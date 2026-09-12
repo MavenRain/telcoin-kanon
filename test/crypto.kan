@@ -1,7 +1,8 @@
-def cryptoKeyParse : Bytes -> ValueOption SecretKey := fun (text : Bytes) =>
+def cryptoKeyParseWith : (Nat -> SecretKey) -> Bytes -> ValueOption SecretKey := fun (derive : Nat -> SecretKey) (text : Bytes) =>
   match (parseU64 text) as self in NatOption return ValueOption SecretKey with
   | natNone => valueNone SecretKey
-  | natSome seed => valueSome SecretKey (secretKeyDerive seed)
+  | natSome seed => valueSome SecretKey (derive seed)
+def cryptoKeyParse : Bytes -> ValueOption SecretKey := cryptoKeyParseWith secretKeyDerive
 def crypto_key : Bytes -> Bytes := fun (text : Bytes) =>
   case (cryptoKeyParse text) with
   | 0 (unit : prod ()) => b"none"

@@ -1,0 +1,19 @@
+def blsCurveTestDecode : (0 F : Type 0) -> (Bytes -> ValueOption (BlsPoint F)) -> (BlsPoint F -> Bytes) -> Bytes -> Bytes :=
+  fun (0 F : Type 0) (decode : Bytes -> ValueOption (BlsPoint F)) (encode : BlsPoint F -> Bytes) (raw : Bytes) =>
+    case (decode raw) with | 0 (unit : prod ()) => b"none" | 1 (point : BlsPoint F) => bytesHex (encode point)
+def blsCurveTestOps : (0 F : Type 0) -> BlsFieldOps F -> (Bytes -> ValueOption (BlsPoint F)) -> (BlsPoint F -> Bytes) -> Bytes -> Bytes -> Bytes -> Bytes :=
+  fun (0 F : Type 0) (ops : BlsFieldOps F) (decode : Bytes -> ValueOption (BlsPoint F)) (encode : BlsPoint F -> Bytes)
+    (leftRaw : Bytes) (rightRaw : Bytes) (scalar : Bytes) =>
+    case (decode leftRaw) with
+    | 0 (unit : prod ()) => b"none"
+    | 1 (left : BlsPoint F) => case (decode rightRaw) with
+      | 0 (unit : prod ()) => b"none"
+      | 1 (right : BlsPoint F) =>
+        let render : BlsPoint F -> Bytes := fun (point : BlsPoint F) => bytesHex (encode point) in
+        blsFieldTestJoin (render left) (blsFieldTestJoin (render (blsPointNeg F ops left))
+          (blsFieldTestJoin (render (blsPointDouble F ops left)) (blsFieldTestJoin (render (blsPointAdd F ops left right))
+          (render (blsPointMultiply F ops scalar left)))))
+def blsCurveTestG1Decode : Bytes -> Bytes := blsCurveTestDecode Nat blsG1Decode blsG1Encode
+def blsCurveTestG2Decode : Bytes -> Bytes := blsCurveTestDecode BlsF2 blsG2Decode blsG2Encode
+def blsCurveTestG1Ops : Bytes -> Bytes -> Bytes -> Bytes := blsCurveTestOps Nat blsBaseOps blsG1Decode blsG1Encode
+def blsCurveTestG2Ops : Bytes -> Bytes -> Bytes -> Bytes := blsCurveTestOps BlsF2 blsExtensionOps blsG2Decode blsG2Encode

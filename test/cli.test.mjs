@@ -121,6 +121,19 @@ test('public CLI exposes simulation hashing, signing, committee and deterministi
   const signed = run(['simulation', 'sign', '1', '616263']);
   assert.equal(signed.status, 0, signed.stderr);
   assert.equal(JSON.parse(signed.stdout).signature, `${JSON.parse(key.stdout).publicKey}00${hash}`);
+  const signature = JSON.parse(signed.stdout).signature;
+  const publicKey = JSON.parse(key.stdout).publicKey;
+  for (const [message, valid] of [['616263', true], ['616264', false]]) {
+    const verified = run(['simulation', 'verify', publicKey, message, signature]);
+    assert.equal(verified.status, 0, verified.stderr);
+    assert.equal(JSON.parse(verified.stdout).valid, valid);
+  }
+  const aggregated = run(['simulation', 'aggregate', `${signature},${signature}`]);
+  assert.equal(aggregated.status, 0, aggregated.stderr);
+  const aggregate = JSON.parse(aggregated.stdout).aggregate;
+  const verified = run(['simulation', 'verify-aggregate', `${publicKey},${publicKey}`, '616263', aggregate]);
+  assert.equal(verified.status, 0, verified.stderr);
+  assert.equal(JSON.parse(verified.stdout).valid, true);
   const committee = run(['simulation', 'committee', '4,3,2,1']);
   assert.equal(committee.status, 0, committee.stderr);
   const roster = JSON.parse(committee.stdout);

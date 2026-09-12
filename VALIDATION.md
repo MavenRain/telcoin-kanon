@@ -1,5 +1,96 @@
 # Validation
 
+## Public BLS build and CLI
+
+The complete BLS Wasm build and all five public CLI groups pass in
+`.kanon-exec/run-BGTHuz`, exit 0, 1181.1 seconds including compilation.
+Every declared public export is present. Tests compare full-width seeded keys,
+signatures, BLAKE3 hashes, committee identifiers and vote signatures with the
+pinned OCaml implementation. They also verify native signatures, wrong-message
+rejection, duplicate and empty aggregation, duplicate-key verification,
+empty-key rejection, malformed encodings and usage errors.
+
+The BLAKE2s test rerun passes all three original groups in
+`.kanon-exec/run-oil7Fh`, exit 0, 34.9 seconds after selecting its export closure.
+No vector or assertion was removed. Both complete public profiles are still
+built by their CLI suites. The broad regression is in progress.
+
+The BLS network suite passes ten native comparisons in three groups,
+`.kanon-exec/run-2mi4Te`, exit 0, 573.1 seconds. It covers outgoing votes,
+conversion back to verified local votes, genesis and aggregate certificates,
+duplicate aggregation, signer bitmap positions, malformed signatures and
+signers absent from the committee. The fixture's key parser was parameterized
+after a compile timeout in `.kanon-exec/run-U8wC4k`. A subsequent positive-fixture
+failure in `.kanon-exec/run-QlvvLL` exposed the source's two-authority minimum;
+both implementations returned the same setup error. The passing tests use valid
+committees and retain explicit success assertions.
+
+## BLS12-381 profile
+
+The field suite passes 111 OCaml/Zarith differential rows: checked field
+admission, Fp arithmetic and Fp2 arithmetic. Capture `.kanon-exec/run-XLqYbg`,
+exit 0, three groups, 31.4 seconds. Compressed G1/G2 admission and group
+operations pass 79 rows, including canonicality, subgroup rejection, infinity,
+inverse points and full-width scalars. Capture `.kanon-exec/run-0uTVmN`, exit 0,
+four groups, 384.3 seconds.
+
+Hash-to-G1, HKDF key generation and seeded scalar derivation pass 44 native
+comparisons, plus 42 HMAC comparisons with Node crypto. Capture
+`.kanon-exec/run-jySeFf`, exit 0, four groups, 53.5 seconds. The tower and pairing
+suite passes 15 comparisons of complete Fp12 coefficients, including Frobenius,
+final exponentiation, nontrivial pairings and identities. Capture
+`.kanon-exec/run-QwWmTe`, exit 0, three groups, 106.8 seconds. The final exponent
+matches blst's three-times-conventional convention; the generator checks the
+symbolic exponent identity and the coprimality needed for the verification test.
+
+The selected BLS crypto profile passes 50 native rows plus pinned Rust vectors
+and invalid-octet checks. Tests cover full-int64 seeded keys and signatures,
+canonical admission, empty and duplicate aggregation, incorrect messages,
+individual infinity rejection and cancellation between valid opposite keys.
+Capture `.kanon-exec/run-hI6nlE`, exit 0, five groups, 777.6 seconds.
+The source-computed BLS genesis anchor, default header, sub-DAG, block encoding
+and block digest pass two further rows. Capture `.kanon-exec/run-emC8r7`, exit 0,
+one group, 221.3 seconds including compilation.
+
+The native profile uses the pinned source with OCaml 5.3, Zarith 1.14,
+bls12-381 6.1.0, bls12-381-signature 1.0.0 and hex 1.5.0. Early failed runs
+found a reversed reduction argument order and compiler normalization stalls in
+composed hash helpers and test formatters. Parameterized helpers defer those
+calculations until runtime. Successful captures above retain the same arithmetic
+and native assertions. Subsequent shared type moves, octet guards and public
+API additions still require the final regression run recorded below.
+
+After parameterizing BLAKE3's chunk compression, the shared closure/artifact,
+BLAKE3 and field suites pass 12 groups in `.kanon-exec/run-Et4VW5`, exit 0,
+60.6 seconds. This includes 54 BLAKE3 and 111 field differential rows and the
+new invalid-octet admission check. Generated-source checks pass in
+`.kanon-exec/run-WzJiM5`; the first generator attempt selected an absent default
+opam switch, so the successful rerun selected the dedicated validation switch.
+The pinned inventory check passes in `.kanon-exec/run-2UdxiW`.
+
+The complete simulation build and nine CLI groups pass in
+`.kanon-exec/run-atT4y1`, exit 0, 506.0 seconds, including new simulation
+verification/aggregation entry points, all EVM precompiles and simulator CLI
+transcripts. This precedes the final parameterization of public key derivation
+and the simulator's key factories. The BLS build and CLI have since passed as
+recorded above; final regression remains in progress. The first complete builds timed out in
+`.kanon-exec/run-PKBxCw` (BLS) and `.kanon-exec/run-t2rcv4` (simulation).
+Compiler profiling identified eager BLAKE3 chunk compression and BLS signing
+through vote creation; function parameters defer the computations to runtime.
+An internal zero-scalar signing fast path returns the same infinity point.
+The final complete-source diagnostic successfully checks and erases all 278
+BLS source files in `.kanon-exec/run-moN00y`, exit 0, 531.0 seconds. Its input
+SHA-256 is `6f7a5275a86bef8225e69a061ca7adb77febc27512188904dd1b447aa2bb4431`.
+This diagnostic does not generate or validate a Wasm artifact. The subsequent
+public build hit its 600-second limit in `.kanon-exec/run-D76KBI`. Complete,
+unscoped builds now use the existing 1800-second maximum. Scoped tests and
+30-second native oracle limits retain their budgets. The BLAKE2s unit test was
+also compiling the complete library and hit 600 seconds during the full run.
+It now selects the closure of its hash exports, retaining every digest/vector
+assertion. Both public CLI suites still require complete-library compilation.
+These results establish tested behavioral compatibility, not constant-time
+secret operations or production throughput. CRYPTO.md records the limitations.
+
 ## General Round and Authority collections
 
 Ordered sets pass 160 OCaml rows, comparing canonical elements, cardinality,
@@ -39,7 +130,7 @@ power-of-two and unbalanced trees through 31 chunks, and deterministic random
 binary inputs. Kanon shares the existing BLAKE2s quarter-round but implements
 BLAKE3 compression, message permutation, flags and logarithmic subtree stack.
 Capture: `.kanon-exec/run-DmH0zQ`, exit 0, three groups, 32.6 seconds.
-This adds the hash primitive; it does not yet enable a production BLS profile.
+The BLS profile now uses this hash primitive; profile results are recorded above.
 
 ## Append logs, disk stores and checkpoint files
 

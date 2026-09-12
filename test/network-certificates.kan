@@ -48,10 +48,12 @@ def networkWireBridgeTest : Nat -> Bytes -> ByteStrings -> ByteStrings -> Bytes 
       case (natEq mode 3) with | 1 (unit : prod ()) => networkWireTestVoteResult (networkVoteWireToVote wireVote)
       | 0 (unit : prod ()) => case (natEq mode 4) with
         | 1 (unit : prod ()) => networkWireTestVoteResult (networkVoteWireToVerified (secretKeyPublic key) wireVote)
-        | 0 (unit : prod ()) => case (natEq mode 5) with
+        | 0 (unit : prod ()) => case (boolOr (natEq mode 5) (natEq mode 8)) with
           | 1 (unit : prod ()) => (case (networkVoteWireOfVote (voteSign key (headerAuthor header) header)) with
             | 0 (error : NetworkVoteWireError) => append b"error:" (networkVoteWireErrorText error)
-            | 1 (wire : NetworkVoteWire) => append b"ok:" (bytesHex (codecWrite NetworkVoteWire networkVoteWireCodec wire)))
+            | 1 (wire : NetworkVoteWire) => case (natEq mode 8) with
+              | 1 (unit : prod ()) => networkWireTestVoteResult (networkVoteWireToVerified (secretKeyPublic key) wire)
+              | 0 (unit : prod ()) => append b"ok:" (bytesHex (codecWrite NetworkVoteWire networkVoteWireCodec wire)))
           | 0 (unit : prod ()) => case (natLt mode 3) with
             | 1 (unit : prod ()) => (case (networkRoaringOfBytes bitmapRaw) with
               | 0 (error : NetworkRoaringError) => append b"setup:" (networkRoaringErrorText error)
