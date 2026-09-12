@@ -42,7 +42,10 @@ Python 3 helper, using POSIX fsync and process-owned advisory locks. The helper
 preserves byte paths and decimal full-width offsets. Each session must retain its
 Kanon state across operations to preserve counters and in-process lock ownership.
 Explicit fork schedules, transaction skips and the Prague calldata floor now match
-through live engine execution and checkpoint replay. Append-log recovery, checkpoint files and the disk store,
+through live engine execution and checkpoint replay. Append-log recovery, checkpoint files and the disk store
+also pass differential and real-filesystem checks, including interrupted writes, restart,
+duplicate retries and checkpoint guards. Typed transaction and receipt root wrappers
+also match the source. General collection APIs,
 production consensus crypto and the complete public runtime interface still need work. The source has 178 implementation modules
 across 25 libraries. [PORTING.md](PORTING.md) records module coverage and the
 next acceptance target. [VALIDATION.md](VALIDATION.md) records tested behavior.
@@ -90,7 +93,8 @@ cryptography, gas charging and dispatch run in Kanon.
 The explicit profile is `simulation-stub:blake2s256`. It reproduces the source's
 deterministic, forgeable stub: public keys derive from seeds, and signatures
 contain a public key and message digest. It provides no signature security.
-Production BLAKE3 and BLS12-381 are not implemented. Batch and header wire bytes
+Unkeyed BLAKE3 is implemented and tested separately; BLS12-381 and production
+profile integration remain outstanding. Batch and header wire bytes
 match the tested source vectors; their digests use the simulation profile.
 
 BLAKE2s-256 is implemented in ordinary Kanon using the algorithm in

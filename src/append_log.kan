@@ -1,0 +1,86 @@
+def AppendLog : Type 0 := prod (DurableIoFd, StoreLock, HostInt, HostInt)
+def AppendLogOpened : Type 0 := prod (AppendLog, FramePayloads, AppendLogHeal, HostInt)
+def AppendLogResult : (0 A : Type 0) -> Type 0 := fun (0 A : Type 0) => sum (AppendLogError, A)
+def AppendLogEffect : (0 A : Type 0) -> Type 0 := fun (0 A : Type 0) => DurableEffect (AppendLogResult A)
+def appendLogPure : (0 A : Type 0) -> AppendLogResult A -> AppendLogEffect A := fun (0 A : Type 0) => durableEffectReturn (AppendLogResult A)
+def appendLogReturn : (0 A : Type 0) -> A -> AppendLogEffect A := fun (0 A : Type 0) (value : A) => appendLogPure A (inj 1 of 2 value)
+def appendLogChecked : AppendLogResult (prod ()) -> AppendLogEffect CodecUnit := fun (result : AppendLogResult (prod ())) => case result with
+  | 0 (error : AppendLogError) => appendLogPure CodecUnit (inj 0 of 2 error)
+  | 1 (unit : prod ()) => appendLogReturn CodecUnit codecUnitValue
+def appendLogBind : (0 A : Type 0) -> (0 B : Type 0) -> AppendLogEffect A -> (A -> AppendLogEffect B) -> AppendLogEffect B :=
+  fun (0 A : Type 0) (0 B : Type 0) (effect : AppendLogEffect A) (next : A -> AppendLogEffect B) =>
+    durableEffectBind (AppendLogResult A) (AppendLogResult B) effect (fun (result : AppendLogResult A) => case result with
+    | 0 (error : AppendLogError) => appendLogPure B (inj 0 of 2 error) | 1 (value : A) => next value)
+def appendLogMap : (0 A : Type 0) -> (0 B : Type 0) -> (A -> B) -> AppendLogEffect A -> AppendLogEffect B :=
+  fun (0 A : Type 0) (0 B : Type 0) (map : A -> B) (effect : AppendLogEffect A) =>
+    appendLogBind A B effect (fun (value : A) => appendLogReturn B (map value))
+def appendLogOverIo : (0 A : Type 0) -> DurableIo A -> AppendLogEffect A := fun (0 A : Type 0) (effect : DurableIo A) =>
+  durableEffectMap (DurableIoResult A) (AppendLogResult A) (fun (result : DurableIoResult A) => case result with
+  | 0 (error : DurableIoError) => inj 0 of 2 (appendLogIo error) | 1 (value : A) => inj 1 of 2 value) effect
+def appendLogOverLock : (0 A : Type 0) -> StoreLockEffect A -> AppendLogEffect A := fun (0 A : Type 0) (effect : StoreLockEffect A) =>
+  durableEffectMap (StoreLockResult A) (AppendLogResult A) (fun (result : StoreLockResult A) => case result with
+  | 0 (error : StoreLockError) => inj 0 of 2 (appendLogLock error) | 1 (value : A) => inj 1 of 2 value) effect
+def appendLogCleanup : (0 A : Type 0) -> DurableIo CodecUnit -> AppendLogResult A -> AppendLogEffect A :=
+  fun (0 A : Type 0) (cleanup : DurableIo CodecUnit) (result : AppendLogResult A) => case result with
+  | 1 (value : A) => appendLogPure A result
+  | 0 (error : AppendLogError) => durableEffectMap (DurableIoResult CodecUnit) (AppendLogResult A)
+      (fun (ignored : DurableIoResult CodecUnit) => result) cleanup
+def appendLogReleasing : (0 A : Type 0) -> StoreLock -> AppendLogEffect A -> AppendLogEffect A :=
+  fun (0 A : Type 0) (lock : StoreLock) (effect : AppendLogEffect A) =>
+    durableEffectBind (AppendLogResult A) (AppendLogResult A) effect (appendLogCleanup A (storeLockRelease lock))
+def appendLogClosing : (0 A : Type 0) -> DurableIoFd -> AppendLogEffect A -> AppendLogEffect A :=
+  fun (0 A : Type 0) (fd : DurableIoFd) (effect : AppendLogEffect A) =>
+    durableEffectBind (AppendLogResult A) (AppendLogResult A) effect (appendLogCleanup A (durableIoClose fd))
+def appendLogHealTail : DurableIoOps -> Bytes -> DurableIoFd -> HostInt -> AppendLogEffect CodecUnit :=
+  fun (ops : DurableIoOps) (dir : Bytes) (fd : DurableIoFd) (at : HostInt) => appendLogOverIo CodecUnit
+    (durableIoBind CodecUnit CodecUnit (durableIoFtruncate fd at) (fun (unit : CodecUnit) =>
+      durableIoBind CodecUnit CodecUnit (durableIoFsync fd) (fun (unit : CodecUnit) => durableIoFsyncDirectory ops dir)))
+def appendLogCreate : DurableIoOps -> Bytes -> Bytes -> StoreLock -> AppendLogEffect AppendLogOpened :=
+  fun (ops : DurableIoOps) (dir : Bytes) (fileHeader : Bytes) (lock : StoreLock) =>
+    appendLogBind CodecUnit AppendLogOpened (appendLogOverIo CodecUnit (atomicFileSaveIo ops dir appendLogName fileHeader))
+      (fun (unit : CodecUnit) => appendLogMap DurableIoFd AppendLogOpened (fun (fd : DurableIoFd) =>
+        tuple (tuple (fd, lock, hostIntPositive 64, hostIntPositive 0), framePayloadsNil, appendLogNoHeal, hostIntPositive 0))
+        (appendLogOverIo DurableIoFd (durableIoOpen ops (durablePathConcat dir appendLogName) durableReadWriteCreate)))
+def appendLogPayloads : FrameEntries -> FramePayloads := listMapInto (prod (FrameHead, Bytes)) FrameEntries (prod (FrameKind, Bytes)) FramePayloads
+  seqFrameEntryOps seqFramePayloadOps (fun (entry : prod (FrameHead, Bytes)) => tuple (entry.0.0, entry.1))
+def appendLogSettle : DurableIoFd -> StoreLock -> FramePayloads -> HostInt -> HostInt -> AppendLogHeal -> AppendLogOpened :=
+  fun (fd : DurableIoFd) (lock : StoreLock) (payloads : FramePayloads) (count : HostInt) (at : HostInt) (heal : AppendLogHeal) =>
+    tuple (tuple (fd, lock, at, count), payloads, heal, count)
+def appendLogAdoptScan : DurableIoOps -> Bytes -> DurableIoFd -> StoreLock -> HostInt -> FrameScan -> AppendLogEffect AppendLogOpened :=
+  fun (ops : DurableIoOps) (dir : Bytes) (fd : DurableIoFd) (lock : StoreLock) (length : HostInt) (scan : FrameScan) =>
+    let settle : HostInt -> AppendLogHeal -> AppendLogOpened := appendLogSettle fd lock (appendLogPayloads scan.0) (hostIntPositive (seqFrameEntryLength scan.0)) in
+    match scan.1 as self in FrameStop return AppendLogEffect AppendLogOpened with
+    | frameClean at => appendLogReturn AppendLogOpened (settle at appendLogNoHeal)
+    | frameTorn at why => appendLogMap CodecUnit AppendLogOpened (fun (unit : CodecUnit) =>
+        settle at (appendLogHealedTail at (hostIntSub length at))) (appendLogHealTail ops dir fd at)
+    | frameCorrupt at why nextGood => appendLogPure AppendLogOpened (inj 0 of 2 (appendLogCorrupt at why nextGood))
+def appendLogAdopt : DurableIoOps -> Bytes -> Bytes -> StoreLock -> AppendLogEffect AppendLogOpened :=
+  fun (ops : DurableIoOps) (dir : Bytes) (fileHeader : Bytes) (lock : StoreLock) =>
+    appendLogBind DurableIoFd AppendLogOpened (appendLogOverIo DurableIoFd (durableIoOpen ops (durablePathConcat dir appendLogName) durableReadWriteCreate))
+      (fun (fd : DurableIoFd) => appendLogClosing AppendLogOpened fd
+        (appendLogBind HostInt AppendLogOpened (appendLogOverIo HostInt (durableIoSize fd)) (fun (length : HostInt) =>
+          appendLogBind Bytes AppendLogOpened (appendLogOverIo Bytes (durableIoPreadAll fd (hostIntPositive 0) length)) (fun (bytes : Bytes) =>
+            appendLogBind CodecUnit AppendLogOpened (appendLogChecked (appendLogValidateHeader bytes fileHeader)) (fun (unit : CodecUnit) =>
+              appendLogAdoptScan ops dir fd lock length (frameScan bytes (hostIntPositive 64)))))))
+def appendLogOpen : DurableIoOps -> Bytes -> Bytes -> AppendLogEffect AppendLogOpened :=
+  fun (ops : DurableIoOps) (dir : Bytes) (fileHeader : Bytes) =>
+    appendLogBind CodecUnit AppendLogOpened (appendLogChecked (appendLogValidateOpenHeader fileHeader)) (fun (unit : CodecUnit) =>
+      appendLogBind CodecUnit AppendLogOpened (appendLogOverIo CodecUnit (durableIoMkdirParents ops dir)) (fun (unit : CodecUnit) =>
+        appendLogBind StoreLock AppendLogOpened (appendLogOverLock StoreLock (storeLockAcquire ops dir)) (fun (lock : StoreLock) =>
+          appendLogReleasing AppendLogOpened lock (appendLogBind Bool AppendLogOpened
+            (appendLogOverIo Bool (durableIoExists ops (durablePathConcat dir appendLogName))) (fun (present : Bool) => case present with
+            | 0 (unit : prod ()) => appendLogCreate ops dir fileHeader lock
+            | 1 (unit : prod ()) => appendLogAdopt ops dir fileHeader lock)))))
+def appendLogAppend : AppendLog -> FrameKind -> Bytes -> AppendLogEffect AppendLog :=
+  fun (log : AppendLog) (kind : FrameKind) (payload : Bytes) =>
+    appendLogBind CodecUnit AppendLog (appendLogChecked (appendLogValidatePayloadLength (hostIntPositive (bytesLength payload))))
+      (fun (unit : CodecUnit) => let frame : Bytes := frameEncode kind log.3 payload in appendLogOverIo AppendLog
+        (durableIoBind CodecUnit AppendLog (durableIoSeekTo log.0 log.2) (fun (unit : CodecUnit) =>
+          durableIoBind CodecUnit AppendLog (durableIoWriteAll log.0 frame) (fun (unit : CodecUnit) =>
+            durableIoMap CodecUnit AppendLog (fun (unit : CodecUnit) => tuple (log.0, log.1,
+              hostIntAdd log.2 (hostIntPositive (bytesLength frame)), hostIntAdd log.3 (hostIntPositive 1))) (durableIoFsync log.0)))))
+def appendLogEndOffset : AppendLog -> HostInt := fun (log : AppendLog) => log.2
+def appendLogNextSeq : AppendLog -> HostInt := fun (log : AppendLog) => log.3
+def appendLogClose : AppendLog -> AppendLogEffect CodecUnit := fun (log : AppendLog) => appendLogOverIo CodecUnit
+  (durableEffectBind (DurableIoResult CodecUnit) (DurableIoResult CodecUnit) (durableIoClose log.0)
+    (fun (closed : DurableIoResult CodecUnit) => durableIoCloseOutcome CodecUnit closed (storeLockRelease log.1)))

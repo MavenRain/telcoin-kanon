@@ -1,0 +1,55 @@
+-- Unkeyed BLAKE3 with the pinned source's 32-byte output.
+-- BLAKE2s and BLAKE3 share the quarter-round, but not compression or tree flags.
+def blake3Key : Blake8 := tuple (1779033703, 3144134277, 1013904242, 2773480762, 1359893119, 2600822924, 528734635, 1541459225)
+def blake3Permute : Blake16 -> Blake16 := fun (m : Blake16) =>
+  tuple (m.2, m.6, m.3, m.10, m.7, m.0, m.4, m.13, m.1, m.11, m.12, m.5, m.9, m.14, m.15, m.8)
+def rec blake3Rounds : Bytes -> Blake16 -> Blake16 -> Blake16 :=
+  fun (fuel : Bytes) (message : Blake16) (state : Blake16) => match fuel as self in Bytes return Blake16 with
+  | bytesNil => state
+  | bytesCons head tail => blake3Rounds tail (blake3Permute message) (blakeRound0 message state)
+def blake3Compress : Blake8 -> Blake16 -> Nat -> Nat -> Nat -> Blake8 :=
+  fun (cv : Blake8) (message : Blake16) (counter : Nat) (length : Nat) (flags : Nat) =>
+    let s : Blake16 := blake3Rounds b"1234567" message
+      (tuple (cv.0, cv.1, cv.2, cv.3, cv.4, cv.5, cv.6, cv.7, blake3Key.0, blake3Key.1, blake3Key.2, blake3Key.3,
+        remainder64 counter 4294967296, remainder64 (quotient64 counter 4294967296) 4294967296, length, flags)) in
+    tuple (wordXor32 s.0 s.8, wordXor32 s.1 s.9, wordXor32 s.2 s.10, wordXor32 s.3 s.11,
+      wordXor32 s.4 s.12, wordXor32 s.5 s.13, wordXor32 s.6 s.14, wordXor32 s.7 s.15)
+def rec blake3ChunkScan : Bytes -> Bytes -> Nat -> Blake8 -> Nat -> Nat -> Nat -> Blake8 :=
+  fun (input : Bytes) (block : Bytes) (length : Nat) (cv : Blake8) (counter : Nat) (first : Nat) (root : Nat) =>
+    match input as self in Bytes return Blake8 with
+    | bytesNil => blake3Compress cv (blakeMessage (reverse block)) counter length (natAdd first (natAdd 2 root))
+    | bytesCons head tail => case (natEq length 64) with
+      | 0 (unit : prod ()) => blake3ChunkScan tail (bytesCons head block) (natAdd length 1) cv counter first root
+      | 1 (unit : prod ()) => blake3ChunkScan tail (bytesCons head bytesNil) 1
+          (blake3Compress cv (blakeMessage (reverse block)) counter 64 first) counter 0 root
+def blake3Chunk : Nat -> Nat -> Bytes -> Blake8 := fun (counter : Nat) (root : Nat) (chunk : Bytes) =>
+  blake3ChunkScan chunk bytesNil 0 blake3Key counter 1 root
+def blake3Parent : Blake8 -> Blake8 -> Nat -> Blake8 := fun (left : Blake8) (right : Blake8) (root : Nat) =>
+  blake3Compress blake3Key (tuple (left.0, left.1, left.2, left.3, left.4, left.5, left.6, left.7,
+    right.0, right.1, right.2, right.3, right.4, right.5, right.6, right.7)) 0 64 (natAdd 4 root)
+mu Blake3Stack : Type 0 :=
+  | blake3StackNil : Blake3Stack
+  | blake3StackCons : Blake8 -> Blake3Stack -> Blake3Stack
+def blake3StackRoot : Blake3Stack -> Nat := fun (stack : Blake3Stack) => match stack as self in Blake3Stack return Nat with
+  | blake3StackNil => 8
+  | blake3StackCons head tail => 0
+-- Merge completed power-of-two subtrees. Stack depth is logarithmic in the input.
+def rec blake3Push : Blake3Stack -> Nat -> Blake8 -> Blake3Stack :=
+  fun (stack : Blake3Stack) (total : Nat) (cv : Blake8) => match stack as self in Blake3Stack return Blake3Stack with
+  | blake3StackNil => blake3StackCons cv blake3StackNil
+  | blake3StackCons left rest => case (natEq (remainder64 total 2) 0) with
+    | 0 (unit : prod ()) => blake3StackCons cv stack
+    | 1 (unit : prod ()) => blake3Push rest (quotient64 total 2) (blake3Parent left cv 0)
+def rec blake3Finish : Blake3Stack -> Blake8 -> Blake8 := fun (stack : Blake3Stack) (right : Blake8) =>
+  match stack as self in Blake3Stack return Blake8 with
+  | blake3StackNil => right
+  | blake3StackCons left rest => blake3Finish rest (blake3Parent left right (blake3StackRoot rest))
+def rec blake3Scan : Bytes -> Bytes -> Nat -> Nat -> Blake3Stack -> Bytes :=
+  fun (input : Bytes) (chunk : Bytes) (length : Nat) (counter : Nat) (stack : Blake3Stack) =>
+    match input as self in Bytes return Bytes with
+    | bytesNil => blakeRender (blake3Finish stack (blake3Chunk counter (blake3StackRoot stack) (reverse chunk)))
+    | bytesCons head tail => case (natEq length 1024) with
+      | 0 (unit : prod ()) => blake3Scan tail (bytesCons head chunk) (natAdd length 1) counter stack
+      | 1 (unit : prod ()) => blake3Scan tail (bytesCons head bytesNil) 1 (natAdd counter 1)
+          (blake3Push stack (natAdd counter 1) (blake3Chunk counter 0 (reverse chunk)))
+def blake3Hash : Bytes -> Bytes := fun (input : Bytes) => blake3Scan input bytesNil 0 0 blake3StackNil

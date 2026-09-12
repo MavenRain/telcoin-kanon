@@ -1,0 +1,71 @@
+def checkpointFileTestLoaded : CheckpointFileLoad -> Bytes := fun (loaded : CheckpointFileLoad) =>
+  match loaded as self in CheckpointFileLoad return Bytes with
+  | checkpointFileAbsent => b"none"
+  | checkpointFileLoaded checkpoint generation => append (hostIntText generation) (append b":" (bytesHex (codecWrite Checkpoint checkpointCodec checkpoint)))
+def checkpointFileTestRender : CheckpointFileResult Bytes -> Bytes := fun (result : CheckpointFileResult Bytes) => case result with
+  | 0 (error : CheckpointFileError) => append b"error:" (checkpointFileErrorText error) | 1 (value : Bytes) => value
+def checkpointFileTestMap : (0 A : Type 0) -> (A -> Bytes) -> CheckpointFileEffect A -> CheckpointFileEffect Bytes :=
+  fun (0 A : Type 0) (render : A -> Bytes) (effect : CheckpointFileEffect A) => checkpointFileBind A Bytes effect
+    (fun (value : A) => checkpointFilePure Bytes (inj 1 of 2 (render value)))
+def checkpointFileTestDecode : Bytes -> Bytes -> Bytes := fun (raw : Bytes) (generation : Bytes) => case (hostIntParse generation) with
+  | 0 (unit : prod ()) => b"fixture:generation"
+  | 1 (generation : HostInt) => case (checkpointFileDecode raw generation) with
+    | 0 (error : CheckpointFileError) => append b"error:" (checkpointFileErrorText error)
+    | 1 (loaded : CheckpointFileLoad) => checkpointFileTestLoaded loaded
+def checkpointFileTestStore : Bytes -> DurableRecordMeta -> DiskWalk -> ConsensusStoreDisk :=
+  fun (dir : Bytes) (origin : DurableRecordMeta) (walk : DiskWalk) =>
+    let fd : DurableIoFd := tuple (hostIntPositive 7, dir, durableIoRealOps) in
+    let lock : StoreLock := tuple (fd, durablePathConcat dir storeLockName) in
+    tuple (tuple (dir, origin.0, origin.1, origin.2), tuple (fd, lock, hostIntPositive 64, hostIntPositive 0),
+      walk.0, walk.3, hostIntPositive 64, hostIntPositive 0)
+def checkpointFileTestOperation : Nat -> Bytes -> ConsensusStoreDisk -> Checkpoint -> HostInt -> CheckpointFileEffect Bytes :=
+  fun (op : Nat) (dir : Bytes) (store : ConsensusStoreDisk) (checkpoint : Checkpoint) (generation : HostInt) =>
+    case (natEq op 0) with
+    | 1 (unit : prod ()) => checkpointFileTestMap HostInt hostIntText (checkpointFileSave durableIoRealOps dir store checkpoint)
+    | 0 (unit : prod ()) => case (natEq op 1) with
+      | 1 (unit : prod ()) => checkpointFileTestMap CheckpointFileLoad checkpointFileTestLoaded (checkpointFileLoad durableIoRealOps dir)
+      | 0 (unit : prod ()) => case (natEq op 2) with
+        | 1 (unit : prod ()) => checkpointFileTestMap CodecUnit (fun (unit : CodecUnit) => b"ok") (checkpointFilePure CodecUnit (checkpointFileGuardAhead store checkpoint))
+        | 0 (unit : prod ()) => case (natEq op 3) with
+          | 1 (unit : prod ()) => checkpointFileTestMap CodecUnit (fun (unit : CodecUnit) => b"ok") (checkpointFilePure CodecUnit (checkpointFileGuardKnown store checkpoint))
+          | 0 (unit : prod ()) => case (natEq op 5) with
+            | 1 (unit : prod ()) => checkpointFileTestMap HostInt hostIntText (checkpointFileStoredGeneration durableIoRealOps dir)
+            | 0 (unit : prod ()) => checkpointFileTestMap HostInt hostIntText (checkpointFilePublish durableIoRealOps dir generation checkpoint)
+def checkpointFileTestStart : Nat -> Bytes -> Bytes -> ByteStrings -> Bytes -> Bytes -> DurableTask :=
+  fun (op : Nat) (dir : Bytes) (origin : Bytes) (entries : ByteStrings) (checkpoint : Bytes) (generation : Bytes) =>
+    case (durableRecordMetaDecode origin) with
+    | 0 (error : DurableRecordError) => durableTaskDone durableStateEmpty b"fixture:origin"
+    | 1 (origin : DurableRecordMeta) => case (diskReplay origin.0 origin.1 origin.2
+        (listMapInto Bytes ByteStrings (prod (FrameKind, Bytes)) FramePayloads seqBytesOps seqFramePayloadOps diskTestFramePayload entries)) with
+      | 0 (error : DiskFault) => durableTaskDone durableStateEmpty (append b"fixture:" (diskFaultText error))
+      | 1 (walk : DiskWalk) => case (codecDecode Checkpoint checkpointCodec checkpoint) with
+        | 0 (error : BcsError) => durableTaskDone durableStateEmpty (append b"fixture:" (bcsErrorText error))
+        | 1 (checkpoint : prod (Checkpoint, BcsReader)) => case (hostIntParse generation) with
+          | 0 (unit : prod ()) => durableTaskDone durableStateEmpty b"fixture:generation"
+          | 1 (generation : HostInt) => durableEffectRun (CheckpointFileResult Bytes) checkpointFileTestRender
+              (checkpointFileTestOperation op dir (checkpointFileTestStore dir origin walk) checkpoint.0 generation) durableIoCountersZero
+def checkpointFileTestCounters : ConsensusStoreDisk -> Bytes := fun (store : ConsensusStoreDisk) =>
+  append (hostIntText (diskFsyncs store)) (append b":" (hostIntText (diskBytesAppended store)))
+def checkpointFileTestLiveEffect : Bytes -> DurableRecordMeta -> ByteStrings -> Checkpoint -> DurableEffect Bytes :=
+  fun (dir : Bytes) (origin : DurableRecordMeta) (actions : ByteStrings) (checkpoint : Checkpoint) =>
+    durableEffectBind (DiskResult DiskOpened) Bytes (diskOpen durableIoRealOps dir origin.0 origin.1 origin.2)
+      (fun (result : DiskResult DiskOpened) => case result with
+      | 0 (fault : DiskFault) => durableEffectReturn Bytes (append b"error:" (diskFaultText fault))
+      | 1 (opened : DiskOpened) => durableEffectBind (prod (ConsensusStoreDisk, Bytes)) Bytes (diskTestActions actions opened.0 b"")
+          (fun (received : prod (ConsensusStoreDisk, Bytes)) =>
+            let before : Bytes := checkpointFileTestCounters received.0 in
+            durableEffectBind (CheckpointFileResult Bytes) Bytes
+              (checkpointFileTestMap HostInt hostIntText (checkpointFileSave durableIoRealOps dir received.0 checkpoint))
+              (fun (saved : CheckpointFileResult Bytes) =>
+                let after : Bytes := checkpointFileTestCounters received.0 in
+                durableEffectMap (DiskResult CodecUnit) Bytes (fun (closed : DiskResult CodecUnit) =>
+                  append before (append b"|" (append (checkpointFileTestRender saved) (append b"|" (append after (append b"|"
+                    (case closed with | 0 (fault : DiskFault) => append b"error:" (diskFaultText fault) | 1 (unit : CodecUnit) => b"ok")))))))
+                  (diskClose received.0))))
+def checkpointFileTestLive : Bytes -> Bytes -> ByteStrings -> Bytes -> DurableTask :=
+  fun (dir : Bytes) (origin : Bytes) (actions : ByteStrings) (checkpoint : Bytes) => case (durableRecordMetaDecode origin) with
+  | 0 (error : DurableRecordError) => durableTaskDone durableStateEmpty b"fixture:origin"
+  | 1 (origin : DurableRecordMeta) => case (codecDecode Checkpoint checkpointCodec checkpoint) with
+    | 0 (error : BcsError) => durableTaskDone durableStateEmpty (append b"fixture:" (bcsErrorText error))
+    | 1 (checkpoint : prod (Checkpoint, BcsReader)) => durableEffectRun Bytes (fun (value : Bytes) => value)
+        (checkpointFileTestLiveEffect dir origin actions checkpoint.0) durableIoCountersZero

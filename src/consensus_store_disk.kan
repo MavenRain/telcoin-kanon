@@ -1,0 +1,53 @@
+def diskPure : (0 A : Type 0) -> DiskResult A -> DiskEffect A := fun (0 A : Type 0) => durableEffectReturn (DiskResult A)
+def diskBind : (0 A : Type 0) -> (0 B : Type 0) -> DiskEffect A -> (A -> DiskEffect B) -> DiskEffect B :=
+  fun (0 A : Type 0) (0 B : Type 0) (effect : DiskEffect A) (next : A -> DiskEffect B) =>
+    durableEffectBind (DiskResult A) (DiskResult B) effect (fun (result : DiskResult A) => case result with
+    | 0 (error : DiskFault) => diskPure B (inj 0 of 2 error) | 1 (value : A) => next value)
+def diskOverLog : (0 A : Type 0) -> AppendLogEffect A -> DiskEffect A := fun (0 A : Type 0) (effect : AppendLogEffect A) =>
+  durableEffectMap (AppendLogResult A) (DiskResult A) (fun (result : AppendLogResult A) => case result with
+  | 0 (error : AppendLogError) => inj 0 of 2 (diskOfLogError error) | 1 (value : A) => inj 1 of 2 value) effect
+def diskClosing : (0 A : Type 0) -> AppendLog -> DiskResult A -> DiskEffect A :=
+  fun (0 A : Type 0) (log : AppendLog) (result : DiskResult A) => case result with
+  | 1 (value : A) => diskPure A result
+  | 0 (error : DiskFault) => durableEffectMap (AppendLogResult CodecUnit) (DiskResult A)
+      (fun (ignored : AppendLogResult CodecUnit) => result) (appendLogClose log)
+def diskOpened : DiskOrigin -> Bool -> AppendLogOpened -> DiskWalk -> DiskOpened :=
+  fun (origin : DiskOrigin) (existed : Bool) (opened : AppendLogOpened) (walked : DiskWalk) =>
+    tuple (tuple (origin, opened.0, walked.0, walked.3, appendLogEndOffset opened.0, appendLogNextSeq opened.0),
+      tuple (opened.2, opened.3, boolNot existed, diskFsyncNoFullsync))
+def diskOpen : DurableIoOps -> Bytes -> Epoch -> ConsensusBlockNumber -> OutputDigest -> DiskEffect DiskOpened :=
+  fun (ops : DurableIoOps) (dir : Bytes) (epoch : Epoch) (anchor : ConsensusBlockNumber) (parent : OutputDigest) =>
+    let existence : DiskEffect Bool := durableEffectMap (DurableIoResult Bool) (DiskResult Bool) (fun (result : DurableIoResult Bool) => case result with
+      | 0 (error : DurableIoError) => inj 0 of 2 (diskIo error) | 1 (present : Bool) => inj 1 of 2 present)
+      (durableIoExists ops (durablePathConcat dir appendLogName)) in
+    diskBind Bool DiskOpened existence (fun (existed : Bool) =>
+      diskBind AppendLogOpened DiskOpened (diskOverLog AppendLogOpened (appendLogOpen ops dir (diskFileHeader epoch anchor parent)))
+        (fun (opened : AppendLogOpened) => diskClosing DiskOpened opened.0 (case (diskReplay epoch anchor parent opened.1) with
+        | 0 (error : DiskFault) => inj 0 of 2 error
+        | 1 (walked : DiskWalk) => inj 1 of 2 (diskOpened (tuple (dir, epoch, anchor, parent)) existed opened walked))))
+def diskAdvancing : ConsensusStoreDisk -> ConsensusStore -> ValueOption Bytes -> AppendLogEffect AppendLog -> DiskWriteEffect :=
+  fun (store : ConsensusStoreDisk) (advanced : ConsensusStore) (lastMeta : ValueOption Bytes) (appended : AppendLogEffect AppendLog) =>
+    durableEffectMap (AppendLogResult AppendLog) DiskWriteResult (fun (result : AppendLogResult AppendLog) => case result with
+    | 0 (error : AppendLogError) => inj 0 of 2 (diskFault (diskOfLogError error))
+    | 1 (log : AppendLog) => inj 1 of 2 (tuple (store.0, log, advanced, lastMeta, store.4, store.5))) appended
+def diskAlreadyDurable : ConsensusStoreDisk -> ConsensusRecord -> Bool := fun (store : ConsensusStoreDisk) (record : ConsensusRecord) =>
+  case (consensusStoreRecordByDigest store.2 (consensusRecordDigest record)) with
+  | 0 (unit : prod ()) => boolNot (natEq 0 0) | 1 (record : ConsensusRecord) => natEq 0 0
+def diskReceive : ConsensusStoreDisk -> ConsensusRecord -> DiskWriteEffect := fun (store : ConsensusStoreDisk) (record : ConsensusRecord) =>
+  case (consensusStoreReceive store.2 record) with
+  | 0 (error : ConsensusStoreError) => durableEffectReturn DiskWriteResult (inj 0 of 2 (diskRefused error))
+  | 1 (advanced : ConsensusStore) => case (diskAlreadyDurable store record) with
+    | 1 (unit : prod ()) => durableEffectReturn DiskWriteResult (inj 1 of 2 store)
+    | 0 (unit : prod ()) => diskAdvancing store advanced store.3 (appendLogAppend store.1 frameRecord (durableRecordEncode record))
+def diskOpenEpoch : ConsensusStoreDisk -> Epoch -> DiskWriteEffect := fun (store : ConsensusStoreDisk) (epoch : Epoch) =>
+  case (consensusStoreOpenEpoch store.2 epoch) with
+  | 0 (error : ConsensusStoreError) => durableEffectReturn DiskWriteResult (inj 0 of 2 (diskRefused error))
+  | 1 (advanced : ConsensusStore) => let payload : Bytes := durableRecordMetaEncode (diskMetaOf advanced) in
+    diskAdvancing store advanced (valueSome Bytes payload) (appendLogAppend store.1 frameEpochOpen payload)
+def diskReopenEpoch : ConsensusStoreDisk -> Epoch -> DiskWriteEffect := fun (store : ConsensusStoreDisk) (epoch : Epoch) =>
+  let recorded : Bool := case store.3 with
+    | 0 (unit : prod ()) => boolNot (natEq 0 0) | 1 (bytes : Bytes) => bytesEqual (durableRecordMetaEncode (diskMetaOf store.2)) bytes in
+  case (boolAnd (epochEqual (consensusStoreEpoch store.2) epoch) recorded) with
+  | 1 (unit : prod ()) => durableEffectReturn DiskWriteResult (inj 1 of 2 store)
+  | 0 (unit : prod ()) => diskOpenEpoch store epoch
+def diskClose : ConsensusStoreDisk -> DiskEffect CodecUnit := fun (store : ConsensusStoreDisk) => diskOverLog CodecUnit (appendLogClose store.1)

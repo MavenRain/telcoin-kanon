@@ -193,7 +193,10 @@ const executionEngineFamilies = [
 ];
 const driverFamilies = [['AddressEntries', 'seqAddressEntry', 'prod (AuthorityId, Address)', 'addressEntriesNil', 'addressEntriesCons', true]];
 const driverOutcomeFamilies = [['DriverAdvances', 'seqDriverAdvance', 'DriverAdvance', 'driverAdvancesNil', 'driverAdvancesCons', true]];
-const durableFrameFamilies = [['FrameEntries', 'seqFrameEntry', 'prod (FrameHead, Bytes)', 'frameEntriesNil', 'frameEntriesCons', true]];
+const durableFrameFamilies = [
+  ['FrameEntries', 'seqFrameEntry', 'prod (FrameHead, Bytes)', 'frameEntriesNil', 'frameEntriesCons', true],
+  ['FramePayloads', 'seqFramePayload', 'prod (FrameKind, Bytes)', 'framePayloadsNil', 'framePayloadsCons', true],
+];
 const networkLeafFamilies = [
   ['NetworkBlsKeys', 'seqNetworkBlsKey', 'NetworkBlsPublicKey', 'networkBlsKeysNil', 'networkBlsKeysCons', true],
   ['NetworkVarBytesList', 'seqNetworkVarBytes', 'NetworkVarBytes', 'networkVarBytesListNil', 'networkVarBytesListCons', true],

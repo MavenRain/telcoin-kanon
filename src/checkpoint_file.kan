@@ -1,0 +1,85 @@
+mu CheckpointFileLoad : Type 0 :=
+| checkpointFileAbsent : CheckpointFileLoad
+| checkpointFileLoaded (checkpoint : Checkpoint) (generation : HostInt) : CheckpointFileLoad
+mu CheckpointFileError : Type 0 :=
+| checkpointFileIo (error : DurableIoError) : CheckpointFileError
+| checkpointFileContainer (error : AtomicFileError) : CheckpointFileError
+| checkpointFileDecodeError (error : BcsError) : CheckpointFileError
+| checkpointFileTrailing (left : Nat) : CheckpointFileError
+| checkpointFileAhead (watermark : ConsensusBlockNumber) (durableTip : ConsensusBlockNumber) : CheckpointFileError
+| checkpointFileUnknownBlock (number : ConsensusBlockNumber) : CheckpointFileError
+| checkpointFileGenerationRegressed (stored : HostInt) (offered : HostInt) : CheckpointFileError
+def checkpointFileErrorText : CheckpointFileError -> Bytes := fun (error : CheckpointFileError) => match error as self in CheckpointFileError return Bytes with
+  | checkpointFileIo error => durableIoErrorText error
+  | checkpointFileContainer error => atomicFileErrorText error
+  | checkpointFileDecodeError error => append b"checkpoint payload: " (bcsErrorText error)
+  | checkpointFileTrailing left => append b"checkpoint payload: " (append (decimal64 left) b" byte(s) left over after decoding")
+  | checkpointFileAhead watermark durableTip => append b"checkpoint: last executed " (append (consensusBlockNumberText watermark)
+      (append b" is above the store's durable tip " (consensusBlockNumberText durableTip)))
+  | checkpointFileUnknownBlock number => append b"checkpoint: the store holds no such block at height " (consensusBlockNumberText number)
+  | checkpointFileGenerationRegressed stored offered => append b"checkpoint: generation " (append (hostIntText offered) (append b" does not advance on " (hostIntText stored)))
+def checkpointFileName : Bytes := b"checkpoint"
+def checkpointFileMagic : Bytes := b"TNCKPT\x00\x00"
+def checkpointFileFormat : HostInt := hostIntPositive 1
+def checkpointFileGenerationCeiling : HostInt := hostIntPositive 4611686018427387903
+def CheckpointFileResult : (0 A : Type 0) -> Type 0 := fun (0 A : Type 0) => sum (CheckpointFileError, A)
+def CheckpointFileEffect : (0 A : Type 0) -> Type 0 := fun (0 A : Type 0) => DurableEffect (CheckpointFileResult A)
+def checkpointFilePure : (0 A : Type 0) -> CheckpointFileResult A -> CheckpointFileEffect A :=
+  fun (0 A : Type 0) => durableEffectReturn (CheckpointFileResult A)
+def checkpointFileBind : (0 A : Type 0) -> (0 B : Type 0) -> CheckpointFileEffect A -> (A -> CheckpointFileEffect B) -> CheckpointFileEffect B :=
+  fun (0 A : Type 0) (0 B : Type 0) (effect : CheckpointFileEffect A) (next : A -> CheckpointFileEffect B) =>
+    durableEffectBind (CheckpointFileResult A) (CheckpointFileResult B) effect (fun (result : CheckpointFileResult A) => case result with
+      | 0 (error : CheckpointFileError) => checkpointFilePure B (inj 0 of 2 error) | 1 (value : A) => next value)
+def checkpointFileOverAtomic : (0 A : Type 0) -> AtomicFileEffect A -> CheckpointFileEffect A := fun (0 A : Type 0) (effect : AtomicFileEffect A) =>
+  durableEffectMap (AtomicFileResult A) (CheckpointFileResult A) (fun (result : AtomicFileResult A) => case result with
+    | 0 (error : AtomicFileError) => inj 0 of 2 (checkpointFileContainer error) | 1 (value : A) => inj 1 of 2 value) effect
+def checkpointFileDurableTip : ConsensusStoreDisk -> ConsensusBlockNumber := fun (store : ConsensusStoreDisk) => case (diskDurableTip store) with
+  | 0 (unit : prod ()) => consensusBlockNumberGenesis | 1 (tip : ConsensusBlockNumber) => tip
+def checkpointFileGuardAhead : ConsensusStoreDisk -> Checkpoint -> CheckpointFileResult CodecUnit :=
+  fun (store : ConsensusStoreDisk) (checkpoint : Checkpoint) =>
+    let watermark : ConsensusBlockNumber := checkpointWatermark checkpoint in
+    let tip : ConsensusBlockNumber := checkpointFileDurableTip store in
+    case (natLt (consensusBlockNumberNat tip) (consensusBlockNumberNat watermark)) with
+    | 1 (unit : prod ()) => inj 0 of 2 (checkpointFileAhead watermark tip) | 0 (unit : prod ()) => inj 1 of 2 codecUnitValue
+def checkpointFileGuardKnown : ConsensusStoreDisk -> Checkpoint -> CheckpointFileResult CodecUnit :=
+  fun (store : ConsensusStoreDisk) (checkpoint : Checkpoint) => case (checkpointLastExecuted checkpoint) with
+  | 0 (unit : prod ()) => inj 1 of 2 codecUnitValue
+  | 1 (block : ConsensusBlock) => let number : ConsensusBlockNumber := consensusBlockNumberOf block in
+    case (consensusStoreRecordAt (diskMirror store) number) with
+    | 0 (miss : ConsensusStoreMiss) => inj 0 of 2 (checkpointFileUnknownBlock number)
+    | 1 (record : ConsensusRecord) => case (outputDigestEqual (consensusRecordDigest record) (consensusBlockDigest block)) with
+      | 0 (unit : prod ()) => inj 0 of 2 (checkpointFileUnknownBlock number) | 1 (unit : prod ()) => inj 1 of 2 codecUnitValue
+def checkpointFileStoredGeneration : DurableIoOps -> Bytes -> CheckpointFileEffect HostInt := fun (ops : DurableIoOps) (dir : Bytes) =>
+  checkpointFileBind (ValueOption (prod (HostInt, Bytes))) HostInt
+    (checkpointFileOverAtomic (ValueOption (prod (HostInt, Bytes))) (atomicFileLoad ops dir checkpointFileName checkpointFileMagic checkpointFileFormat))
+    (fun (loaded : ValueOption (prod (HostInt, Bytes))) => checkpointFilePure HostInt (inj 1 of 2 (case loaded with
+      | 0 (unit : prod ()) => hostIntPositive 0 | 1 (value : prod (HostInt, Bytes)) => value.0)))
+def checkpointFilePublish : DurableIoOps -> Bytes -> HostInt -> Checkpoint -> CheckpointFileEffect HostInt :=
+  fun (ops : DurableIoOps) (dir : Bytes) (generation : HostInt) (checkpoint : Checkpoint) =>
+    checkpointFileBind CodecUnit HostInt (checkpointFileOverAtomic CodecUnit (atomicFileSave ops dir checkpointFileName checkpointFileMagic checkpointFileFormat
+      generation (codecWrite Checkpoint checkpointCodec checkpoint))) (fun (unit : CodecUnit) => checkpointFilePure HostInt (inj 1 of 2 generation))
+def checkpointFileNextGeneration : HostInt -> CheckpointFileResult HostInt := fun (stored : HostInt) =>
+  let offered : HostInt := case (natEq (hostIntLess stored checkpointFileGenerationCeiling) 1) with
+    | 1 (unit : prod ()) => hostIntAdd stored (hostIntPositive 1) | 0 (unit : prod ()) => stored in
+  case (natEq (hostIntLess stored offered) 1) with
+    | 0 (unit : prod ()) => inj 0 of 2 (checkpointFileGenerationRegressed stored offered) | 1 (unit : prod ()) => inj 1 of 2 offered
+def checkpointFileSave : DurableIoOps -> Bytes -> ConsensusStoreDisk -> Checkpoint -> CheckpointFileEffect HostInt :=
+  fun (ops : DurableIoOps) (dir : Bytes) (store : ConsensusStoreDisk) (checkpoint : Checkpoint) =>
+    checkpointFileBind CodecUnit HostInt (checkpointFilePure CodecUnit (checkpointFileGuardAhead store checkpoint)) (fun (unit : CodecUnit) =>
+      checkpointFileBind CodecUnit HostInt (checkpointFilePure CodecUnit (checkpointFileGuardKnown store checkpoint)) (fun (unit : CodecUnit) =>
+        checkpointFileBind HostInt HostInt (checkpointFileStoredGeneration ops dir) (fun (stored : HostInt) =>
+          checkpointFileBind HostInt HostInt (checkpointFilePure HostInt (checkpointFileNextGeneration stored))
+            (fun (offered : HostInt) => checkpointFilePublish ops dir offered checkpoint))))
+def checkpointFileDecode : Bytes -> HostInt -> CheckpointFileResult CheckpointFileLoad := fun (payload : Bytes) (generation : HostInt) =>
+  case (codecRead Checkpoint checkpointCodec (bcsStart payload)) with
+  | 0 (error : BcsError) => inj 0 of 2 (checkpointFileDecodeError error)
+  | 1 (decoded : prod (Checkpoint, BcsReader)) => let left : Nat := bytesLength (bcsRemaining decoded.1) in
+    case (natEq left 0) with
+    | 0 (unit : prod ()) => inj 0 of 2 (checkpointFileTrailing left)
+    | 1 (unit : prod ()) => inj 1 of 2 (checkpointFileLoaded decoded.0 generation)
+def checkpointFileLoad : DurableIoOps -> Bytes -> CheckpointFileEffect CheckpointFileLoad := fun (ops : DurableIoOps) (dir : Bytes) =>
+  checkpointFileBind (ValueOption (prod (HostInt, Bytes))) CheckpointFileLoad
+    (checkpointFileOverAtomic (ValueOption (prod (HostInt, Bytes))) (atomicFileLoad ops dir checkpointFileName checkpointFileMagic checkpointFileFormat))
+    (fun (loaded : ValueOption (prod (HostInt, Bytes))) => checkpointFilePure CheckpointFileLoad (case loaded with
+      | 0 (unit : prod ()) => inj 1 of 2 checkpointFileAbsent
+      | 1 (value : prod (HostInt, Bytes)) => checkpointFileDecode value.1 value.0))

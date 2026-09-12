@@ -1,0 +1,34 @@
+def blockTypedTestTx : Nat -> Transaction := fun (kind : Nat) =>
+  let fee : TransactionFee := case (natEq kind 0) with
+    | 1 (unit : prod ()) => transactionLegacyFee u256One
+    | 0 (unit : prod ()) => case (natEq kind 1) with
+      | 1 (unit : prod ()) => transactionAccessFee u256One
+      | 0 (unit : prod ()) => case (natEq kind 2) with
+        | 1 (unit : prod ()) => transactionDynamicFee u256One (valueNone U256)
+        | 0 (unit : prod ()) => transactionSetCodeFee u256One u256Zero addressZero signedAuthorizationsNil
+  in transactionMake addressZero nonceZero (hostIntPositive 21000) transactionCreate u256Zero bytesNil txAccessEntriesNil (valueNone U256) fee
+def rec blockTypedTestTransactions : Bytes -> EvmTransactions -> EvmTransactions :=
+  fun (kinds : Bytes) (acc : EvmTransactions) => match kinds as self in Bytes return EvmTransactions with
+  | bytesNil => seqEvmTransactionReverse acc
+  | bytesCons head tail => blockTypedTestTransactions tail (evmTransactionsCons (blockTypedTestTx head) acc)
+def rec blockTypedTestReceipts : Bytes -> HostInt -> BlockReceipts -> BlockReceipts :=
+  fun (statuses : Bytes) (used : HostInt) (acc : BlockReceipts) => match statuses as self in Bytes return BlockReceipts with
+  | bytesNil => seqBlockReceiptReverse acc
+  | bytesCons head tail => blockTypedTestReceipts tail used (blockReceiptsCons (receiptTestBuild head used (receiptTestLogs 2 b"data")) acc)
+def blockTypedTestReceiptRoot : Bytes -> Bytes -> Bytes -> Bytes := fun (kinds : Bytes) (statuses : Bytes) (gas : Bytes) =>
+  case (hostIntParse gas) with
+  | 0 (unit : prod ()) => b"fixture:gas"
+  | 1 (gas : HostInt) => case (blockReceiptsRootOfBlock (blockTypedTestTransactions kinds evmTransactionsNil)
+      (blockTypedTestReceipts statuses gas blockReceiptsNil)) with
+    | 0 (unit : prod ()) => b"none"
+    | 1 (root : Bytes) => bytesHex root
+def rec blockTypedTestEnvelopes : ByteStrings -> TxEnvelopes -> TxResult TxEnvelopes :=
+  fun (wires : ByteStrings) (acc : TxEnvelopes) => match wires as self in ByteStrings return TxResult TxEnvelopes with
+  | byteStringsNil => inj 1 of 2 (seqTxEnvelopeReverse acc)
+  | byteStringsCons head tail => case (txEnvelopeDecode2718 head) with
+    | 0 (error : TxDecodeError) => inj 0 of 2 error
+    | 1 (envelope : TxEnvelope) => blockTypedTestEnvelopes tail (txEnvelopesCons envelope acc)
+def blockTypedTestTransactionRoot : ByteStrings -> Bytes := fun (wires : ByteStrings) =>
+  case (blockTypedTestEnvelopes wires txEnvelopesNil) with
+  | 0 (error : TxDecodeError) => append b"error:" (txDecodeErrorText error)
+  | 1 (envelopes : TxEnvelopes) => bytesHex (blockTransactionsRootOf envelopes)

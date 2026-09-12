@@ -1,0 +1,50 @@
+def DiskOrigin : Type 0 := prod (Bytes, Epoch, ConsensusBlockNumber, OutputDigest)
+def ConsensusStoreDisk : Type 0 := prod (DiskOrigin, AppendLog, ConsensusStore, ValueOption Bytes, HostInt, HostInt)
+mu DiskFault : Type 0 :=
+| diskIo (error : DurableIoError) : DiskFault
+| diskLog (error : AppendLogError) : DiskFault
+| diskLock (error : StoreLockError) : DiskFault
+| diskDecode (at : HostInt) (seq : HostInt) (error : DurableRecordError) : DiskFault
+| diskMetaDisagrees (at : HostInt) (seq : HostInt) (field : Bytes) : DiskFault
+| diskReplayedRefusal (at : HostInt) (seq : HostInt) (cause : ConsensusStoreError) : DiskFault
+def diskWhere : HostInt -> HostInt -> Bytes := fun (at : HostInt) (seq : HostInt) =>
+  append b"frame " (append (hostIntText seq) (append b" at offset " (hostIntText at)))
+def diskFaultText : DiskFault -> Bytes := fun (fault : DiskFault) => match fault as self in DiskFault return Bytes with
+  | diskIo error => durableIoErrorText error
+  | diskLog error => appendLogErrorText error
+  | diskLock error => storeLockErrorText error
+  | diskDecode at seq error => append (diskWhere at seq) (append b": " (durableRecordErrorText error))
+  | diskMetaDisagrees at seq field => append (diskWhere at seq) (append b": the epoch frame states a " (append field b" the tip does not derive"))
+  | diskReplayedRefusal at seq cause => append (diskWhere at seq) (append b": the chain rules refuse this record: " (consensusStoreErrorText cause))
+mu DiskWriteError : Type 0 :=
+| diskRefused (cause : ConsensusStoreError) : DiskWriteError
+| diskFault (fault : DiskFault) : DiskWriteError
+def diskWriteErrorText : DiskWriteError -> Bytes := fun (error : DiskWriteError) => match error as self in DiskWriteError return Bytes with
+  | diskRefused cause => consensusStoreErrorText cause | diskFault fault => diskFaultText fault
+mu DiskDurability : Type 0 :=
+| diskFsyncNoFullsync : DiskDurability
+def DiskReport : Type 0 := prod (AppendLogHeal, HostInt, Bool, DiskDurability)
+def DiskOpened : Type 0 := prod (ConsensusStoreDisk, DiskReport)
+def DiskResult : (0 A : Type 0) -> Type 0 := fun (0 A : Type 0) => sum (DiskFault, A)
+def DiskEffect : (0 A : Type 0) -> Type 0 := fun (0 A : Type 0) => DurableEffect (DiskResult A)
+def DiskWriteResult : Type 0 := sum (DiskWriteError, ConsensusStoreDisk)
+def DiskWriteEffect : Type 0 := DurableEffect DiskWriteResult
+def diskOfLogError : AppendLogError -> DiskFault := fun (error : AppendLogError) => match error as self in AppendLogError return DiskFault with
+  | appendLogLock lock => diskLock lock
+  | appendLogIo io => diskLog error
+  | appendLogCorrupt at why nextGood => diskLog error
+  | appendLogBadMagic found => diskLog error
+  | appendLogBadFormat found supported => diskLog error
+  | appendLogBadHeaderLen found => diskLog error
+  | appendLogHeaderMismatch field stored wanted => diskLog error
+  | appendLogBadPayloadLen len cap => diskLog error
+def diskFileHeader : Epoch -> ConsensusBlockNumber -> OutputDigest -> Bytes := fun (epoch : Epoch) (anchor : ConsensusBlockNumber) (parent : OutputDigest) =>
+  append b"TNCSLOG\x00\x00\x00\x00\x01\x00\x00\x00\x40" (append (reverse (bcsEncodeU64 (epochNat epoch)))
+    (append (reverse (bcsEncodeU64 (consensusBlockNumberNat anchor))) (outputDigestBytes parent)))
+def diskMirror : ConsensusStoreDisk -> ConsensusStore := fun (store : ConsensusStoreDisk) => store.2
+def diskOrigin : ConsensusStoreDisk -> DiskOrigin := fun (store : ConsensusStoreDisk) => store.0
+def diskDurableTip : ConsensusStoreDisk -> ValueOption ConsensusBlockNumber := fun (store : ConsensusStoreDisk) =>
+  case (consensusStoreLatestReceived store.2) with
+  | 0 (unit : prod ()) => valueNone ConsensusBlockNumber | 1 (record : ConsensusRecord) => valueSome ConsensusBlockNumber (consensusRecordNumber record)
+def diskFsyncs : ConsensusStoreDisk -> HostInt := fun (store : ConsensusStoreDisk) => hostIntSub (appendLogNextSeq store.1) store.5
+def diskBytesAppended : ConsensusStoreDisk -> HostInt := fun (store : ConsensusStoreDisk) => hostIntSub (appendLogEndOffset store.1) store.4

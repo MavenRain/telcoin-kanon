@@ -1,0 +1,44 @@
+def appendIoTestKind : Nat -> FrameKind := fun (kind : Nat) => case (natEq kind 1) with
+  | 1 (unit : prod ()) => frameRecord | 0 (unit : prod ()) => frameEpochOpen
+def appendIoTestJoin : Bytes -> Bytes -> Bytes := fun (first : Bytes) (rest : Bytes) => append first (append b";" rest)
+def appendIoTestLog : AppendLog -> Bytes := fun (log : AppendLog) =>
+  append (hostIntText (appendLogEndOffset log)) (append b":" (hostIntText (appendLogNextSeq log)))
+def appendIoTestHeal : AppendLogHeal -> Bytes := fun (heal : AppendLogHeal) => match heal as self in AppendLogHeal return Bytes with
+  | appendLogNoHeal => b"clean"
+  | appendLogHealedTail at dropped => append b"torn:" (append (hostIntText at) (append b":" (hostIntText dropped)))
+def appendIoTestPayload : prod (FrameKind, Bytes) -> Bytes := fun (payload : prod (FrameKind, Bytes)) =>
+  append b"[" (append (decimal64 (frameKindByte payload.0)) (append b":" (append (bytesHex payload.1) b"]")))
+def appendIoTestOpened : AppendLogOpened -> Bytes := fun (opened : AppendLogOpened) =>
+  appendIoTestJoin (appendIoTestLog opened.0) (appendIoTestJoin (appendIoTestHeal opened.2)
+    (appendIoTestJoin (hostIntText opened.3) (seqFramePayloadWrite appendIoTestPayload opened.1)))
+def appendIoTestClose : AppendLog -> DurableEffect Bytes := fun (log : AppendLog) =>
+  durableEffectMap (AppendLogResult CodecUnit) Bytes (fun (result : AppendLogResult CodecUnit) => case result with
+    | 0 (error : AppendLogError) => append b"error:" (appendLogErrorText error) | 1 (unit : CodecUnit) => b"ok") (appendLogClose log)
+def appendIoTestAttempt : AppendLog -> FrameKind -> Bytes -> DurableEffect (prod (AppendLog, Bytes)) :=
+  fun (log : AppendLog) (kind : FrameKind) (payload : Bytes) =>
+    durableEffectMap (AppendLogResult AppendLog) (prod (AppendLog, Bytes)) (fun (result : AppendLogResult AppendLog) => case result with
+    | 0 (error : AppendLogError) => tuple (log, append b"error:" (appendLogErrorText error))
+    | 1 (advanced : AppendLog) => tuple (advanced, appendIoTestLog advanced)) (appendLogAppend log kind payload)
+def appendIoTestFinish : AppendLog -> Bytes -> DurableEffect Bytes := fun (log : AppendLog) (prefix : Bytes) =>
+  durableEffectMap Bytes Bytes (appendIoTestJoin prefix) (appendIoTestClose log)
+def appendIoTestWrites : Nat -> AppendLog -> FrameKind -> Bytes -> Bytes -> DurableEffect Bytes :=
+  fun (op : Nat) (log : AppendLog) (kind : FrameKind) (payload : Bytes) (retry : Bytes) => case (natEq op 0) with
+  | 1 (unit : prod ()) => appendIoTestClose log
+  | 0 (unit : prod ()) => durableEffectBind (prod (AppendLog, Bytes)) Bytes (appendIoTestAttempt log kind payload)
+      (fun (first : prod (AppendLog, Bytes)) => case (natEq op 1) with
+      | 1 (unit : prod ()) => appendIoTestFinish first.0 first.1
+      | 0 (unit : prod ()) => durableEffectBind (prod (AppendLog, Bytes)) Bytes (appendIoTestAttempt first.0 kind retry)
+          (fun (second : prod (AppendLog, Bytes)) => appendIoTestFinish second.0 (appendIoTestJoin first.1 second.1)))
+def appendIoTestScenario : Nat -> Bytes -> Bytes -> FrameKind -> Bytes -> Bytes -> DurableEffect Bytes :=
+  fun (op : Nat) (dir : Bytes) (header : Bytes) (kind : FrameKind) (payload : Bytes) (retry : Bytes) =>
+    durableEffectBind (AppendLogResult AppendLogOpened) Bytes (appendLogOpen durableIoRealOps dir header) (fun (result : AppendLogResult AppendLogOpened) =>
+      case result with
+      | 0 (error : AppendLogError) => durableEffectReturn Bytes (append b"error:" (appendLogErrorText error))
+      | 1 (opened : AppendLogOpened) => durableEffectMap Bytes Bytes (appendIoTestJoin (appendIoTestOpened opened))
+          (appendIoTestWrites op opened.0 kind payload retry))
+def appendIoTestStart : Nat -> Bytes -> Bytes -> Nat -> Bytes -> Bytes -> DurableTask :=
+  fun (op : Nat) (dir : Bytes) (header : Bytes) (kind : Nat) (payload : Bytes) (retry : Bytes) =>
+    durableEffectRun Bytes (fun (value : Bytes) => value)
+      (durableEffectBind Bytes Bytes (appendIoTestScenario op dir header (appendIoTestKind kind) payload retry)
+        (fun (result : Bytes) => durableEffectMap ByteStrings Bytes (fun (register : ByteStrings) =>
+          appendIoTestJoin result (decimal64 (seqBytesLength register))) durableEffectRegister)) durableIoCountersZero

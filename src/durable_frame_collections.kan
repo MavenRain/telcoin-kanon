@@ -68,3 +68,72 @@ def seqFrameEntryUniq : (prod (FrameHead, Bytes) -> prod (FrameHead, Bytes) -> O
   fun (compare : prod (FrameHead, Bytes) -> prod (FrameHead, Bytes) -> Ordering) (xs : FrameEntries) => seqFrameEntryUniqScan xs compare (valueNone (prod (FrameHead, Bytes))) frameEntriesNil
 def seqFrameEntryOps : ListOps (prod (FrameHead, Bytes)) FrameEntries :=
   tuple (seqFrameEntryEmpty, seqFrameEntryCons, seqFrameEntryReverse, seqFrameEntryLength, seqFrameEntryHead, seqFrameEntryTail, seqFrameEntryWrite, seqFrameEntrySort, seqFrameEntryUniq)
+
+mu FramePayloads : Type 0 :=
+| framePayloadsNil : FramePayloads
+| framePayloadsCons (head : prod (FrameKind, Bytes)) (tail : FramePayloads) : FramePayloads
+
+def seqFramePayloadEmpty : FramePayloads := framePayloadsNil
+def seqFramePayloadCons : prod (FrameKind, Bytes) -> FramePayloads -> FramePayloads := fun (head : prod (FrameKind, Bytes)) (tail : FramePayloads) => framePayloadsCons head tail
+def seqFramePayloadHead : FramePayloads -> ValueOption (prod (FrameKind, Bytes)) := fun (xs : FramePayloads) =>
+  match xs as self in FramePayloads return ValueOption (prod (FrameKind, Bytes)) with
+  | framePayloadsNil => valueNone (prod (FrameKind, Bytes))
+  | framePayloadsCons head tail => valueSome (prod (FrameKind, Bytes)) head
+def seqFramePayloadTail : FramePayloads -> FramePayloads := fun (xs : FramePayloads) =>
+  match xs as self in FramePayloads return FramePayloads with
+  | framePayloadsNil => framePayloadsNil
+  | framePayloadsCons head tail => tail
+def rec seqFramePayloadRevAcc : FramePayloads -> FramePayloads -> FramePayloads := fun (xs : FramePayloads) (acc : FramePayloads) =>
+  match xs as self in FramePayloads return FramePayloads with
+  | framePayloadsNil => acc
+  | framePayloadsCons head tail => seqFramePayloadRevAcc tail (framePayloadsCons head acc)
+def seqFramePayloadReverse : FramePayloads -> FramePayloads := fun (xs : FramePayloads) => seqFramePayloadRevAcc xs framePayloadsNil
+def rec seqFramePayloadLengthAcc : FramePayloads -> Nat -> Nat := fun (xs : FramePayloads) (acc : Nat) =>
+  match xs as self in FramePayloads return Nat with
+  | framePayloadsNil => acc
+  | framePayloadsCons head tail => seqFramePayloadLengthAcc tail (natAdd acc 1)
+def seqFramePayloadLength : FramePayloads -> Nat := fun (xs : FramePayloads) => seqFramePayloadLengthAcc xs 0
+def rec seqFramePayloadWriteAcc : FramePayloads -> (prod (FrameKind, Bytes) -> Bytes) -> Bytes -> Bytes :=
+  fun (xs : FramePayloads) (write : prod (FrameKind, Bytes) -> Bytes) (acc : Bytes) =>
+    match xs as self in FramePayloads return Bytes with
+    | framePayloadsNil => reverse acc
+    | framePayloadsCons head tail => seqFramePayloadWriteAcc tail write (reverseOnto (write head) acc)
+def seqFramePayloadWrite : (prod (FrameKind, Bytes) -> Bytes) -> FramePayloads -> Bytes :=
+  fun (write : prod (FrameKind, Bytes) -> Bytes) (xs : FramePayloads) => seqFramePayloadWriteAcc xs write bytesNil
+def rec seqFramePayloadInsert : FramePayloads -> (prod (FrameKind, Bytes) -> prod (FrameKind, Bytes) -> Ordering) -> prod (FrameKind, Bytes) -> FramePayloads :=
+  fun (xs : FramePayloads) (compare : prod (FrameKind, Bytes) -> prod (FrameKind, Bytes) -> Ordering) (value : prod (FrameKind, Bytes)) =>
+    match xs as self in FramePayloads return FramePayloads with
+    | framePayloadsNil => framePayloadsCons value framePayloadsNil
+    | framePayloadsCons head tail =>
+      match (compare value head) as compared in Ordering return FramePayloads with
+      | orderLess => framePayloadsCons value xs
+      | orderEqual => framePayloadsCons value xs
+      | orderGreater => framePayloadsCons head (seqFramePayloadInsert tail compare value)
+def rec seqFramePayloadSortScan : FramePayloads -> (prod (FrameKind, Bytes) -> prod (FrameKind, Bytes) -> Ordering) -> FramePayloads :=
+  fun (xs : FramePayloads) (compare : prod (FrameKind, Bytes) -> prod (FrameKind, Bytes) -> Ordering) =>
+    match xs as self in FramePayloads return FramePayloads with
+    | framePayloadsNil => framePayloadsNil
+    | framePayloadsCons head tail => seqFramePayloadInsert (seqFramePayloadSortScan tail compare) compare head
+def seqFramePayloadSort : (prod (FrameKind, Bytes) -> prod (FrameKind, Bytes) -> Ordering) -> FramePayloads -> FramePayloads :=
+  fun (compare : prod (FrameKind, Bytes) -> prod (FrameKind, Bytes) -> Ordering) (xs : FramePayloads) => seqFramePayloadSortScan xs compare
+def rec seqFramePayloadUniqScan : FramePayloads -> (prod (FrameKind, Bytes) -> prod (FrameKind, Bytes) -> Ordering) -> ValueOption (prod (FrameKind, Bytes)) -> FramePayloads -> FramePayloads :=
+  fun (xs : FramePayloads) (compare : prod (FrameKind, Bytes) -> prod (FrameKind, Bytes) -> Ordering) (previous : ValueOption (prod (FrameKind, Bytes))) (acc : FramePayloads) =>
+    match xs as self in FramePayloads return FramePayloads with
+    | framePayloadsNil => seqFramePayloadReverse acc
+    | framePayloadsCons head tail =>
+      let duplicate : Nat :=
+        case previous with
+        | 0 (unit : prod ()) => 0
+        | 1 (value : prod (FrameKind, Bytes)) =>
+          match (compare value head) as compared in Ordering return Nat with
+          | orderLess => 0
+          | orderGreater => 0
+          | orderEqual => 1
+      in
+      case (natEq duplicate 1) with
+      | 0 (unit : prod ()) => seqFramePayloadUniqScan tail compare (valueSome (prod (FrameKind, Bytes)) head) (framePayloadsCons head acc)
+      | 1 (unit : prod ()) => seqFramePayloadUniqScan tail compare previous acc
+def seqFramePayloadUniq : (prod (FrameKind, Bytes) -> prod (FrameKind, Bytes) -> Ordering) -> FramePayloads -> FramePayloads :=
+  fun (compare : prod (FrameKind, Bytes) -> prod (FrameKind, Bytes) -> Ordering) (xs : FramePayloads) => seqFramePayloadUniqScan xs compare (valueNone (prod (FrameKind, Bytes))) framePayloadsNil
+def seqFramePayloadOps : ListOps (prod (FrameKind, Bytes)) FramePayloads :=
+  tuple (seqFramePayloadEmpty, seqFramePayloadCons, seqFramePayloadReverse, seqFramePayloadLength, seqFramePayloadHead, seqFramePayloadTail, seqFramePayloadWrite, seqFramePayloadSort, seqFramePayloadUniq)

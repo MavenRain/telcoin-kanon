@@ -1,5 +1,47 @@
 # Validation
 
+## Typed transaction and receipt roots
+
+The typed wrappers pass 182 OCaml rows covering all four signed transaction
+formats, ordering and duplicates, receipt type tags, status and logs, native
+cumulative-gas wrapping and unequal transaction/receipt lengths. The receipt
+wrapper returns None for either direction of length mismatch. Source-closure
+and exact artifact-reuse checks also pass in the same run.
+Capture: `.kanon-exec/run-OHWBJv`, exit 0, seven groups, 156.2 seconds.
+
+## Unkeyed BLAKE3
+
+The 32-byte BLAKE3 hash passes empty/abc vectors and 54 differential rows against
+the pinned pure OCaml implementation. Cases span 64-byte blocks, 1 KiB chunks,
+power-of-two and unbalanced trees through 31 chunks, and deterministic random
+binary inputs. Kanon shares the existing BLAKE2s quarter-round but implements
+BLAKE3 compression, message permutation, flags and logarithmic subtree stack.
+Capture: `.kanon-exec/run-DmH0zQ`, exit 0, three groups, 32.6 seconds.
+This adds the hash primitive; it does not yet enable a production BLS profile.
+
+## Append logs, disk stores and checkpoint files
+
+Append-log I/O passes 161 OCaml rows in four groups, covering create/adopt,
+header and identity refusal, scan and healing errors, append offsets and cleanup.
+Native tests verify torn-tail truncation, interior-corruption preservation,
+partial-write retry at the previous durable offset and exact on-disk frames.
+Capture: `.kanon-exec/run-GCowrn`, exit 0, 44.9 seconds.
+
+The disk store passes 152 OCaml rows in three groups, including replay refusal,
+metadata disagreements, epoch transitions, duplicate no-ops, and write failures.
+Native restart tests reconstruct the mirror from disk and verify that a failed
+flush leaves the caller's mirror unchanged. Per-handle counters measure successful
+appends since open. Capture: `.kanon-exec/run-rysT15`, exit 0, 90.3 seconds.
+
+Checkpoint files pass 886 OCaml rows and two native integration groups. The tests
+cover absent versus damaged files, every representative payload truncation,
+trailing bytes, generation saturation, error precedence and publication faults.
+Ahead and unknown-block guards refuse checkpoints before any I/O. A live disk
+handle retains its append counters across checkpoint saves, duplicate replay,
+refusal, restart and a later accepted record. Canonical checkpoint bytes are
+checked against OCaml re-encoding, which restores committee ordering on decode.
+Capture: `.kanon-exec/run-VRbpDp`, exit 0, five groups, 212.2 seconds including build.
+
 ## Guarded I/O, atomic files and store locks
 
 The durable I/O layer passes 734 OCaml differential rows covering exact arguments,
@@ -29,8 +71,8 @@ Continuation tests and native I/O passed with this state representation in
 `.kanon-exec/run-3uJ1cA`, exit 0, 12 tests. Final native realpath checks, including
 direct comparison with pinned OCaml on trailing path components, pass together
 with atomic publication and store locking in `.kanon-exec/run-CaAJ6B`, exit 0,
-10 tests, 12.5 seconds. Append-log effects, checkpoint files, disk-store integration
-and the final complete regression remain outstanding.
+10 tests, 12.5 seconds. The append-log, checkpoint-file and disk-store evidence
+above completes the durable shell checks. The final complete regression remains outstanding.
 
 ## Explicit fork schedules through the engine
 

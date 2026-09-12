@@ -1,0 +1,35 @@
+def diskMetaOf : ConsensusStore -> DurableRecordMeta := fun (store : ConsensusStore) =>
+  tuple (consensusStoreEpoch store, consensusStoreEpochStart store, consensusStoreEpochParent store)
+def diskDerivedStart : ConsensusStore -> ConsensusBlockNumber := consensusStoreExpectedNext
+def diskDerivedParent : ConsensusStore -> OutputDigest := fun (store : ConsensusStore) => case (consensusStoreLatestReceived store) with
+  | 0 (unit : prod ()) => consensusStoreEpochParent store | 1 (record : ConsensusRecord) => consensusRecordDigest record
+def diskMetaDisagreement : ConsensusStore -> DurableRecordMeta -> ValueOption Bytes := fun (store : ConsensusStore) (meta : DurableRecordMeta) =>
+  case (consensusBlockNumberEqual meta.1 (diskDerivedStart store)) with
+  | 0 (unit : prod ()) => valueSome Bytes b"epoch_start"
+  | 1 (unit : prod ()) => case (outputDigestEqual meta.2 (diskDerivedParent store)) with
+    | 0 (unit : prod ()) => valueSome Bytes b"epoch_parent" | 1 (unit : prod ()) => valueNone Bytes
+def DiskWalk : Type 0 := prod (ConsensusStore, HostInt, HostInt, ValueOption Bytes)
+def diskOnward : DiskWalk -> Bytes -> ConsensusStore -> ValueOption Bytes -> DiskWalk :=
+  fun (walk : DiskWalk) (payload : Bytes) (store : ConsensusStore) (lastMeta : ValueOption Bytes) =>
+    tuple (store, hostIntAdd walk.1 (frameSize (hostIntPositive (bytesLength payload))), hostIntAdd walk.2 (hostIntPositive 1), lastMeta)
+def diskReplayAccepted : DiskWalk -> Bytes -> ValueOption Bytes -> sum (ConsensusStoreError, ConsensusStore) -> DiskResult DiskWalk :=
+  fun (walk : DiskWalk) (payload : Bytes) (lastMeta : ValueOption Bytes) (accepted : sum (ConsensusStoreError, ConsensusStore)) => case accepted with
+  | 0 (cause : ConsensusStoreError) => inj 0 of 2 (diskReplayedRefusal walk.1 walk.2 cause)
+  | 1 (store : ConsensusStore) => inj 1 of 2 (diskOnward walk payload store lastMeta)
+def diskReplayRecord : DiskWalk -> Bytes -> DiskResult DiskWalk := fun (walk : DiskWalk) (payload : Bytes) => case (durableRecordDecode payload) with
+  | 0 (error : DurableRecordError) => inj 0 of 2 (diskDecode walk.1 walk.2 error)
+  | 1 (record : ConsensusRecord) => diskReplayAccepted walk payload walk.3 (consensusStoreReceive walk.0 record)
+def diskReplayEpoch : DiskWalk -> Bytes -> DiskResult DiskWalk := fun (walk : DiskWalk) (payload : Bytes) => case (durableRecordMetaDecode payload) with
+  | 0 (error : DurableRecordError) => inj 0 of 2 (diskDecode walk.1 walk.2 error)
+  | 1 (meta : DurableRecordMeta) => case (diskMetaDisagreement walk.0 meta) with
+    | 1 (field : Bytes) => inj 0 of 2 (diskMetaDisagrees walk.1 walk.2 field)
+    | 0 (unit : prod ()) => diskReplayAccepted walk payload (valueSome Bytes payload) (consensusStoreOpenEpoch walk.0 meta.0)
+def diskStep : DiskResult DiskWalk -> prod (FrameKind, Bytes) -> DiskResult DiskWalk :=
+  fun (acc : DiskResult DiskWalk) (entry : prod (FrameKind, Bytes)) => case acc with
+  | 0 (error : DiskFault) => acc
+  | 1 (walk : DiskWalk) => match entry.0 as self in FrameKind return DiskResult DiskWalk with
+    | frameRecord => diskReplayRecord walk entry.1 | frameEpochOpen => diskReplayEpoch walk entry.1
+def diskReplay : Epoch -> ConsensusBlockNumber -> OutputDigest -> FramePayloads -> DiskResult DiskWalk :=
+  fun (epoch : Epoch) (anchor : ConsensusBlockNumber) (parent : OutputDigest) =>
+    listFoldLeft (prod (FrameKind, Bytes)) FramePayloads (DiskResult DiskWalk) seqFramePayloadOps diskStep
+      (inj 1 of 2 (tuple (consensusStoreCreate epoch anchor parent, hostIntPositive 64, hostIntPositive 0, valueNone Bytes)))

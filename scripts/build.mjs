@@ -9,7 +9,7 @@ export const project = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const lock = JSON.parse(readFileSync(resolve(project, 'source-lock.json'), 'utf8'));
 export const compiler = process.env.KANON_BIN ?? resolve(process.env.TELCOIN_KANON_ROOT ?? lock.toolchain.root, '_build/default/bin/kanon.exe');
 export const sources = ['core', 'nat64', 'scalars', 'bcs', 'codec', 'fixed', 'scalar_ops', 'crypto_types', 'sequence',
-  'collections', 'crypto_collections', 'nonempty', 'prng', 'blake2s', 'chacha12', 'rand_seq',
+  'collections', 'crypto_collections', 'nonempty', 'prng', 'blake2s', 'blake3', 'chacha12', 'rand_seq',
   'keccak_words', 'keccak_permutation', 'keccak', 'crypto_stub', 'committee',
   'protocol_codec', 'batch', 'block_num_hash', 'header', 'vote', 'certificate_types', 'vertex_collections', 'certificate',
   'ordered', 'dag', 'aggregators', 'voter', 'reputation_scores', 'leader_schedule', 'sub_dag', 'consensus_collections', 'committed_log',
@@ -36,8 +36,9 @@ export const sources = ['core', 'nat64', 'scalars', 'bcs', 'codec', 'fixed', 'sc
   'subscriber', 'driver_types', 'driver_outcome_collections', 'driver_outcome', 'driver',
   'blake2b_digest', 'durable_frame_types', 'durable_frame_collections', 'durable_frame',
   'durable_io_types', 'durable_effect', 'durable_path', 'durable_io_ops', 'durable_io', 'durable_io_transfer', 'durable_io_host',
-  'durable_host_abi', 'atomic_file_codec', 'atomic_file', 'bytes_rendering', 'store_lock_types', 'store_lock', 'append_log_codec',
-  'durable_record_codec', 'checkpoint_scalar_codecs', 'checkpoint_state_codecs', 'checkpoint_header_codec', 'checkpoint_codec',
+  'durable_host_abi', 'atomic_file_codec', 'atomic_file', 'bytes_rendering', 'store_lock_types', 'store_lock', 'append_log_codec', 'append_log',
+  'durable_record_codec', 'consensus_store_disk_types', 'consensus_store_disk_replay', 'consensus_store_disk',
+  'checkpoint_scalar_codecs', 'checkpoint_state_codecs', 'checkpoint_header_codec', 'checkpoint_codec', 'checkpoint_file',
   'byte_reader', 'crc32c_table', 'crc32c', 'snappy_raw', 'snappy_frame',
   'network_var_bytes', 'network_bls_public_key', 'network_bls_signature', 'network_wire_scalar', 'network_protocols', 'network_base58', 'network_wire_frame',
   'network_leaf_collections', 'network_epoch_vote', 'network_consensus_result', 'network_epoch_record', 'network_node_record',

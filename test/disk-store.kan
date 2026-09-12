@@ -1,0 +1,56 @@
+def diskTestJoin : Bytes -> Bytes -> Bytes := fun (left : Bytes) (right : Bytes) => append left (append b";" right)
+def diskTestMetaOption : ValueOption Bytes -> Bytes := fun (value : ValueOption Bytes) => case value with
+  | 0 (unit : prod ()) => b"none" | 1 (bytes : Bytes) => bytesHex bytes
+def diskTestMirror : ConsensusStoreDisk -> Bytes := fun (store : ConsensusStoreDisk) =>
+  diskTestJoin (executionStoreText (diskMirror store)) (diskTestJoin (diskTestMetaOption store.3)
+    (diskTestJoin (hostIntText (diskFsyncs store)) (hostIntText (diskBytesAppended store))))
+def diskTestWrite : ConsensusStoreDisk -> DiskWriteResult -> prod (ConsensusStoreDisk, Bytes) :=
+  fun (previous : ConsensusStoreDisk) (result : DiskWriteResult) => case result with
+  | 0 (error : DiskWriteError) => tuple (previous, diskTestJoin (append b"error:" (diskWriteErrorText error)) (diskTestMirror previous))
+  | 1 (store : ConsensusStoreDisk) => tuple (store, diskTestJoin b"ok" (diskTestMirror store))
+def diskTestReceive : ConsensusStoreDisk -> Bytes -> DurableEffect (prod (ConsensusStoreDisk, Bytes)) :=
+  fun (store : ConsensusStoreDisk) (raw : Bytes) => case (durableRecordDecode raw) with
+  | 0 (error : DurableRecordError) => durableEffectReturn (prod (ConsensusStoreDisk, Bytes)) (tuple (store, append b"fixture:" (durableRecordErrorText error)))
+  | 1 (record : ConsensusRecord) => durableEffectMap DiskWriteResult (prod (ConsensusStoreDisk, Bytes)) (diskTestWrite store) (diskReceive store record)
+def diskTestEpoch : ConsensusStoreDisk -> Nat -> Bytes -> DurableEffect (prod (ConsensusStoreDisk, Bytes)) :=
+  fun (store : ConsensusStoreDisk) (op : Nat) (raw : Bytes) => case (codecDecode Epoch durableEpochCodec raw) with
+  | 0 (error : BcsError) => durableEffectReturn (prod (ConsensusStoreDisk, Bytes)) (tuple (store, b"fixture:epoch"))
+  | 1 (value : prod (Epoch, BcsReader)) => durableEffectMap DiskWriteResult (prod (ConsensusStoreDisk, Bytes)) (diskTestWrite store)
+      (case (natEq op 1) with | 1 (unit : prod ()) => diskOpenEpoch store value.0 | 0 (unit : prod ()) => diskReopenEpoch store value.0)
+def diskTestAction : ConsensusStoreDisk -> Bytes -> DurableEffect (prod (ConsensusStoreDisk, Bytes)) :=
+  fun (store : ConsensusStoreDisk) (action : Bytes) => case (natEq (bytesHead action) 0) with
+  | 1 (unit : prod ()) => diskTestReceive store (bytesTail action)
+  | 0 (unit : prod ()) => diskTestEpoch store (bytesHead action) (bytesTail action)
+def rec diskTestActions : ByteStrings -> ConsensusStoreDisk -> Bytes -> DurableEffect (prod (ConsensusStoreDisk, Bytes)) :=
+  fun (actions : ByteStrings) (store : ConsensusStoreDisk) (outputs : Bytes) =>
+  match actions as self in ByteStrings return DurableEffect (prod (ConsensusStoreDisk, Bytes)) with
+  | byteStringsNil => durableEffectReturn (prod (ConsensusStoreDisk, Bytes)) (tuple (store, outputs))
+  | byteStringsCons action tail => durableEffectBind (prod (ConsensusStoreDisk, Bytes)) (prod (ConsensusStoreDisk, Bytes)) (diskTestAction store action)
+      (fun (next : prod (ConsensusStoreDisk, Bytes)) => diskTestActions tail next.0 (append outputs (append b"[" (append next.1 b"]"))))
+def diskTestHeal : AppendLogHeal -> Bytes := fun (heal : AppendLogHeal) => match heal as self in AppendLogHeal return Bytes with
+  | appendLogNoHeal => b"clean" | appendLogHealedTail at dropped => append b"torn:" (append (hostIntText at) (append b":" (hostIntText dropped)))
+def diskTestReport : DiskReport -> Bytes := fun (report : DiskReport) => diskTestJoin (diskTestHeal report.0)
+  (diskTestJoin (hostIntText report.1) (case report.2 with | 0 (unit : prod ()) => b"false" | 1 (unit : prod ()) => b"true"))
+def diskTestOpen : Bytes -> DurableRecordMeta -> ByteStrings -> DurableEffect Bytes :=
+  fun (dir : Bytes) (origin : DurableRecordMeta) (actions : ByteStrings) =>
+    durableEffectBind (DiskResult DiskOpened) Bytes (diskOpen durableIoRealOps dir origin.0 origin.1 origin.2) (fun (result : DiskResult DiskOpened) => case result with
+    | 0 (fault : DiskFault) => durableEffectReturn Bytes (append b"error:" (diskFaultText fault))
+    | 1 (opened : DiskOpened) => durableEffectBind (prod (ConsensusStoreDisk, Bytes)) Bytes (diskTestActions actions opened.0 b"")
+        (fun (final : prod (ConsensusStoreDisk, Bytes)) => durableEffectMap (DiskResult CodecUnit) Bytes (fun (closed : DiskResult CodecUnit) =>
+          diskTestJoin (diskTestReport opened.1) (diskTestJoin (diskTestMirror opened.0) (diskTestJoin final.1
+            (diskTestJoin (diskTestMirror final.0) (case closed with
+              | 0 (fault : DiskFault) => append b"error:" (diskFaultText fault) | 1 (unit : CodecUnit) => b"ok"))))) (diskClose final.0)))
+def diskTestStart : Bytes -> Bytes -> ByteStrings -> DurableTask := fun (dir : Bytes) (origin : Bytes) (actions : ByteStrings) => case (durableRecordMetaDecode origin) with
+  | 0 (error : DurableRecordError) => durableTaskDone durableStateEmpty b"fixture:origin"
+  | 1 (origin : DurableRecordMeta) => durableEffectRun Bytes (fun (value : Bytes) => value)
+      (durableEffectBind Bytes Bytes (diskTestOpen dir origin actions) (fun (value : Bytes) =>
+        durableEffectMap ByteStrings Bytes (fun (register : ByteStrings) => diskTestJoin value (decimal64 (seqBytesLength register))) durableEffectRegister)) durableIoCountersZero
+def diskTestFramePayload : Bytes -> prod (FrameKind, Bytes) := fun (raw : Bytes) => tuple
+  ((case (natEq (bytesHead raw) 1) with | 1 (unit : prod ()) => frameRecord | 0 (unit : prod ()) => frameEpochOpen), bytesTail raw)
+def diskTestReplay : Bytes -> ByteStrings -> Bytes := fun (origin : Bytes) (entries : ByteStrings) => case (durableRecordMetaDecode origin) with
+  | 0 (error : DurableRecordError) => b"fixture:origin"
+  | 1 (origin : DurableRecordMeta) => case (diskReplay origin.0 origin.1 origin.2
+      (listMapInto Bytes ByteStrings (prod (FrameKind, Bytes)) FramePayloads seqBytesOps seqFramePayloadOps diskTestFramePayload entries)) with
+    | 0 (fault : DiskFault) => append b"error:" (diskFaultText fault)
+    | 1 (walked : DiskWalk) => diskTestJoin (executionStoreText walked.0)
+        (diskTestJoin (hostIntText walked.1) (diskTestJoin (hostIntText walked.2) (diskTestMetaOption walked.3)))
