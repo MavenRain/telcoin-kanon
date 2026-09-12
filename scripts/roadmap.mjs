@@ -31,7 +31,7 @@ const coverage = {
   'lib/driver/checkpoint.ml': 'Implemented: persisted engine and executed consensus tip with derived watermark, accumulator and phase, src/checkpoint.kan; typechecked, runtime validation pending',
   'lib/driver/subscriber.ml': 'Ported: shared mint operation and atomic payload attachment, src/subscriber.kan; 36 OCaml differential rows',
   'lib/driver/outcome.ml': 'Implemented: generic advance/sealed/halted outcomes and typed errors, src/driver_types.kan and src/driver_outcome.kan; runtime validation pending',
-  'lib/driver/driver.ml': 'Partial: handoff passes 36 OCaml rows and complete output folds pass 22 rows, including header bytes and failure atomicity; real registry-driven sealing and checkpoint replay integration pending',
+  'lib/driver/driver.ml': 'Partial: handoff passes 36 OCaml rows, complete output folds pass 22 rows and checkpoint replay passes 15 rows; real registry-driven sealing and live persistence protocol integration pending',
   'lib/std/nonempty.ml': 'Ported: generic operations with typed collection dictionaries, src/nonempty.kan; OCaml differential tests',
   'lib/std/prng.ml': 'Ported: full-width SplitMix64, split and signed inclusive ranges, src/prng.kan; OCaml differential tests',
   'lib/codec/bcs.ml': 'Ported: primitive and composite codecs, refinement, enums, list/map/set canonicality, src/bcs.kan, src/codec.kan, src/sequence.kan; OCaml differential tests',

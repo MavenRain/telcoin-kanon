@@ -1,6 +1,12 @@
 # Validation
 
-## Driver handoff and log headers
+## Driver restart, handoff and log headers
+
+Driver restart passes 15 OCaml differential rows in two groups, covering empty
+and nonempty replay gaps, a caught-up checkpoint, committee identity checks,
+store epoch checks, sealed handoff windows and the maximal epoch.
+Capture: `.kanon-exec/run-k68vTk`, exit 0, 476.2 seconds. These fixtures use the
+reference consensus store and do not establish filesystem durability.
 
 Snappy's byte reader and CRC-32C primitives pass 560 OCaml differential rows
 in three groups, covering signed bounds, wide native little-endian reads,
